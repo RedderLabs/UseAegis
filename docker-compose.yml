@@ -39,9 +39,12 @@ services:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
     container_name: aegis-dragonfly
     restart: unless-stopped
-    # memlock ilimitado: Dragonfly bloquea memoria en RAM y lo exige para arrancar bien.
-    ulimits:
-      memlock: -1
+    # OJO memlock: Dragonfly recomienda `ulimits: memlock: -1`, pero fijar memlock a
+    # "ilimitado" falla en LXC NO privilegiados (Proxmox): runc → "error setting rlimit
+    # type 8: operation not permitted" (falta CAP_SYS_RESOURCE). No lo forzamos aquí:
+    # Dragonfly arranca igual con el memlock por defecto (de sobra para dev/nodo). Para
+    # exprimir rendimiento en un host dedicado, sube memlock en el host (VPS/Docker lo
+    # permite; en LXC: `lxc.prlimit.memlock` en la config del contenedor en el host Proxmox).
     # --dir /data + snapshot: Dragonfly guarda un snapshot en /data al parar (grácil) y cada
     # 5 min, para que un reinicio no pierda los blobs en vuelo de la cola. (No usa appendonly;
     # su durabilidad es por snapshot.)
