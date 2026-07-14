@@ -6,6 +6,7 @@ import { Handshake } from "@/components/Handshake";
 import { Limits } from "@/components/Limits";
 import { CTA } from "@/components/CTA";
 import { Footer } from "@/components/Footer";
+import { UmamiAnalytics } from "@/components/UmamiAnalytics";
 
 export default function Home() {
   return (
@@ -24,6 +25,8 @@ export default function Home() {
         <CTA />
       </main>
       <Footer />
+      {/* Analítica solo de la landing (no en la app). No-op si no está configurada. */}
+      <UmamiAnalytics />
     </>
   );
 }
