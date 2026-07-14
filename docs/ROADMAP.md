@@ -53,7 +53,7 @@ de cliente baja de 3 a 2 sd: resta lo difícil, no la pantalla.
 |---|---|---|
 | `crypto-core` | Wrapper libsodium: Ed25519, X25519, XChaCha20-Poly1305, `crypto_secretstream`, Argon2id; almacén de claves local | 2 sd |
 | `protocol` | Formato de sobre, versión de protocolo, serialización, construcción de sealed sender | 1 sd |
-| `apps/relay` | Fastify + PostgreSQL + Redis + BullMQ, entrega sealed-sender, TTL de blobs, Docker Compose | 2 sd |
+| `apps/relay` | Fastify + PostgreSQL + Dragonfly + BullMQ, entrega sealed-sender, TTL de blobs, Docker Compose | 2 sd |
 | `transport` (Modo A) | Implementación relay detrás de la interfaz única (`send/receive/onMessage`) | 1 sd |
 | Cliente chat (`apps/web`) | **UI ya montada (Fase 0)**; resta: cablear `crypto-core`+`transport` reales (quitar el mock de localStorage), QR de contacto, grabación audio (MediaRecorder/Opus) + descifrado en streaming | 2 sd |
 | Backup de clave | Frase de recuperación BIP39, cifrada, bajo control del usuario | 1 sd |

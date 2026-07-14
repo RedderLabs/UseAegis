@@ -23,7 +23,7 @@ Usuario (switch ON)  │                          └────┬────
    Red Tor ───────────► Tor hidden service            │
                      │                          ┌─────▼─────┐
                      │                          │ Postgres   │
-                     │                          │ Redis      │
+                     │                          │ Dragonfly  │
                      │                          └────────────┘
                      └─────────────────────────────┘
 ```
@@ -31,7 +31,7 @@ Usuario (switch ON)  │                          └────┬────
 - **Contenido:** cifrado E2E con libsodium (X25519/XChaCha20), independiente del transporte.
 - **Transporte clearnet:** HTTPS (TLS) obligatorio.
 - **Transporte `.onion`:** HTTP plano es suficiente — el cifrado por capas de Tor ya protege el circuito.
-- **Postgres y Redis:** nunca expuestos fuera de la red interna del LXC.
+- **Postgres y Dragonfly:** nunca expuestos fuera de la red interna del LXC.
 
 ---
 
@@ -130,7 +130,8 @@ services:
     build: ./relay
     environment:
       - DATABASE_URL=postgresql://aegis:pass@postgres:5432/aegis
-      - REDIS_URL=redis://redis:6379
+      # Dragonfly habla protocolo Redis → la var sigue siendo REDIS_URL (redis://).
+      - REDIS_URL=redis://dragonfly:6379
       - NODE_ENV=production
       # HOST=0.0.0.0 es OBLIGATORIO en Docker: por defecto el relay bindea a
       # 127.0.0.1 (apps/relay/src/config.ts) y Caddy/Tor —en otros contenedores—
@@ -167,8 +168,15 @@ services:
     restart: unless-stopped
     # sin "ports:" expuesto
 
-  redis:
-    image: redis:7
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+    # Dragonfly bloquea memoria en RAM y exige memlock ilimitado para arrancar bien.
+    ulimits:
+      memlock: -1
+    # Durabilidad por snapshot (no appendonly): guarda en /data al parar y cada 5 min.
+    command: ["--dir", "/data", "--dbfilename", "dump", "--snapshot_cron", "*/5 * * * *"]
+    volumes:
+      - dragonfly-data:/data
     networks:
       - relay-net
     restart: unless-stopped
@@ -181,6 +189,7 @@ volumes:
   tor-data:
   caddy-data:
   pg-data:
+  dragonfly-data:
 ```
 
 `Caddyfile` (clearnet, dominio local de pruebas):
@@ -214,7 +223,7 @@ curl --socks5-hostname 127.0.0.1:9050 http://TU_DIRECCION.onion/health
 ```
 
 Si responde el healthcheck, el circuito completo funciona:
-**cliente Tor → red Tor → hidden service → Fastify → Postgres/Redis.**
+**cliente Tor → red Tor → hidden service → Fastify → Postgres/Dragonfly.**
 
 ---
 
@@ -235,7 +244,7 @@ async function getRelayEndpoint(privacyMode: boolean): Promise<string> {
 - **Switch OFF** → conexión directa a `relay.aegis.local` (o dominio de producción) por HTTPS.
 - **Switch ON** → se levanta Tor embebido (Arti) en background y todo el tráfico
   del relay pasa por `TU_DIRECCION.onion`, sin que el usuario instale nada aparte.
-- El mismo backend Fastify, Postgres y Redis sirven ambos modos — no hay
+- El mismo backend Fastify, Postgres y Dragonfly sirven ambos modos — no hay
   duplicación de infraestructura, solo dos puertas de entrada distintas.
 
 ---
@@ -264,7 +273,7 @@ docker compose logs -f tor
 - [ ] `curl -k https://relay.aegis.local/health` responde OK (modo clearnet)
 - [ ] `docker compose exec tor cat /var/lib/tor/aegis-relay/hostname` devuelve una dirección `.onion` v3
 - [ ] `curl --socks5-hostname 127.0.0.1:9050 http://TU_ONION/health` responde OK (modo Tor)
-- [ ] Postgres y Redis **no** tienen puertos publicados al host (`docker compose config` para revisar)
+- [ ] Postgres y Dragonfly **no** tienen puertos publicados al host (`docker compose config` para revisar)
 - [ ] Switch en la app cambia correctamente entre ambos endpoints
 
 ---
