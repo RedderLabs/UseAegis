@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
-import { startSession } from "@/lib/session";
+import { startSession, getToken } from "@/lib/session";
 import { setFaviconSecure } from "@/lib/favicon";
+import { fetchMe } from "@/lib/relay-client";
 import { IconCopy, IconDownload } from "@/components/Icons";
 
 function Settings() {
@@ -12,13 +13,30 @@ function Settings() {
   const grouped = groupIdentity(session.id);
   const [secure, setSecure] = useState(session.secure);
   const [copied, setCopied] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [secureError, setSecureError] = useState<string | null>(null);
 
-  function toggleSecure() {
+  // Es el MISMO switch de sesión protegida (.onion) que en login. Al cambiarlo hacemos una
+  // comprobación REAL contra el relay por la puerta destino (clearnet/.onion): si esa puerta no
+  // enruta (p. ej. .onion sin Tor, o un bloqueador cortando la petición) NO fijamos el estado y
+  // mostramos el error, en vez de dejar el flag ON en silencio.
+  async function toggleSecure() {
+    if (checking) return;
     const next = !secure;
-    setSecure(next);
-    // Comprobación real, no cosmética: persiste el estado y refleja el favicon.
-    startSession({ ...session, secure: next });
-    setFaviconSecure(next);
+    setChecking(true);
+    setSecureError(null);
+    try {
+      await fetchMe(getToken() ?? "", next);
+      setSecure(next);
+      startSession({ ...session, secure: next });
+      setFaviconSecure(next);
+    } catch (err) {
+      setSecureError(
+        (err as Error)?.message ?? "No se pudo verificar la sesión por esa puerta.",
+      );
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function copyId() {
@@ -58,9 +76,10 @@ function Settings() {
         <section className="bg-surface border border-line rounded-sm p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="label text-text">Sesión segura</p>
+              <p className="label text-text">Sesión protegida (.onion)</p>
               <p className="font-mono text-[11px] text-muted-2 mt-1">
-                Borra la caché local al cerrar sesión (auto-wipe).
+                Enruta el relay por el hidden service .onion. Requiere Tor; en un navegador
+                normal no funciona.
               </p>
             </div>
             <button
@@ -68,7 +87,9 @@ function Settings() {
               onClick={toggleSecure}
               role="switch"
               aria-checked={secure}
-              className={`relative w-11 h-6 rounded-full border transition-colors shrink-0 ${
+              aria-busy={checking}
+              disabled={checking}
+              className={`relative w-11 h-6 rounded-full border transition-colors shrink-0 disabled:opacity-50 ${
                 secure
                   ? "bg-accent/20 border-accent/40"
                   : "bg-surface-2 border-line"
@@ -98,6 +119,16 @@ function Settings() {
               — se refleja en el icono y en el estado de la sesión
             </span>
           </div>
+          {checking && (
+            <p className="font-mono text-[11px] text-muted mt-2">
+              Comprobando la sesión por esa puerta…
+            </p>
+          )}
+          {secureError && (
+            <p className="font-mono text-[11px] text-status-p2p leading-relaxed mt-2">
+              {secureError}
+            </p>
+          )}
         </section>
 
         {/* Identidad */}
