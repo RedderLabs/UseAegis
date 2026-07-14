@@ -179,6 +179,89 @@ export function exportRecovery(): string | null {
   return unlockedSeed ? toBase64Url(unlockedSeed) : null;
 }
 
+// --- Keystore portátil (fichero USB) --------------------------------------------------
+//
+// El keystore YA está cifrado con la passphrase, así que su blob es seguro de exportar a
+// un fichero (p. ej. en un USB). Dos usos:
+//   - Modo portátil: en un equipo no confiable, se carga el fichero, se desbloquea a
+//     memoria y NO se persiste nada localmente → al cerrar no queda rastro en el PC.
+//   - Provisión: en un equipo propio nuevo, se importa el fichero a IndexedDB y luego se
+//     desbloquea como siempre.
+
+const PORTABLE_FORMAT = "aegis-keystore";
+
+/** Estructura serializable del keystore (bytes en base64url) para guardar en fichero. */
+interface PortableKeystore {
+  format: typeof PORTABLE_FORMAT;
+  v: 1;
+  publicKey: string;
+  vault: { v: 1; kdf: { t: number; m: number; p: number }; salt: string; iv: string; ct: string };
+}
+
+function serialize(rec: KeystoreRecord): string {
+  const portable: PortableKeystore = {
+    format: PORTABLE_FORMAT,
+    v: 1,
+    publicKey: toBase64Url(rec.publicKey),
+    vault: {
+      v: 1,
+      kdf: rec.vault.kdf,
+      salt: toBase64Url(rec.vault.salt),
+      iv: toBase64Url(rec.vault.iv),
+      ct: toBase64Url(rec.vault.ct),
+    },
+  };
+  return JSON.stringify(portable, null, 2);
+}
+
+function parse(json: string): KeystoreRecord {
+  let raw: PortableKeystore;
+  try {
+    raw = JSON.parse(json) as PortableKeystore;
+  } catch {
+    throw new Error("El fichero no es un keystore de Aegis válido.");
+  }
+  if (raw?.format !== PORTABLE_FORMAT || !raw.vault || !raw.publicKey) {
+    throw new Error("El fichero no es un keystore de Aegis válido.");
+  }
+  const publicKey = fromBase64Url(raw.publicKey);
+  const salt = fromBase64Url(raw.vault.salt);
+  const iv = fromBase64Url(raw.vault.iv);
+  const ct = fromBase64Url(raw.vault.ct);
+  if (publicKey.length !== 32) throw new Error("Keystore corrupto (clave pública inválida).");
+  return { vault: { v: 1, kdf: raw.vault.kdf, salt, iv, ct }, publicKey };
+}
+
+/** Serializa el keystore de este dispositivo a texto para guardarlo en un fichero (USB). */
+export async function exportKeystore(): Promise<string> {
+  const rec = await loadRecord();
+  if (!rec || isLegacy(rec)) throw new Error("No hay un keystore cifrado que exportar.");
+  return serialize(rec);
+}
+
+/**
+ * Desbloquea el keystore desde un fichero (USB) con la passphrase.
+ * `persist: false` (por defecto) = modo portátil: la semilla solo va a memoria, no se
+ * escribe nada en este equipo. `persist: true` = además guarda el keystore en IndexedDB.
+ */
+export async function unlockFromFile(
+  json: string,
+  passphrase: string,
+  opts: { persist?: boolean } = {},
+): Promise<IdentityInfo> {
+  const rec = parse(json);
+  const seed = await openSeed(rec.vault, passphrase); // lanza si la passphrase es incorrecta
+  const publicKey = await publicKeyFromSeed(seed);
+  if (toBase64Url(publicKey) !== toBase64Url(rec.publicKey)) {
+    throw new Error("El keystore está corrupto (la clave no coincide).");
+  }
+  if (opts.persist) {
+    await tx("readwrite", (s) => s.put(rec satisfies KeystoreRecord, KEY));
+  }
+  setUnlocked(seed);
+  return info(publicKey);
+}
+
 // --- Acuerdo de claves X25519 (requieren keystore desbloqueado) -----------------------
 
 /** Clave pública X25519 de esta identidad (para publicarla como prekey). */

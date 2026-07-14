@@ -14,6 +14,7 @@ import {
   importKeystore,
   migrateLegacy,
   signWithUnlockedIdentity,
+  unlockFromFile,
   unlockKeystore,
   type IdentityInfo,
   type KeystoreStatus,
@@ -45,6 +46,12 @@ export default function LoginPage() {
   const [confirmPass, setConfirmPass] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [importValue, setImportValue] = useState("");
+
+  // Entrada desde fichero (USB). En modo portátil (persist=false) nada se guarda en el PC.
+  const [fileOpen, setFileOpen] = useState(false);
+  const [fileJson, setFileJson] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [persistFile, setPersistFile] = useState(false);
 
   // Estado del keystore de este dispositivo (NO desbloquea nada: solo mira si existe).
   useEffect(() => {
@@ -151,6 +158,32 @@ export default function LoginPage() {
     }
   }
 
+  // Lee el fichero de keystore elegido por el usuario (desde el USB) a memoria.
+  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setFileName(file.name);
+    file
+      .text()
+      .then(setFileJson)
+      .catch(() => setError("No se pudo leer el fichero."));
+  }
+
+  // Desbloquea desde el fichero cargado y entra. persistFile decide si se guarda en el PC.
+  async function onUnlockFile() {
+    if (busy || fileJson.length === 0 || passphrase.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const identity = await unlockFromFile(fileJson, passphrase, { persist: persistFile });
+      await finishLogin(identity);
+    } catch (err) {
+      setError(describeError(err));
+      setBusy(false);
+    }
+  }
+
   const secureToggle = (
     <button
       type="button"
@@ -241,6 +274,86 @@ export default function LoginPage() {
           <div className="bg-surface/70 backdrop-blur-xl border border-line rounded-md p-6">
             {status === null ? (
               <p className="label text-muted-2 text-center py-6">Comprobando dispositivo…</p>
+            ) : fileOpen ? (
+              /* --- Entrar desde fichero de keystore (USB) --- */
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <span className="label text-muted">Keystore desde fichero (USB)</span>
+                  <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
+                    Elige tu fichero <span className="text-text">.aegis-key.json</span>. En modo
+                    portátil la identidad solo vive en memoria durante esta sesión: al cerrar no
+                    queda nada en este equipo.
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-3 border border-line rounded-sm px-3 py-2.5 cursor-pointer hover:border-accent-dim transition-colors">
+                  <span className="label text-accent">Elegir fichero</span>
+                  <span className="font-mono text-[11px] text-muted-2 truncate">
+                    {fileName || "ningún fichero seleccionado"}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={onFilePicked}
+                    className="hidden"
+                  />
+                </label>
+
+                {passphraseInput("Passphrase")}
+
+                <button
+                  type="button"
+                  onClick={() => setPersistFile((p) => !p)}
+                  className="w-full flex items-center justify-between"
+                >
+                  <span className="flex flex-col text-left">
+                    <span className="label text-text">Recordar en este equipo</span>
+                    <span className="font-mono text-[10px] text-muted-2">
+                      {persistFile ? "Se guardará el keystore aquí" : "Modo portátil: no se guarda nada"}
+                    </span>
+                  </span>
+                  <span
+                    className={`relative w-11 h-6 rounded-full border transition-colors ${
+                      persistFile ? "bg-accent/20 border-accent/40" : "bg-surface-2 border-line"
+                    }`}
+                  >
+                    <span
+                      className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
+                      style={{
+                        backgroundColor: persistFile ? "#c3f400" : "#8e9379",
+                        transform: persistFile ? "translateX(20px)" : "none",
+                      }}
+                    />
+                  </span>
+                </button>
+
+                {secureToggle}
+
+                {error && (
+                  <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileOpen(false);
+                      setError(null);
+                    }}
+                    className="flex-1 label py-3 px-4 border border-line text-muted hover:text-text transition-colors rounded-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onUnlockFile}
+                    disabled={busy || fileJson.length === 0 || passphrase.length === 0}
+                    className="flex-1 label py-3 px-4 bg-accent text-bg font-bold hover:brightness-110 transition rounded-sm disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    {busy ? "Desbloqueando…" : "Entrar"}
+                  </button>
+                </div>
+              </div>
             ) : status.state === "locked" && !importOpen ? (
               /* --- Keystore cifrado: desbloquear con passphrase --- */
               <div className="space-y-7">
@@ -383,6 +496,16 @@ export default function LoginPage() {
                   >
                     Importar con código de recuperación
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileOpen(true);
+                      setError(null);
+                    }}
+                    className="label text-muted hover:text-accent transition-colors"
+                  >
+                    Entrar desde fichero (USB)
+                  </button>
                 </div>
               </div>
             )}
@@ -390,11 +513,28 @@ export default function LoginPage() {
 
           {/* Acciones secundarias */}
           <div className="mt-8 flex flex-col items-center gap-4">
-            {(status?.state === "locked" || status?.state === "legacy") && !importOpen && (
-              <Link href="/register" className="label text-muted hover:text-text transition-colors">
-                Usar otra identidad
-              </Link>
-            )}
+            {(status?.state === "locked" || status?.state === "legacy") &&
+              !importOpen &&
+              !fileOpen && (
+                <div className="flex flex-col items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileOpen(true);
+                      setError(null);
+                    }}
+                    className="label text-muted hover:text-accent transition-colors"
+                  >
+                    Entrar desde fichero (USB)
+                  </button>
+                  <Link
+                    href="/register"
+                    className="label text-muted hover:text-text transition-colors"
+                  >
+                    Usar otra identidad
+                  </Link>
+                </div>
+              )}
             <div className="flex items-center gap-3 opacity-40">
               <span className="h-px w-8 bg-line" />
               <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
