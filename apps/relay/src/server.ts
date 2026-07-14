@@ -6,6 +6,7 @@ import cors from "@fastify/cors";
 import { config } from "./config";
 import type { RateLimitOverrides } from "./config";
 import { authRoutes } from "./auth/routes";
+import { directoryRoutes } from "./directory/routes";
 import { pool } from "./db/pool";
 
 export interface BuildOptions {
@@ -34,7 +35,7 @@ export function buildServer(options: BuildOptions = {}): FastifyInstance {
         // Sin Origin (curl, same-origin) o cualquier localhost → permitido en dev.
         cb(null, !origin || devLocalhost.test(origin));
       }),
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PUT"],
     allowedHeaders: ["content-type", "authorization"],
   });
 
@@ -57,6 +58,7 @@ export function buildServer(options: BuildOptions = {}): FastifyInstance {
   });
 
   app.register(authRoutes, { rateLimit: rl });
+  app.register(directoryRoutes, { rateLimit: rl });
 
   return app;
 }

@@ -9,9 +9,10 @@ import {
   publicKeyFromSeed,
   toBase64Url,
 } from "@/lib/crypto/ed25519";
-import { persistSeed } from "@/lib/crypto/identity-store";
+import { createKeystore } from "@/lib/crypto/identity-store";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const MIN_PASSPHRASE = 8;
 
 const HANDSHAKE_INIT = [
   "> Inicializando protocolos E2E…",
@@ -31,6 +32,9 @@ export default function RegisterPage() {
   const [logs, setLogs] = useState<string[]>(HANDSHAKE_INIT);
   const [confirmed, setConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [passError, setPassError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const scrambleRef = useRef<number | null>(null);
 
@@ -78,13 +82,25 @@ export default function RegisterPage() {
 
   async function confirmIdentity() {
     if (!candidate || confirmed || saving) return;
+    setPassError(null);
+    if (passphrase.length < MIN_PASSPHRASE) {
+      setPassError(`La passphrase debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      return;
+    }
+    if (passphrase !== confirmPass) {
+      setPassError("Las passphrases no coinciden.");
+      return;
+    }
     setSaving(true);
     try {
-      await persistSeed(candidate.seed);
+      // Sella la semilla con la passphrase (Argon2id + AES-GCM) antes de persistirla:
+      // nunca se guarda en claro. Ver lib/crypto/vault.ts.
+      await createKeystore(candidate.seed, passphrase);
       setConfirmed(true);
-      addLog(`> IDENTIDAD FIJADA · guardada en este dispositivo`);
-      addLog("> Clave privada en almacén local · nunca sale del dispositivo");
+      addLog(`> IDENTIDAD CIFRADA · protegida con tu passphrase (Argon2id)`);
+      addLog("> Clave privada cifrada en almacén local · nunca sale del dispositivo");
     } catch (err) {
+      setPassError((err as Error).message);
       addLog(`> ERROR al guardar: ${(err as Error).message}`);
     } finally {
       setSaving(false);
@@ -174,10 +190,12 @@ export default function RegisterPage() {
               </h2>
               <p className="text-[13px] leading-relaxed text-muted">
                 Tu identidad es un par de claves Ed25519 de 256 bits generado en este
-                dispositivo. La clave privada se guarda localmente y nunca sale de aquí.
-                Estas 16 letras son su <span className="text-text">huella pública</span>:
-                sirven para reconocerla, no para iniciar sesión tecleándolas. Descarga el
-                código de recuperación para poder restaurarla en otro dispositivo.
+                dispositivo. La clave privada se guarda <span className="text-text">cifrada
+                con tu passphrase</span> (Argon2id): sin ella, lo almacenado es ruido y nadie
+                más puede usar tu identidad. Estas 16 letras son su{" "}
+                <span className="text-text">huella pública</span>: sirven para reconocerla, no
+                para iniciar sesión tecleándolas. Descarga el código de recuperación para
+                restaurarla en otro dispositivo o guardarla en un USB externo.
               </p>
             </div>
 
@@ -193,6 +211,44 @@ export default function RegisterPage() {
                 ))}
               </div>
             </div>
+
+            {/* Passphrase que cifra la identidad en este dispositivo */}
+            {!confirmed && (
+              <div className="space-y-3 border-t border-line pt-4">
+                <div className="space-y-1">
+                  <h2 className="font-sans text-base font-semibold text-text">
+                    Protege tu identidad
+                  </h2>
+                  <p className="text-[12px] leading-relaxed text-muted">
+                    La clave privada se cifra con esta passphrase (Argon2id) antes de guardarse.
+                    Se pedirá cada vez que inicies sesión.{" "}
+                    <span className="text-text">
+                      No hay forma de recuperarla si la olvidas
+                    </span>{" "}
+                    — para eso está el código de recuperación.
+                  </p>
+                </div>
+                <input
+                  type="password"
+                  value={passphrase}
+                  autoComplete="new-password"
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  placeholder={`Passphrase (mín. ${MIN_PASSPHRASE} caracteres)`}
+                  className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
+                />
+                <input
+                  type="password"
+                  value={confirmPass}
+                  autoComplete="new-password"
+                  onChange={(e) => setConfirmPass(e.target.value)}
+                  placeholder="Repite la passphrase"
+                  className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
+                />
+                {passError && (
+                  <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{passError}</p>
+                )}
+              </div>
+            )}
 
             {/* Acciones */}
             <div className="flex flex-col sm:flex-row gap-3">

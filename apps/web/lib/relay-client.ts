@@ -105,21 +105,22 @@ export class RelayError extends Error {
   }
 }
 
-async function post<T>(
+async function request<T>(
   baseUrl: string,
+  method: "GET" | "POST" | "PUT",
   path: string,
-  body: unknown,
+  body?: unknown,
   token?: string,
 ): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
+      method,
       headers: {
-        "content-type": "application/json",
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify(body),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
     throw new RelayError("No se pudo contactar con el relay.", 0);
@@ -134,6 +135,10 @@ async function post<T>(
     );
   }
   return data as T;
+}
+
+function post<T>(baseUrl: string, path: string, body: unknown, token?: string): Promise<T> {
+  return request<T>(baseUrl, "POST", path, body, token);
 }
 
 /** Firma que produce una firma Ed25519 (64 bytes) sobre un mensaje. */
@@ -159,18 +164,73 @@ export async function authenticate(
   });
 }
 
-export function fetchMe(
-  token: string,
-  secure = false,
-): Promise<{ publicKey: string; fingerprint: string; sessionId: string }> {
-  return fetch(`${relayBaseUrl(secure)}/auth/me`, {
-    headers: { authorization: `Bearer ${token}` },
-  }).then(async (res) => {
-    if (!res.ok) throw new RelayError("Sesión no válida.", res.status);
-    return res.json();
-  });
+export interface MeResponse {
+  publicKey: string;
+  fingerprint: string;
+  sessionId: string;
+  username: string | null;
+  hasPrekey: boolean;
+}
+
+export function fetchMe(token: string, secure = false): Promise<MeResponse> {
+  return request<MeResponse>(relayBaseUrl(secure), "GET", "/auth/me", undefined, token);
 }
 
 export function logout(token: string, secure = false): Promise<void> {
   return post<void>(relayBaseUrl(secure), "/auth/logout", {}, token);
+}
+
+// --- Directorio de usuarios y prekeys X25519 -----------------------------------------
+
+/** Key bundle de un usuario: prekey X25519 firmada con su Ed25519 (o null si no publicó). */
+export interface KeyBundle {
+  x25519PublicKey: string; // base64url
+  x25519Signature: string; // base64url
+  updatedAt: string;
+}
+
+/** Entrada del directorio: identidad + su key bundle para poder conectar. */
+export interface DirectoryEntry {
+  publicKey: string; // Ed25519 (base64url)
+  fingerprint: string;
+  username: string | null;
+  keyBundle: KeyBundle | null;
+}
+
+/** Reclama o cambia el handle público con el que otros te encuentran. */
+export function claimUsername(
+  token: string,
+  username: string,
+  secure = false,
+): Promise<{ username: string }> {
+  return request(relayBaseUrl(secure), "PUT", "/directory/username", { username }, token);
+}
+
+/** Publica (o rota) la prekey X25519 firmada de esta identidad. */
+export function publishPrekey(
+  token: string,
+  prekey: { x25519PublicKey: string; signature: string },
+  secure = false,
+): Promise<{ ok: true }> {
+  return request(relayBaseUrl(secure), "PUT", "/directory/prekey", prekey, token);
+}
+
+/** Busca a un usuario por su handle → identidad + key bundle. */
+export function resolveUsername(
+  token: string,
+  username: string,
+  secure = false,
+): Promise<DirectoryEntry> {
+  const url = `/directory/resolve/${encodeURIComponent(username)}`;
+  return request(relayBaseUrl(secure), "GET", url, undefined, token);
+}
+
+/** Descarga el key bundle de una identidad por su clave pública (p. ej. tras un QR). */
+export function fetchBundle(
+  token: string,
+  publicKeyB64: string,
+  secure = false,
+): Promise<DirectoryEntry> {
+  const url = `/directory/bundle/${encodeURIComponent(publicKeyB64)}`;
+  return request(relayBaseUrl(secure), "GET", url, undefined, token);
 }

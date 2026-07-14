@@ -13,6 +13,7 @@ import { LogoMark } from "./Logo";
 import { groupIdentity } from "@/lib/identity";
 import { endSession, getSession, getToken, type Session } from "@/lib/session";
 import { logout } from "@/lib/relay-client";
+import { lockKeystore } from "@/lib/crypto/identity-store";
 import { setFaviconSecure } from "@/lib/favicon";
 import {
   IconChat,
@@ -70,6 +71,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       }
     }
     endSession();
+    lockKeystore(); // borra la semilla descifrada de memoria: hay que re-desbloquear para volver
     router.push("/login");
   }
 
