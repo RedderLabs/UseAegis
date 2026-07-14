@@ -13,7 +13,7 @@ Usa uno de estos canales privados:
 
 1. **GitHub Security Advisories** (preferido): pestaña *Security → Report a vulnerability*
    en <https://github.com/RedderLabs/Aegis/security/advisories/new>.
-2. **Correo cifrado**: `0xSignalShadow@proton.me`.
+2. **Correo cifrado**: `RedderLabs@proton.me`.
 
 Incluye, si puedes:
 

@@ -11,6 +11,9 @@ build/
 # turbo
 .turbo/
 
+# ts build info
+*.tsbuildinfo
+
 # env
 .env
 .env.*
@@ -22,6 +25,7 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .mcp.json
+.txt.txt
 
 # editor
 .vscode/

@@ -16,7 +16,7 @@
     "build": "tsc",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm infra:up && pnpm migrate && dotenv -e .env -v LOG_LEVEL=silent -- tsx --test src/auth/auth.test.ts"
+    "test": "pnpm infra:up && pnpm migrate && dotenv -e .env -v LOG_LEVEL=silent -- tsx --test src/auth/auth.test.ts src/directory/directory.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

@@ -36,6 +36,10 @@ export const config = {
     global: intFromEnv("RL_GLOBAL_MAX", 120),
     challenge: intFromEnv("RL_CHALLENGE_MAX", 15),
     verify: intFromEnv("RL_VERIFY_MAX", 30),
+    // Directorio: publicar handle/prekey y, sobre todo, resolver handles. El GET de
+    // resolución es enumerable, así que lleva su propio cubo (más holgado que verify
+    // pero acotado) para dificultar el raspado del padrón de usuarios.
+    directory: intFromEnv("RL_DIRECTORY_MAX", 60),
   },
   // Cada cuánto barre la tarea de mantenimiento challenges/sesiones vencidas.
   maintenanceIntervalSeconds: intFromEnv("MAINTENANCE_INTERVAL_SECONDS", 300),
@@ -55,4 +59,5 @@ export interface RateLimitOverrides {
   global?: number;
   challenge?: number;
   verify?: number;
+  directory?: number;
 }

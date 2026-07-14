@@ -20,6 +20,7 @@ import {
   createChallenge,
 } from "./challenges";
 import { upsertIdentity } from "./identities";
+import { getEntry } from "../directory/directory";
 import { issueSession, revokeSession } from "./sessions";
 import { withTransaction } from "../db/pool";
 import { requireSession } from "../plugins/authenticate";
@@ -139,13 +140,16 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     },
   );
 
-  // 3) Identidad de la sesión actual.
+  // 3) Identidad de la sesión actual, incluido su handle y si ya publicó prekey.
   app.get("/auth/me", { preHandler: requireSession }, async (request, reply) => {
     const identity = request.identity!;
+    const entry = await getEntry(identity.publicKey);
     return reply.send({
       publicKey: toBase64Url(identity.publicKey),
       fingerprint: identity.fingerprint,
       sessionId: identity.sessionId,
+      username: entry?.username ?? null,
+      hasPrekey: Boolean(entry?.keyBundle),
     });
   });
 
