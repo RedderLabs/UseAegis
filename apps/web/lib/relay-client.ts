@@ -38,6 +38,17 @@ export function relayBaseUrl(secure: boolean): string {
   return secure && ONION_URL ? ONION_URL : CLEARNET_URL;
 }
 
+/**
+ * Mensaje accionable cuando `fetch` al relay lanza (no responde). Las causas típicas en
+ * desarrollo: (1) apuntar a la .onion desde un navegador normal, que no resuelve .onion sin
+ * Tor, y (2) un bloqueador de anuncios/privacidad cortando la petición (net::ERR_BLOCKED_BY_CLIENT).
+ */
+function relayUnreachableMessage(baseUrl: string): string {
+  return baseUrl.includes(".onion")
+    ? "No se pudo contactar con el relay .onion. La sesión protegida necesita Tor Browser o un proxy Tor; en desarrollo desactiva la sesión protegida para usar clearnet. Un bloqueador de anuncios/privacidad también puede estar cortando la petición."
+    : "No se pudo contactar con el relay. Comprueba que está levantado y que ningún bloqueador del navegador corta la petición.";
+}
+
 export type RelayGatewayKind = "onion" | "clearnet";
 
 export interface RelayGateway {
@@ -75,7 +86,7 @@ export async function fetchHealth(secure = false): Promise<HealthResult> {
   try {
     res = await fetch(`${relayBaseUrl(secure)}/health`, { method: "GET" });
   } catch {
-    throw new RelayError("No se pudo contactar con el relay.", 0);
+    throw new RelayError(relayUnreachableMessage(relayBaseUrl(secure)), 0);
   }
   if (!res.ok) throw new RelayError(`El relay respondió ${res.status}.`, res.status);
   return res.json() as Promise<HealthResult>;
@@ -123,7 +134,7 @@ async function request<T>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new RelayError("No se pudo contactar con el relay.", 0);
+    throw new RelayError(relayUnreachableMessage(baseUrl), 0);
   }
   if (res.status === 204) return undefined as T;
   const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
