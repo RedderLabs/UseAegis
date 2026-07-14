@@ -1,0 +1,58 @@
+# Infraestructura local de desarrollo de Aegis.
+#
+# Levanta PostgreSQL (Auth / AuthSession del relay) y Redis (base para la cola de blobs
+# sealed-sender con BullMQ, ver docs/ARQUITECTURA.md §4). BullMQ se conectará a este Redis
+# cuando entre la cola; por ahora Redis queda listo y verificable.
+#
+# Uso:
+#   docker compose up -d --wait aegis-db aegis-redis   # arranca y espera a "healthy"
+#   docker compose down                                # para los contenedores (conserva volúmenes)
+#   docker compose down -v                             # ...y borra los datos
+#
+# El relay invoca este archivo en su script `dev`, así que en desarrollo la infra se
+# levanta sola al arrancar el servidor.
+
+services:
+  aegis-db:
+    image: postgres:16-alpine
+    container_name: aegis-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aegis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-aegis_relay}
+    ports:
+      # Expuesto solo en loopback: la BBDD de dev nunca escucha en la red.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - aegis-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis} -d ${POSTGRES_DB:-aegis_relay}"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  aegis-redis:
+    image: redis:7-alpine
+    container_name: aegis-redis
+    restart: unless-stopped
+    # appendonly: persiste la cola en disco para que un reinicio no pierda blobs en vuelo.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      # Solo loopback: Redis nunca escucha en la red. 56379 evita chocar con un Redis nativo.
+      - "127.0.0.1:${REDIS_PORT:-56379}:6379"
+    volumes:
+      - aegis-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
+volumes:
+  aegis-db-data:
+    name: aegis-db-data
+  aegis-redis-data:
+    name: aegis-redis-data

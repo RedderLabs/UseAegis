@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // El relay corre en Node (no bundler), así que sobreescribimos el módulo/resolución
+    // del base para poder importar sin extensiones y emitir CommonJS ejecutable con `node`.
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": false,
+    "isolatedModules": false
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "migrations"]
+}

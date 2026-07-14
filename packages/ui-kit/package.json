@@ -1,0 +1,15 @@
+{
+  "name": "@aegis/ui-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Design tokens de Aegis (DISENO.md) y preset compartido de Tailwind.",
+  "type": "module",
+  "exports": {
+    "./tailwind-preset": "./tailwind-preset.cjs",
+    "./tokens": "./src/tokens.ts"
+  },
+  "files": [
+    "src",
+    "tailwind-preset.cjs"
+  ]
+}
