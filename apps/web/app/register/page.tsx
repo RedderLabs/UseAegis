@@ -265,7 +265,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   onChange={(e) => setPassphrase(e.target.value)}
                   placeholder={`Passphrase (mín. ${MIN_PASSPHRASE} caracteres)`}
-                  className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
+                  className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
                 />
                 <input
                   type={showPass ? "text" : "password"}
@@ -273,7 +273,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   onChange={(e) => setConfirmPass(e.target.value)}
                   placeholder="Repite la passphrase"
-                  className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
+                  className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
                 />
                 {confirmPass.length > 0 && confirmPass !== passphrase && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">

@@ -237,7 +237,7 @@ export default function LoginPage() {
           if (e.key === "Enter" && status?.state === "locked") onUnlock();
         }}
         placeholder="Tu passphrase"
-        className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
+        className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
     </div>
   );
@@ -254,7 +254,7 @@ export default function LoginPage() {
         autoComplete="new-password"
         onChange={(e) => setConfirmPass(e.target.value)}
         placeholder="Confírmala"
-        className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
+        className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
       {confirmPass.length > 0 && confirmPass !== passphrase && (
         <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
