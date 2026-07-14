@@ -57,6 +57,37 @@ services:
     # La imagen ya trae HEALTHCHECK propio (/usr/local/bin/healthcheck.sh: nc PING al puerto),
     # así que `docker compose up --wait` detecta "healthy" sin definirlo aquí.
 
+  # --- Relay en Docker (nodo, opt-in perfil "node") -------------------------------------
+  # Levanta el relay COMPILADO junto a aegis-db/aegis-dragonfly, con reinicio automático:
+  #   docker compose --profile node up -d --build aegis-relay
+  # En dev (Windows) NO se usa: allí el relay corre con `pnpm dev`. Solo entra con el perfil
+  # "node". Alcanza la BBDD/Dragonfly por NOMBRE de servicio en la red interna de compose.
+  aegis-relay:
+    build:
+      context: .
+      dockerfile: apps/relay/Dockerfile
+    container_name: aegis-relay
+    profiles: ["node"]
+    restart: unless-stopped
+    depends_on:
+      aegis-db:
+        condition: service_healthy
+      aegis-dragonfly:
+        condition: service_healthy
+    environment:
+      # Conexión por NOMBRE de servicio + puerto interno (no 127.0.0.1:15432, que sería el
+      # propio contenedor). Reusa las credenciales del .env raíz (POSTGRES_*).
+      DATABASE_URL: postgres://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis_dev_pw}@aegis-db:5432/${POSTGRES_DB:-aegis_relay}
+      REDIS_URL: redis://aegis-dragonfly:6379
+      HOST: 0.0.0.0
+      PORT: "8443"
+      LOG_LEVEL: info
+      # CORS_ORIGINS: define aquí el/los origen(es) de la web (coma-separado) cuando la sirvas.
+    ports:
+      # Loopback del host, solo para probar con curl. En clearnet real irá detrás de Caddy (sin
+      # este puerto público); Tor tampoco lo necesita (alcanza aegis-relay:8443 por la red interna).
+      - "127.0.0.1:8443:8443"
+
   # --- Umami: analítica SOLO de la landing (opcional, opt-in) ---------------------------
   # Bajo el perfil `umami`, así NO arranca con el flujo normal del relay (infra:up solo nombra
   # aegis-db y aegis-dragonfly). Se levanta a mano para probar la analítica:

@@ -1,0 +1,22 @@
+# Contexto de build de Docker (usado por apps/relay/Dockerfile, context = raíz del repo).
+# Fuera todo lo que se reconstruye dentro de la imagen o no debe viajar a ella.
+# NO excluir los package.json ni pnpm-lock.yaml: pnpm --frozen-lockfile los necesita.
+
+# Dependencias y artefactos (se reinstalan/recompilan dentro):
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/tsconfig.tsbuildinfo
+
+# Git y CI:
+.git
+.github
+
+# Secretos y entorno local (las vars se pasan por el compose, no por fichero):
+**/.env
+**/.env.*
+
+# Ruido:
+*.log
+.DS_Store
