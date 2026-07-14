@@ -44,6 +44,7 @@ export default function LoginPage() {
   // Campos del formulario (según el estado del keystore).
   const [passphrase, setPassphrase] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importValue, setImportValue] = useState("");
 
@@ -212,12 +213,22 @@ export default function LoginPage() {
 
   const passphraseInput = (label: string, autoFocus = false) => (
     <div className="space-y-2">
-      <label htmlFor="passphrase" className="label text-muted">
-        {label}
-      </label>
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor="passphrase" className="label text-muted">
+          {label}
+        </label>
+        <button
+          type="button"
+          onClick={() => setShowPass((s) => !s)}
+          className="label text-muted-2 hover:text-accent transition-colors shrink-0"
+          aria-pressed={showPass}
+        >
+          {showPass ? "Ocultar" : "Mostrar"}
+        </button>
+      </div>
       <input
         id="passphrase"
-        type="password"
+        type={showPass ? "text" : "password"}
         value={passphrase}
         autoFocus={autoFocus}
         autoComplete="current-password"
@@ -238,13 +249,18 @@ export default function LoginPage() {
       </label>
       <input
         id="confirm"
-        type="password"
+        type={showPass ? "text" : "password"}
         value={confirmPass}
         autoComplete="new-password"
         onChange={(e) => setConfirmPass(e.target.value)}
         placeholder="Confírmala"
         className="w-full bg-bg border border-line rounded-sm px-3 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
+      {confirmPass.length > 0 && confirmPass !== passphrase && (
+        <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
+          Las passphrases no coinciden todavía.
+        </p>
+      )}
     </div>
   );
 
