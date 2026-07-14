@@ -244,7 +244,7 @@ export default function RegisterPage() {
                     <button
                       type="button"
                       onClick={() => setShowPass((s) => !s)}
-                      className="label text-muted-2 hover:text-accent transition-colors shrink-0"
+                      className="label shrink-0 rounded-sm border border-accent/40 px-2 py-1 text-accent hover:bg-accent hover:text-bg transition-colors"
                       aria-pressed={showPass}
                     >
                       {showPass ? "Ocultar" : "Mostrar"}
