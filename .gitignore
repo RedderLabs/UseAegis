@@ -21,6 +21,7 @@ build/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+.mcp.json
 
 # editor
 .vscode/
