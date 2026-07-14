@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AEGIS | Bóveda de Privacidad</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            background-color: #131313;
+            color: #e5e2e1;
+            font-family: 'Hanken Grotesk', sans-serif;
+            overflow-x: hidden;
+        }
+        .grid-overlay {
+            background-image: linear-gradient(rgba(142, 147, 121, 0.03) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(142, 147, 121, 0.03) 1px, transparent 1px);
+            background-size: 16px 16px;
+        }
+        .terminal-glow {
+            box-shadow: inset 0 0 20px rgba(195, 244, 0, 0.05);
+        }
+        .cyber-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .scanning-ring {
+            animation: rotate 4s linear infinite;
+        }
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary": "#002e69",
+                    "outline-variant": "#444933",
+                    "on-tertiary-fixed-variant": "#374956",
+                    "secondary-fixed": "#d8e2ff",
+                    "tertiary-container": "#d2e5f5",
+                    "inverse-surface": "#e5e2e1",
+                    "surface-container": "#201f1f",
+                    "inverse-primary": "#506600",
+                    "error": "#ffb4ab",
+                    "on-primary-fixed-variant": "#3c4d00",
+                    "tertiary": "#ffffff",
+                    "on-secondary-fixed-variant": "#004493",
+                    "primary-fixed": "#c3f400",
+                    "secondary-container": "#4b8eff",
+                    "primary-container": "#c3f400",
+                    "secondary-fixed-dim": "#adc6ff",
+                    "on-primary-fixed": "#161e00",
+                    "surface-dim": "#131313",
+                    "surface-tint": "#abd600",
+                    "on-error-container": "#ffdad6",
+                    "surface-container-lowest": "#0e0e0e",
+                    "surface": "#131313",
+                    "primary": "#ffffff",
+                    "on-primary-container": "#556d00",
+                    "inverse-on-surface": "#313030",
+                    "on-surface": "#e5e2e1",
+                    "on-error": "#690005",
+                    "tertiary-fixed-dim": "#b6c9d8",
+                    "tertiary-fixed": "#d2e5f5",
+                    "on-secondary-container": "#00285c",
+                    "on-secondary-fixed": "#001a41",
+                    "surface-container-high": "#2a2a2a",
+                    "surface-bright": "#3a3939",
+                    "on-tertiary": "#21323e",
+                    "error-container": "#93000a",
+                    "surface-variant": "#353534",
+                    "outline": "#8e9379",
+                    "on-surface-variant": "#c4c9ac",
+                    "surface-container-highest": "#353534",
+                    "background": "#131313",
+                    "primary-fixed-dim": "#abd600",
+                    "on-background": "#e5e2e1",
+                    "surface-container-low": "#1c1b1b",
+                    "secondary": "#adc6ff",
+                    "on-tertiary-container": "#556774",
+                    "on-tertiary-fixed": "#0b1d29",
+                    "on-primary": "#283500"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "margin-desktop": "48px",
+                    "xs": "8px",
+                    "gutter": "16px",
+                    "xl": "64px",
+                    "md": "24px",
+                    "lg": "40px",
+                    "base": "4px",
+                    "margin-mobile": "20px",
+                    "sm": "16px"
+            },
+            "fontFamily": {
+                    "display": ["Hanken Grotesk"],
+                    "label-caps": ["JetBrains Mono"],
+                    "body-lg": ["Hanken Grotesk"],
+                    "body-md": ["Hanken Grotesk"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "headline-lg": ["Hanken Grotesk"],
+                    "code-sm": ["JetBrains Mono"],
+                    "code-xs": ["JetBrains Mono"]
+            },
+            "fontSize": {
+                    "display": ["40px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-caps": ["11px", {"lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "code-sm": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                    "code-xs": ["12px", {"lineHeight": "1.4", "letterSpacing": "0.05em", "fontWeight": "500"}]
+            }
+          },
+        },
+      }
+    </script>
+</head>
+<body class="grid-overlay min-h-screen">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-md border-b border-outline-variant/30">
+<div class="flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1440px] mx-auto">
+<div class="font-display text-headline-md font-bold tracking-tight text-primary">AEGIS</div>
+<div class="hidden md:flex gap-gutter items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-variant/50 px-xs py-base transition-colors cursor-pointer">STATUS: SECURE</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-variant/50 px-xs py-base transition-colors cursor-pointer">NODES: 128</span>
+</div>
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary p-xs hover:bg-surface-variant/50 transition-colors cursor-pointer">lock</span>
+<span class="material-symbols-outlined text-primary p-xs hover:bg-surface-variant/50 transition-colors cursor-pointer">shield</span>
+<span class="material-symbols-outlined text-primary p-xs hover:bg-surface-variant/50 transition-colors cursor-pointer">history</span>
+</div>
+</div>
+</nav>
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-full w-64 fixed left-0 top-0 bg-surface-container border-r border-outline-variant/20 py-md px-sm pt-20 z-40">
+<div class="mb-lg px-xs">
+<h2 class="font-label-caps text-label-caps text-primary-fixed mb-base">SECURE SESSION</h2>
+<p class="font-code-xs text-code-xs text-on-surface-variant">Verified E2EE</p>
+</div>
+<nav class="flex-grow space-y-base">
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+<span class="font-label-caps text-label-caps">Secure Chats</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-caps text-label-caps">Contacts</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-primary-fixed bg-primary-container/10 border-r-2 border-primary-fixed transition-all" href="#">
+<span class="material-symbols-outlined">key_visualizer</span>
+<span class="font-label-caps text-label-caps">Privacy Vault</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-label-caps text-label-caps">Encryption Logs</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+</nav>
+<button class="mt-lg w-full py-sm bg-primary-fixed text-on-primary-fixed font-label-caps text-label-caps font-bold hover:brightness-110 active:scale-95 transition-all">
+            NEW ENCRYPTED CHAT
+        </button>
+<div class="mt-auto border-t border-outline-variant/10 pt-md px-xs">
+<a class="flex items-center gap-sm text-error/80 hover:text-error transition-colors" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-caps text-label-caps">Lock Session</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="md:pl-64 pt-20 px-margin-mobile md:px-margin-desktop pb-xl max-w-[1440px] mx-auto w-full">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row md:items-end justify-between gap-md mb-lg">
+<div>
+<h1 class="font-display text-display text-primary mb-xs">Bóveda de Privacidad</h1>
+<div class="flex items-center gap-sm">
+<span class="inline-block w-2 h-2 rounded-full bg-primary-fixed cyber-pulse"></span>
+<p class="font-code-sm text-code-sm text-on-surface-variant">Metadatos eliminados: <span class="text-primary-fixed">100%</span></p>
+</div>
+</div>
+<div class="flex gap-sm">
+<div class="bg-surface-container-high border border-outline-variant/30 px-md py-sm">
+<p class="font-label-caps text-label-caps text-on-surface-variant block mb-1">DATA RETAINED</p>
+<p class="font-code-sm text-headline-md text-primary-fixed">0 Bytes</p>
+</div>
+</div>
+</header>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+<!-- Health Monitoring Card -->
+<div class="md:col-span-8 bg-surface-container-low border border-outline-variant/20 p-md relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-xs">
+<span class="font-code-xs text-code-xs text-outline tracking-widest uppercase">Live Shield</span>
+</div>
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-lg">Security Health Status</h3>
+<div class="flex flex-col md:flex-row gap-lg items-center">
+<div class="relative w-48 h-48 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90">
+<circle class="text-surface-variant" cx="96" cy="96" fill="transparent" r="88" stroke="currentColor" stroke-width="2"></circle>
+<circle class="text-primary-fixed" cx="96" cy="96" fill="transparent" r="88" stroke="currentColor" stroke-dasharray="552.92" stroke-dashoffset="0" stroke-width="4"></circle>
+</svg>
+<div class="absolute flex flex-col items-center">
+<span class="font-display text-display text-primary">A+</span>
+<span class="font-code-xs text-code-xs text-on-surface-variant">OPTIMIZED</span>
+</div>
+</div>
+<div class="flex-grow w-full space-y-sm">
+<div class="flex justify-between items-center p-sm bg-surface-container-high/50">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary-fixed">verified_user</span>
+<span class="font-body-md text-body-md">Quantum Encryption</span>
+</div>
+<span class="font-code-sm text-primary-fixed">ACTIVE</span>
+</div>
+<div class="flex justify-between items-center p-sm bg-surface-container-high/50">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary-fixed">masks</span>
+<span class="font-body-md text-body-md">Metadata Scrubbing</span>
+</div>
+<span class="font-code-sm text-primary-fixed">100% PURGE</span>
+</div>
+<div class="flex justify-between items-center p-sm bg-surface-container-high/50">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary-fixed">router</span>
+<span class="font-body-md text-body-md">Node Obfuscation</span>
+</div>
+<span class="font-code-sm text-primary-fixed">6 HOPS</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Biometric Lock Card -->
+<div class="md:col-span-4 bg-surface-container-low border border-outline-variant/20 p-md flex flex-col items-center justify-center text-center">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-lg self-start">Biometric Lock</h3>
+<div class="relative w-32 h-32 mb-md">
+<div class="absolute inset-0 rounded-full border border-primary-fixed/20 scanning-ring"></div>
+<div class="absolute inset-2 rounded-full border border-primary-fixed/40 scanning-ring" style="animation-direction: reverse;"></div>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-fixed text-6xl" style="font-variation-settings: 'FILL' 1;">fingerprint</span>
+</div>
+</div>
+<p class="font-body-md text-body-md text-primary mb-base">Identity Verified</p>
+<p class="font-code-xs text-code-xs text-on-surface-variant mb-md uppercase tracking-tighter">Last Scan: 14:02:44 UTC</p>
+<button class="w-full py-base border border-primary-fixed text-primary-fixed font-label-caps text-label-caps hover:bg-primary-fixed/10 transition-colors">RE-AUTHENTICATE</button>
+</div>
+<!-- Node Routing Map (The "Anonymous Network Map") -->
+<div class="md:col-span-12 lg:col-span-8 bg-surface-container border border-outline-variant/20 p-0 relative h-[400px] overflow-hidden">
+<div class="absolute top-0 left-0 p-md z-10 pointer-events-none">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-1">Node Routing Path</h3>
+<p class="font-code-xs text-code-xs text-primary-fixed/70">Current Tunnel: AEGIS-OS-PRIME</p>
+</div>
+<!-- Map Placeholder -->
+<div class="absolute inset-0 grayscale opacity-40 mix-blend-screen" data-alt="A futuristic dark digital world map with glowing cyan and neon green data lines connecting major global cities, representing high-speed encrypted network traffic and anonymous node routing in a professional cyber-security dashboard aesthetic." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuA9GxMl3_Ic3nFHLuB7dn-KE8AQkzSK0vl8-tIc6J2EIY67GoS27qam2uTHgFLlYw4uh0z8vslXUsUnVlG-Z68KBu96PoaB_e7N9l4jlxPS4n2JaoCeX9beLLrNqvEYEprRlaBNXZrD-qfuLwru4Fo0lWeUvfQI0VtED7BHlb_2oerL4NguCa0uM0SSSt7KoZGOs-_7MZMBMRNgPoX0xMrGcHnNiW8Cdx-BuJWiyQsPGt64QbEW2YK4sGjeZjZetenJpJqz_UtJXaY')"></div>
+<!-- SVG Overlay for nodes -->
+<svg class="absolute inset-0 w-full h-full z-10 pointer-events-none">
+<path class="cyber-pulse" d="M100,200 Q250,100 400,250 T700,200" fill="none" stroke="#c3f400" stroke-dasharray="10 5" stroke-width="1.5"></path>
+<circle cx="100" cy="200" fill="#c3f400" r="4"></circle>
+<circle cx="400" cy="250" fill="#c3f400" r="4"></circle>
+<circle cx="700" cy="200" fill="#c3f400" r="4"></circle>
+<text class="font-code-xs text-[10px]" fill="#c3f400" x="110" y="215">ORIGIN [HIDDEN]</text>
+<text class="font-code-xs text-[10px]" fill="#c3f400" x="410" y="265">NODE_49 (ZURICH)</text>
+<text class="font-code-xs text-[10px]" fill="#c3f400" x="710" y="215">EXIT [WASH_DC]</text>
+</svg>
+<div class="absolute bottom-0 right-0 p-md flex gap-sm z-10">
+<div class="bg-surface/90 backdrop-blur-sm border border-outline-variant/20 p-xs px-sm">
+<span class="font-code-xs text-code-xs text-on-surface-variant block">LATENCY</span>
+<span class="font-code-sm text-primary-fixed">14ms</span>
+</div>
+<div class="bg-surface/90 backdrop-blur-sm border border-outline-variant/20 p-xs px-sm">
+<span class="font-code-xs text-code-xs text-on-surface-variant block">ENCRYPTION</span>
+<span class="font-code-sm text-primary-fixed">AES-256-GCM</span>
+</div>
+</div>
+</div>
+<!-- Self-Destruct Timer Card -->
+<div class="md:col-span-12 lg:col-span-4 bg-error-container/10 border border-error/20 p-md flex flex-col">
+<h3 class="font-label-caps text-label-caps text-error mb-lg">Self-Destruct Timer</h3>
+<div class="flex-grow flex flex-col justify-center items-center">
+<div class="font-display text-5xl md:text-6xl text-error tracking-widest font-bold mb-md" id="timer">
+                        00:59:59
+                    </div>
+<p class="font-code-sm text-code-sm text-on-surface-variant text-center px-lg">Remaining time until all session data is permanently purged from memory.</p>
+</div>
+<div class="mt-lg flex gap-sm">
+<button class="flex-1 py-sm bg-error/80 text-on-error font-label-caps text-label-caps hover:bg-error transition-colors">PURGE NOW</button>
+<button class="flex-1 py-sm border border-error/50 text-error font-label-caps text-label-caps hover:bg-error/10 transition-colors">EXTEND</button>
+</div>
+</div>
+<!-- Encryption Keys Section -->
+<div class="md:col-span-12 bg-surface-container-high border border-outline-variant/20 p-md">
+<div class="flex justify-between items-center mb-md">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant">Active Encryption Keys</h3>
+<span class="font-code-xs text-code-xs text-primary-fixed">4 ACTIVE KEYS</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-sm">
+<div class="p-sm bg-surface-dim border border-outline-variant/10">
+<div class="flex justify-between items-start mb-xs">
+<span class="material-symbols-outlined text-primary-fixed text-sm">key</span>
+<span class="font-code-xs text-[10px] text-outline">PRIMARY_RSA</span>
+</div>
+<p class="font-code-xs text-on-surface-variant truncate">0x4F...E921_PUB</p>
+<div class="h-1 bg-surface-variant mt-sm overflow-hidden">
+<div class="h-full bg-primary-fixed w-3/4"></div>
+</div>
+</div>
+<div class="p-sm bg-surface-dim border border-outline-variant/10">
+<div class="flex justify-between items-start mb-xs">
+<span class="material-symbols-outlined text-primary-fixed text-sm">vpn_key</span>
+<span class="font-code-xs text-[10px] text-outline">SIGNAL_AUTH</span>
+</div>
+<p class="font-code-xs text-on-surface-variant truncate">sha256:d8a...f21</p>
+<div class="h-1 bg-surface-variant mt-sm overflow-hidden">
+<div class="h-full bg-primary-fixed w-1/2"></div>
+</div>
+</div>
+<div class="p-sm bg-surface-dim border border-outline-variant/10">
+<div class="flex justify-between items-start mb-xs">
+<span class="material-symbols-outlined text-primary-fixed text-sm">token</span>
+<span class="font-code-xs text-[10px] text-outline">TEMP_SESSION</span>
+</div>
+<p class="font-code-xs text-on-surface-variant truncate">9283-xxy-441-p</p>
+<div class="h-1 bg-surface-variant mt-sm overflow-hidden">
+<div class="h-full bg-primary-fixed w-full"></div>
+</div>
+</div>
+<div class="p-sm bg-surface-dim border border-outline-variant/10">
+<div class="flex justify-between items-start mb-xs">
+<span class="material-symbols-outlined text-primary-fixed text-sm">security</span>
+<span class="font-code-xs text-[10px] text-outline">HW_MODULE</span>
+</div>
+<p class="font-code-xs text-on-surface-variant truncate">TPM_2.0_ENABLED</p>
+<div class="h-1 bg-surface-variant mt-sm overflow-hidden">
+<div class="h-full bg-primary-fixed w-full"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 w-full bg-surface/70 backdrop-blur-md z-50">
+<div class="flex justify-around items-center h-16 border-t border-outline-variant/20">
+<div class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">chat_bubble</span>
+<span class="font-label-caps text-[9px]">CHATS</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-caps text-[9px]">CONTACTS</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-primary-fixed">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">key_visualizer</span>
+<span class="font-label-caps text-[9px]">VAULT</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-[9px]">SETTINGS</span>
+</div>
+</div>
+</nav>
+<script>
+        // Simple Timer Logic
+        let timeLeft = 3600 - 1; // 1 hour minus 1 second
+        const timerDisplay = document.getElementById('timer');
+        
+        setInterval(() => {
+            if (timeLeft <= 0) {
+                timeLeft = 3600;
+            }
+            const hours = Math.floor(timeLeft / 3600);
+            const minutes = Math.floor((timeLeft % 3600) / 60);
+            const seconds = timeLeft % 60;
+            
+            timerDisplay.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            timeLeft--;
+        }, 1000);
+
+        // Interaction for buttons
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function() {
+                this.classList.add('scale-95');
+                setTimeout(() => this.classList.remove('scale-95'), 150);
+            });
+        });
+    </script>
+</body></html>

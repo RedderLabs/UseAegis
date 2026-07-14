@@ -1,0 +1,11 @@
+{
+  "name": "@aegis/transport",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Abstracción de transporte intercambiable: Relay (A) / P2P (B) / Mesh (C).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

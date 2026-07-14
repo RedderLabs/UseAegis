@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300">
+<g fill="#D7FF00" stroke="#D7FF00">
+<path d="M90 40 L160 20 L230 40 L230 120 C230 180 190 220 160 240 C130 220 90 180 90 120 Z" fill="none" stroke-width="10"/>
+<circle cx="160" cy="120" r="42" fill="#D7FF00"/>
+<path d="M142 120 l14 14 l28 -30" fill="none" stroke="#222831" stroke-width="8"/>
+</g>
+<text x="270" y="110" font-family="Arial, Helvetica, sans-serif" font-size="72" font-weight="700" fill="#D7FF00">Aegis</text>
+<text x="272" y="160" font-family="Arial, Helvetica, sans-serif" font-size="34" fill="#D7FF00">Secure Messaging</text>
+</svg>

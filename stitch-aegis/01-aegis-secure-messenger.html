@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AEGIS | Secure Communication</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            background-color: #131313;
+            color: #e5e2e1;
+            font-family: 'Hanken Grotesk', sans-serif;
+            overflow: hidden;
+        }
+        .grid-bg {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 16px 16px;
+        }
+        .glass-panel {
+            backdrop-filter: blur(20px);
+            background-color: rgba(20, 20, 20, 0.7);
+        }
+        .cyber-glow {
+            box-shadow: 0 0 10px rgba(195, 244, 0, 0.2);
+        }
+        .terminal-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .terminal-scroll::-webkit-scrollbar-thumb {
+            background: #353534;
+            border-radius: 2px;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#002e69",
+                        "outline-variant": "#444933",
+                        "on-tertiary-fixed-variant": "#374956",
+                        "secondary-fixed": "#d8e2ff",
+                        "tertiary-container": "#d2e5f5",
+                        "inverse-surface": "#e5e2e1",
+                        "surface-container": "#201f1f",
+                        "inverse-primary": "#506600",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#3c4d00",
+                        "tertiary": "#ffffff",
+                        "on-secondary-fixed-variant": "#004493",
+                        "primary-fixed": "#c3f400",
+                        "secondary-container": "#4b8eff",
+                        "primary-container": "#c3f400",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "on-primary-fixed": "#161e00",
+                        "surface-dim": "#131313",
+                        "surface-tint": "#abd600",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface": "#131313",
+                        "primary": "#ffffff",
+                        "on-primary-container": "#556d00",
+                        "inverse-on-surface": "#313030",
+                        "on-surface": "#e5e2e1",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#b6c9d8",
+                        "tertiary-fixed": "#d2e5f5",
+                        "on-secondary-container": "#00285c",
+                        "on-secondary-fixed": "#001a41",
+                        "surface-container-high": "#2a2a2a",
+                        "surface-bright": "#3a3939",
+                        "on-tertiary": "#21323e",
+                        "error-container": "#93000a",
+                        "surface-variant": "#353534",
+                        "outline": "#8e9379",
+                        "on-surface-variant": "#c4c9ac",
+                        "surface-container-highest": "#353534",
+                        "background": "#131313",
+                        "primary-fixed-dim": "#abd600",
+                        "on-background": "#e5e2e1",
+                        "surface-container-low": "#1c1b1b",
+                        "secondary": "#adc6ff",
+                        "on-tertiary-container": "#556774",
+                        "on-tertiary-fixed": "#0b1d29",
+                        "on-primary": "#283500"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-desktop": "48px",
+                        "xs": "8px",
+                        "gutter": "16px",
+                        "xl": "64px",
+                        "md": "24px",
+                        "lg": "40px",
+                        "base": "4px",
+                        "margin-mobile": "20px",
+                        "sm": "16px"
+                    },
+                    "fontFamily": {
+                        "display": ["Hanken Grotesk"],
+                        "label-caps": ["JetBrains Mono"],
+                        "body-lg": ["Hanken Grotesk"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "code-sm": ["JetBrains Mono"],
+                        "code-xs": ["JetBrains Mono"]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="h-screen flex flex-col overflow-hidden bg-background">
+<!-- Animated Grid Background -->
+<div class="fixed inset-0 grid-bg opacity-40 pointer-events-none"></div>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-md border-b border-outline-variant/30 h-16 flex justify-between items-center px-margin-mobile md:px-margin-desktop">
+<div class="flex items-center gap-sm">
+<span class="font-display text-headline-md font-bold tracking-tight text-primary">AEGIS</span>
+<div class="h-4 w-[1px] bg-outline-variant/50"></div>
+<div class="flex items-center gap-xs text-primary-fixed">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">shield</span>
+<span class="font-label-caps text-label-caps tracking-widest">SESIÓN VERIFICADA</span>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="hidden md:flex items-center gap-sm">
+<button class="p-xs text-on-surface-variant hover:bg-surface-variant/50 transition-colors rounded-lg">
+<span class="material-symbols-outlined">lock</span>
+</button>
+<button class="p-xs text-on-surface-variant hover:bg-surface-variant/50 transition-colors rounded-lg">
+<span class="material-symbols-outlined">history</span>
+</button>
+</div>
+<div class="flex items-center gap-sm pl-md border-l border-outline-variant/30">
+<div class="w-8 h-8 rounded-full bg-surface-container-high border border-primary-fixed/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-fixed text-sm">fingerprint</span>
+</div>
+</div>
+</div>
+</header>
+<main class="flex flex-1 pt-16 h-full overflow-hidden relative z-10">
+<!-- Side Navigation Bar -->
+<aside class="hidden md:flex flex-col h-full w-64 bg-surface-container border-r border-outline-variant/20 py-md px-sm shrink-0">
+<div class="mb-lg px-xs">
+<h2 class="font-label-caps text-label-caps text-on-surface-variant mb-base">SECURE SESSION</h2>
+<p class="font-body-md text-primary-fixed text-xs font-semibold">Verified E2EE</p>
+</div>
+<button class="w-full bg-primary-fixed text-on-primary py-sm px-md rounded-lg font-label-caps text-label-caps flex items-center justify-center gap-sm mb-lg active:scale-95 transition-all">
+<span class="material-symbols-outlined text-sm">add</span>
+                NEW ENCRYPTED CHAT
+            </button>
+<nav class="flex-1 space-y-base overflow-y-auto terminal-scroll">
+<div class="px-xs py-base">
+<span class="font-label-caps text-[10px] text-outline uppercase tracking-widest">Chats Seguros</span>
+</div>
+<a class="flex items-center gap-sm px-xs py-sm text-primary-fixed bg-primary-container/10 border-r-2 border-primary-fixed transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label-caps text-label-caps">Ghost_7x9</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-caps text-label-caps">Anonymous_Alpha</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">key_visualizer</span>
+<span class="font-label-caps text-label-caps">Privacy Vault</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-label-caps text-label-caps">Encryption Logs</span>
+</a>
+<a class="flex items-center gap-sm px-xs py-sm text-on-surface-variant hover:bg-surface-variant/30 hover:text-on-surface transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+</nav>
+<div class="mt-auto pt-md border-t border-outline-variant/20">
+<button class="flex items-center gap-sm px-xs py-sm text-error w-full hover:bg-error-container/10 transition-colors">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-caps text-label-caps uppercase">Lock Session</span>
+</button>
+</div>
+</aside>
+<!-- Main Chat Area -->
+<section class="flex-1 flex flex-col h-full bg-surface-container-lowest/50 relative">
+<!-- Encryption Header Component -->
+<div class="glass-panel border-b border-outline-variant/20 px-md py-sm flex items-center justify-between z-20">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 bg-surface-container-high rounded border border-outline-variant/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">person</span>
+</div>
+<div>
+<h3 class="font-display font-bold text-on-surface">Ghost_7x9</h3>
+<div class="flex items-center gap-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-fixed shadow-[0_0_5px_#abd600]"></span>
+<span class="font-label-caps text-[10px] text-primary-fixed uppercase">Active Handshake</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="flex items-center gap-xs px-sm py-xs bg-primary-container/5 border border-primary-fixed/20 rounded-full">
+<span class="material-symbols-outlined text-primary-fixed text-sm" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+<span class="font-label-caps text-[10px] text-primary-fixed">E2EE VERIFIED</span>
+</div>
+</div>
+</div>
+<!-- Messages Thread -->
+<div class="flex-1 overflow-y-auto px-md py-lg space-y-lg terminal-scroll relative">
+<div class="flex flex-col items-center mb-xl">
+<div class="px-md py-xs bg-surface-variant/30 rounded border border-outline-variant/20">
+<span class="font-code-xs text-on-surface-variant uppercase">Key Exchange Successful - 12:04:22</span>
+</div>
+</div>
+<!-- Incoming Message -->
+<div class="flex flex-col items-start max-w-[80%]">
+<div class="bg-surface-container-high p-md rounded border border-outline-variant/20 mb-xs">
+<p class="font-body-md text-on-surface">Confirm protocol initialization for the upcoming asset transfer. Are the redundant nodes secure?</p>
+</div>
+<span class="font-code-xs text-outline-variant ml-xs">12:05 • GHOST_7X9</span>
+</div>
+<!-- Outgoing Message -->
+<div class="flex flex-col items-end self-end max-w-[80%]">
+<div class="bg-primary-container/5 p-md rounded border border-primary-fixed/40 mb-xs cyber-glow">
+<p class="font-body-md text-on-surface">Nodes are isolated. Perimeter encryption is at 256-bit AES. Verification chips are green.</p>
+</div>
+<div class="flex items-center gap-xs mr-xs">
+<span class="material-symbols-outlined text-xs text-primary-fixed">done_all</span>
+<span class="font-code-xs text-primary-fixed uppercase">Delivered</span>
+</div>
+</div>
+<!-- Incoming Message (File) -->
+<div class="flex flex-col items-start max-w-[80%]">
+<div class="bg-surface-container-high p-md rounded border border-outline-variant/20 mb-xs flex items-center gap-md">
+<div class="w-12 h-12 bg-surface-container-lowest border border-outline-variant/40 flex items-center justify-center rounded">
+<span class="material-symbols-outlined text-primary-fixed">description</span>
+</div>
+<div>
+<p class="font-label-caps text-on-surface text-xs mb-1">manifest_delta.vault</p>
+<p class="font-code-xs text-outline-variant text-[10px]">4.2 MB • Encrypted Payload</p>
+</div>
+<button class="ml-auto w-8 h-8 flex items-center justify-center border border-outline-variant/30 hover:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined text-sm">download</span>
+</button>
+</div>
+</div>
+<!-- Burning Message Indicator -->
+<div class="flex flex-col items-end self-end max-w-[80%]">
+<div class="bg-primary-container/5 p-md rounded border border-primary-fixed/40 mb-xs border-dashed relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-1 opacity-50">
+<span class="material-symbols-outlined text-xs animate-pulse">local_fire_department</span>
+</div>
+<p class="font-body-md text-on-surface italic">This packet will self-destruct in 60 seconds.</p>
+</div>
+<span class="font-code-xs text-primary-fixed-dim uppercase tracking-tighter">Ephemeral Message Trace</span>
+</div>
+</div>
+<!-- Input Bar Component -->
+<div class="p-md bg-surface border-t border-outline-variant/20 relative">
+<div class="max-w-[1000px] mx-auto space-y-sm">
+<div class="flex items-center justify-between mb-xs">
+<div class="flex items-center gap-md">
+<!-- Burn Toggle -->
+<label class="flex items-center gap-xs cursor-pointer group">
+<div class="relative">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-8 h-4 bg-surface-container-highest rounded-full border border-outline-variant/30 peer-checked:bg-error/20 peer-checked:border-error transition-all"></div>
+<div class="absolute top-0.5 left-0.5 w-3 h-3 bg-on-surface-variant rounded-full transition-all peer-checked:translate-x-4 peer-checked:bg-error"></div>
+</div>
+<span class="font-label-caps text-[10px] text-on-surface-variant group-hover:text-on-surface uppercase tracking-widest">Burn Message</span>
+</label>
+<!-- Encryption Chip -->
+<div class="flex items-center gap-xs px-sm py-1 bg-surface-container-high rounded border border-outline-variant/20">
+<span class="material-symbols-outlined text-[12px] text-primary-fixed" style="font-variation-settings: 'FILL' 1;">lock</span>
+<span class="font-code-xs text-outline-variant text-[10px] uppercase">AES-GCM 256</span>
+</div>
+</div>
+<div class="flex items-center gap-sm">
+<span class="font-code-xs text-outline-variant text-[10px]">BUFFER STATUS: NOMINAL</span>
+<div class="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
+<div class="w-[45%] h-full bg-primary-fixed"></div>
+</div>
+</div>
+</div>
+<div class="flex gap-sm items-end bg-surface-container p-sm rounded border border-outline-variant/30 focus-within:border-primary-fixed/50 focus-within:cyber-glow transition-all">
+<button class="p-xs text-on-surface-variant hover:text-primary-fixed transition-colors flex flex-col items-center" title="Encrypted Upload">
+<span class="material-symbols-outlined">attach_file_add</span>
+<span class="font-code-xs text-[8px] uppercase mt-1">Cipher</span>
+</button>
+<div class="flex-1 min-h-[44px] flex items-center">
+<textarea class="w-full bg-transparent border-none focus:ring-0 text-on-surface font-body-md placeholder:text-outline-variant resize-none h-auto max-h-32 terminal-scroll" placeholder="Transmit message..." rows="1"></textarea>
+</div>
+<button class="w-10 h-10 bg-primary-fixed text-on-primary rounded flex items-center justify-center hover:bg-primary-fixed-dim active:scale-90 transition-all">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">send</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Right System Panel (Mobile Hidden) -->
+<aside class="hidden xl:flex flex-col w-72 bg-surface-container border-l border-outline-variant/20 p-md">
+<h4 class="font-label-caps text-label-caps text-on-surface-variant mb-md border-b border-outline-variant/20 pb-xs">METADATA SCRUBBER</h4>
+<div class="space-y-md">
+<div class="p-sm bg-surface-container-low border border-outline-variant/20 rounded">
+<p class="font-label-caps text-[10px] text-outline mb-xs uppercase">IP Obfuscation</p>
+<div class="flex justify-between items-center">
+<span class="font-code-sm text-primary-fixed">Active (Tor Bridge)</span>
+<span class="material-symbols-outlined text-primary-fixed text-sm">check_circle</span>
+</div>
+</div>
+<div class="p-sm bg-surface-container-low border border-outline-variant/20 rounded">
+<p class="font-label-caps text-[10px] text-outline mb-xs uppercase">Session Identity</p>
+<div class="flex items-center gap-sm">
+<div class="flex-1 h-2 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-secondary-container w-3/4"></div>
+</div>
+<span class="font-code-xs text-secondary">75%</span>
+</div>
+<p class="font-code-xs text-[9px] text-on-surface-variant mt-2">Rotating digital signature every 300s</p>
+</div>
+<div class="mt-xl">
+<h4 class="font-label-caps text-label-caps text-on-surface-variant mb-md border-b border-outline-variant/20 pb-xs">SIGNAL PULSE</h4>
+<div class="h-32 bg-surface-container-low rounded border border-outline-variant/20 relative overflow-hidden">
+<!-- Waveform Mockup -->
+<div class="absolute inset-0 flex items-center justify-center opacity-30">
+<div class="flex items-end gap-1 h-12">
+<div class="w-1 bg-primary-fixed animate-[pulse_1s_infinite]" style="height: 40%"></div>
+<div class="w-1 bg-primary-fixed animate-[pulse_1.2s_infinite]" style="height: 70%"></div>
+<div class="w-1 bg-primary-fixed animate-[pulse_0.8s_infinite]" style="height: 30%"></div>
+<div class="w-1 bg-primary-fixed animate-[pulse_1.5s_infinite]" style="height: 90%"></div>
+<div class="w-1 bg-primary-fixed animate-[pulse_1.1s_infinite]" style="height: 50%"></div>
+<div class="w-1 bg-primary-fixed animate-[pulse_1.3s_infinite]" style="height: 60%"></div>
+</div>
+</div>
+<div class="absolute bottom-2 left-2 right-2 flex justify-between">
+<span class="font-code-xs text-[8px] text-outline uppercase">Handshake Stability</span>
+<span class="font-code-xs text-[8px] text-primary-fixed">99.9%</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+<!-- Bottom Nav for Mobile -->
+<nav class="md:hidden fixed bottom-0 w-full h-16 bg-surface-container/90 backdrop-blur-md border-t border-outline-variant/20 flex items-center justify-around px-margin-mobile z-50">
+<button class="flex flex-col items-center gap-1 text-primary-fixed">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="text-[10px] font-label-caps">CHATS</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">group</span>
+<span class="text-[10px] font-label-caps">CONTACTS</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">shield</span>
+<span class="text-[10px] font-label-caps">VAULT</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-label-caps">CONFIG</span>
+</button>
+</nav>
+<script>
+        // Micro-interactions for the chat interface
+        const textarea = document.querySelector('textarea');
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        // Simple typing effect for technical simulation
+        console.log("AEGIS Terminal Initialized...");
+        console.log("E2EE Handshake: SUCCESS");
+    </script>
+</body></html>

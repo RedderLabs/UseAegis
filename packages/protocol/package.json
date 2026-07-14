@@ -1,0 +1,11 @@
+{
+  "name": "@aegis/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Definición de mensajes, versión de protocolo y serialización.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
