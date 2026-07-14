@@ -237,19 +237,9 @@ export default function RegisterPage() {
             {!confirmed && (
               <div className="space-y-3 border-t border-line pt-4">
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="font-sans text-base font-semibold text-text">
-                      Protege tu identidad
-                    </h2>
-                    <button
-                      type="button"
-                      onClick={() => setShowPass((s) => !s)}
-                      className="label shrink-0 rounded-sm border border-accent/40 px-2 py-1 text-accent hover:bg-accent hover:text-bg transition-colors"
-                      aria-pressed={showPass}
-                    >
-                      {showPass ? "Ocultar" : "Mostrar"}
-                    </button>
-                  </div>
+                  <h2 className="font-sans text-base font-semibold text-text">
+                    Protege tu identidad
+                  </h2>
                   <p className="text-[12px] leading-relaxed text-muted">
                     La clave privada se cifra con esta passphrase (Argon2id) antes de guardarse.
                     Se pedirá cada vez que inicies sesión.{" "}
@@ -259,6 +249,14 @@ export default function RegisterPage() {
                     — para eso está el código de recuperación.
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPass((s) => !s)}
+                  className="label w-fit rounded-sm border border-accent/40 px-2 py-1 text-accent hover:bg-accent hover:text-bg transition-colors"
+                  aria-pressed={showPass}
+                >
+                  {showPass ? "Ocultar passphrase" : "Mostrar passphrase"}
+                </button>
                 <input
                   type={showPass ? "text" : "password"}
                   value={passphrase}

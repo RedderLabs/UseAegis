@@ -213,10 +213,7 @@ export default function LoginPage() {
 
   const passphraseInput = (label: string, autoFocus = false) => (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor="passphrase" className="label text-muted">
-          {label}
-        </label>
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => setShowPass((s) => !s)}
@@ -225,6 +222,9 @@ export default function LoginPage() {
         >
           {showPass ? "Ocultar" : "Mostrar"}
         </button>
+        <label htmlFor="passphrase" className="label text-muted">
+          {label}
+        </label>
       </div>
       <input
         id="passphrase"
