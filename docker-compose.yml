@@ -1,8 +1,10 @@
 # Infraestructura local de desarrollo de Aegis.
 #
-# Levanta PostgreSQL (Auth / AuthSession del relay) y Redis (base para la cola de blobs
-# sealed-sender con BullMQ, ver docs/ARQUITECTURA.md §4). BullMQ se conectará a este Redis
-# cuando entre la cola; por ahora Redis queda listo y verificable.
+# Levanta PostgreSQL (Auth / AuthSession del relay) y DragonflyDB (base para la cola de blobs
+# sealed-sender con BullMQ, ver docs/ARQUITECTURA.md §4). Dragonfly es drop-in compatible con
+# el protocolo Redis (habla RESP en :6379), así que BullMQ/ioredis se conectan con la misma
+# REDIS_URL (redis://...) sin tocar código. BullMQ se conectará cuando entre la cola; por ahora
+# Dragonfly queda listo y verificable.
 #
 # Uso:
 #   docker compose up -d --wait aegis-db aegis-redis   # arranca y espera a "healthy"
@@ -33,26 +35,27 @@ services:
       retries: 15
       start_period: 5s
 
-  aegis-redis:
-    image: redis:7-alpine
-    container_name: aegis-redis
+  aegis-dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+    container_name: aegis-dragonfly
     restart: unless-stopped
-    # appendonly: persiste la cola en disco para que un reinicio no pierda blobs en vuelo.
-    command: ["redis-server", "--appendonly", "yes"]
+    # memlock ilimitado: Dragonfly bloquea memoria en RAM y lo exige para arrancar bien.
+    ulimits:
+      memlock: -1
+    # --dir /data + snapshot: Dragonfly guarda un snapshot en /data al parar (grácil) y cada
+    # 5 min, para que un reinicio no pierda los blobs en vuelo de la cola. (No usa appendonly;
+    # su durabilidad es por snapshot.)
+    command: ["--dir", "/data", "--dbfilename", "dump", "--snapshot_cron", "*/5 * * * *"]
     ports:
-      # Solo loopback: Redis nunca escucha en la red. 56379 evita chocar con un Redis nativo.
-      - "127.0.0.1:${REDIS_PORT:-56379}:6379"
+      # Solo loopback: Dragonfly nunca escucha en la red. Reusa REDIS_PORT (protocolo Redis).
+      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
     volumes:
-      - aegis-redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 3s
+      - aegis-dragonfly-data:/data
+    # La imagen ya trae HEALTHCHECK propio (/usr/local/bin/healthcheck.sh: nc PING al puerto),
+    # así que `docker compose up --wait` detecta "healthy" sin definirlo aquí.
 
 volumes:
   aegis-db-data:
     name: aegis-db-data
-  aegis-redis-data:
-    name: aegis-redis-data
+  aegis-dragonfly-data:
+    name: aegis-dragonfly-data
