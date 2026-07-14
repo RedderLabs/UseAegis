@@ -54,8 +54,60 @@ services:
     # La imagen ya trae HEALTHCHECK propio (/usr/local/bin/healthcheck.sh: nc PING al puerto),
     # así que `docker compose up --wait` detecta "healthy" sin definirlo aquí.
 
+  # --- Umami: analítica SOLO de la landing (opcional, opt-in) ---------------------------
+  # Bajo el perfil `umami`, así NO arranca con el flujo normal del relay (infra:up solo nombra
+  # aegis-db y aegis-dragonfly). Se levanta a mano para probar la analítica:
+  #   docker compose --profile umami up -d --wait aegis-umami
+  #   docker compose --profile umami down            # pararlo
+  # Panel en http://localhost:13001 (login inicial admin / umami — cámbialo). Ahí creas el
+  # website y copias su UUID a NEXT_PUBLIC_UMAMI_WEBSITE_ID.
+
+  aegis-umami-db:
+    image: postgres:16-alpine
+    container_name: aegis-umami-db
+    profiles: ["umami"]
+    restart: unless-stopped
+    # BBDD propia de Umami, AISLADA de la de auth (aegis-db). Sin puertos: solo la usa Umami
+    # dentro de la red de compose, nunca escucha en el host.
+    environment:
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami
+      POSTGRES_DB: umami
+    volumes:
+      - aegis-umami-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  aegis-umami:
+    image: ghcr.io/umami-software/umami:postgresql-v2.19.0
+    container_name: aegis-umami
+    profiles: ["umami"]
+    restart: unless-stopped
+    depends_on:
+      aegis-umami-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://umami:umami@aegis-umami-db:5432/umami
+      # APP_SECRET solo de dev: cifra sesiones/hashes de Umami. Cámbialo en producción.
+      APP_SECRET: aegis-umami-dev-secret-change-me
+    ports:
+      # Solo loopback. 13001 en el host → 3000 del contenedor (Umami escucha en 3000).
+      - "127.0.0.1:${UMAMI_PORT:-13001}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/heartbeat || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
 volumes:
   aegis-db-data:
     name: aegis-db-data
   aegis-dragonfly-data:
     name: aegis-dragonfly-data
+  aegis-umami-db-data:
+    name: aegis-umami-db-data
