@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Aegis — mensajería cifrada extremo a extremo. El servidor solo transporta ruido.",
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=20"
