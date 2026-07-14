@@ -6,7 +6,7 @@
 
 | Actor | Capacidad asumida |
 |---|---|
-| Operador del relay (Redder Labs) | Acceso total a su propia infraestructura (DB, logs, Redis) |
+| Operador del relay (Redder Labs) | Acceso total a su propia infraestructura (DB, logs, Dragonfly) |
 | ISP / red intermedia | Ve metadata de conexión (IP, timing, volumen), no contenido |
 | Estado / orden judicial contra el relay | Puede exigir logs, embargar servidor, forzar cooperación legal |
 | Peer malicioso en Modo B (P2P) | Puede participar en el store-and-forward, intentar correlacionar tráfico |

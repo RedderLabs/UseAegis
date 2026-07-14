@@ -42,14 +42,14 @@ Idéntica en los tres modos de transporte — el transporte nunca ve el contenid
 
 ## 4. Transporte A — Relay centralizado
 
-- Stack: Fastify + PostgreSQL + Redis + BullMQ (colas de entrega) + Docker Compose.
+- Stack: Fastify + PostgreSQL + Dragonfly + BullMQ (colas de entrega) + Docker Compose.
 - Rol del servidor: cola de blobs cifrados, sealed sender, sin acceso a claves privadas ni contenido en claro.
 - Uso por defecto: mejor latencia, entrega inmediata si ambos usuarios están online.
 - Punto débil aceptado: es un punto único operado por Redder Labs — puede ser bloqueado a nivel de red o presionado legalmente (aunque no tiene nada que entregar salvo blobs cifrados y metadata mínima).
 
 ### 4.1 Endpoint .onion (extensión del Modo A, no un modo nuevo)
 
-El relay expone un segundo punto de entrada como servicio onion v3, además del dominio clearnet habitual. No es un transporte distinto — es el mismo relay (Fastify + PostgreSQL + Redis + BullMQ), accesible por una ruta adicional resistente a bloqueo de DNS/IP.
+El relay expone un segundo punto de entrada como servicio onion v3, además del dominio clearnet habitual. No es un transporte distinto — es el mismo relay (Fastify + PostgreSQL + Dragonfly + BullMQ), accesible por una ruta adicional resistente a bloqueo de DNS/IP.
 
 **Por qué encaja sin fricción con la arquitectura existente**: un dominio `.onion` v3 se deriva matemáticamente de un par de claves Ed25519 (base32 de la clave pública + checksum + versión) — la misma primitiva que ya se usa para la identidad del usuario en la capa de identidad (§2). El daemon Tor puede importar una clave Ed25519 ya generada en vez de crear una nueva, así que el onion service hereda la misma disciplina de gestión de claves del resto del proyecto, en vez de introducir una identidad de infraestructura suelta y sin trazabilidad.
 
