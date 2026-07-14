@@ -9,7 +9,7 @@ import {
   publicKeyFromSeed,
   toBase64Url,
 } from "@/lib/crypto/ed25519";
-import { createKeystore } from "@/lib/crypto/identity-store";
+import { createKeystore, exportKeystore } from "@/lib/crypto/identity-store";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const MIN_PASSPHRASE = 8;
@@ -135,6 +135,26 @@ export default function RegisterPage() {
     a.click();
     URL.revokeObjectURL(url);
     addLog("> Exportación del código de recuperación: OK");
+  }
+
+  // Exporta el KEYSTORE CIFRADO a un fichero (p. ej. para guardarlo en un USB). A diferencia
+  // del código de recuperación (semilla en claro), esto es el blob ya cifrado con la
+  // passphrase: solo sirve junto con ella. Requiere haber confirmado (keystore ya creado).
+  async function downloadKeystore() {
+    if (!candidate) return;
+    try {
+      const json = await exportKeystore();
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `aegis-keystore-${candidate.fingerprint}.aegis-key.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addLog("> Exportación del keystore cifrado (USB): OK");
+    } catch (err) {
+      addLog(`> ERROR al exportar keystore: ${(err as Error).message}`);
+    }
   }
 
   return (
@@ -273,6 +293,14 @@ export default function RegisterPage() {
                 className="label text-muted-2 hover:text-accent transition-colors self-center"
               >
                 Regenerar identidad
+              </button>
+            )}
+            {confirmed && (
+              <button
+                onClick={downloadKeystore}
+                className="label text-muted hover:text-accent transition-colors self-center"
+              >
+                Exportar keystore cifrado a fichero (USB)
               </button>
             )}
           </div>
