@@ -1,0 +1,19 @@
+# Tor hidden service (.onion) del relay de Aegis — nodo.
+#
+# UNA sola instancia de Tor, contenedorizada. Alcanza el relay por NOMBRE de servicio
+# en la red interna de compose: aegis-relay:8443. Sobre .onion va HTTP plano: el cifrado
+# por capas de Tor ya protege el circuito (y el contenido va E2E con libsodium, aparte).
+
+Log notice stderr
+DataDirectory /var/lib/tor
+
+# El cliente web hace fetch a http://xxxxxxxx.onion (SIN puerto) → puerto virtual 80.
+# Tor lo reenvía al relay Fastify, que escucha en 8443 dentro de la red de Docker.
+# OJO: el servicio se llama `aegis-relay` en el compose real (no `relay`).
+HiddenServiceDir /var/lib/tor/aegis-relay
+HiddenServiceVersion 3
+HiddenServicePort 80 aegis-relay:8443
+
+# SOCKS en 0.0.0.0 DENTRO del contenedor para poder autocomprobar la .onion desde el host
+# (`curl --socks5-hostname`). El compose publica SOLO 127.0.0.1:9050 → nunca en la LAN.
+SocksPort 0.0.0.0:9050

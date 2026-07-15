@@ -78,32 +78,35 @@ ufw enable
 ## 3. Configurar Tor (hidden service)
 
 > **Una sola instancia de Tor.** No instales Tor con `apt` en el host: el hidden
-> service corre en el contenedor `tor` de la compose (§4). Ese contenedor comparte la
-> red `relay-net`, así que resuelve el nombre `relay` — un Tor nativo del host **no**
-> podría alcanzar `relay` (está en la red interna de Docker, sin puerto publicado).
+> service corre en el contenedor `aegis-tor` de la compose (§4). Ese contenedor comparte la
+> red interna de compose, así que resuelve el nombre `aegis-relay` — un Tor nativo del host
+> **no** podría alcanzarlo (está en la red interna de Docker, sin puerto publicado).
 
-Crea el fichero `torrc` **junto al `docker-compose.yml`** (se monta en el contenedor `tor`):
+El `torrc` y el `Dockerfile` de Tor **ya viven en el repo**, en `infra/tor/` (se montan/
+construyen desde el `docker-compose.yml` raíz, servicio `aegis-tor`). Contenido real de
+`infra/tor/torrc`:
 
 ```
-# ./torrc  (montado en el contenedor tor)
-HiddenServiceDir /var/lib/tor/aegis-relay/
-# El cliente hace fetch a http://xxxxxxxx.onion → puerto virtual 80 (HTTP plano).
-# Se reenvía al relay Fastify, que escucha en 8443 (ver apps/relay/.env → PORT=8443).
-HiddenServicePort 80 relay:8443
+HiddenServiceDir /var/lib/tor/aegis-relay
 HiddenServiceVersion 3
+# El cliente hace fetch a http://xxxxxxxx.onion → puerto virtual 80 (HTTP plano).
+# Se reenvía al relay Fastify, que escucha en 8443 dentro de la red de Docker.
+HiddenServicePort 80 aegis-relay:8443
 SocksPort 0.0.0.0:9050
 ```
 
 > - **Puerto virtual 80, no 443:** el cliente (`apps/web/lib/relay-client.ts`) apunta a
 >   `http://…onion` sin puerto → Tor usa el 80. Con 443 la conexión sería rechazada.
-> - **`relay:8443`:** `relay` es el nombre del servicio Fastify en la red de Docker (§4);
->   `8443` es el puerto real del relay (no 3000).
+> - **`aegis-relay:8443`:** `aegis-relay` es el nombre REAL del servicio Fastify en la red de
+>   Docker (no `relay`); `8443` es el puerto del relay (no 3000).
+> - La imagen de Tor se construye desde `infra/tor/Dockerfile` (Alpine oficial + `tor`, corre
+>   como usuario `tor` con el HiddenServiceDir en 700, sin entrypoints mágicos de terceros).
 
-Levanta la compose (§4) y obtén la dirección `.onion` desde el volumen del contenedor:
+Levanta la compose (§4) y obtén la dirección `.onion` desde el volumen del contenedor
+(persistido en `aegis-tor-data` → la `.onion` NO cambia entre reinicios):
 
 ```bash
-docker compose up -d tor
-docker compose exec tor cat /var/lib/tor/aegis-relay/hostname
+docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-relay/hostname
 ```
 
 Guarda esa dirección — es la que la app usará cuando el usuario active el switch de privacidad
@@ -113,110 +116,56 @@ Guarda esa dirección — es la que la app usará cuando el usuario active el sw
 
 ## 4. docker-compose.yml del nodo
 
-```yaml
-services:
-  tor:
-    image: dperson/torproxy
-    volumes:
-      - ./torrc:/etc/tor/torrc          # define el hidden service (§3)
-      - tor-data:/var/lib/tor           # persiste HiddenServiceDir → la .onion no cambia
-    ports:
-      - "127.0.0.1:9050:9050"           # SOCKS solo en localhost, para probar la .onion (§5)
-    networks:
-      - relay-net
-    restart: unless-stopped
+**No hay un compose aparte para el nodo.** Se usa el `docker-compose.yml` de la raíz del repo
+(el mismo de dev), y los servicios del nodo —`aegis-relay`, `aegis-tor`, `aegis-caddy`— están
+bajo el **perfil opt-in `node`**, así que NO arrancan en desarrollo. `aegis-db` y
+`aegis-dragonfly` no tienen perfil (son base). Nombres reales de servicio:
 
-  relay:
-    build: ./relay
-    environment:
-      - DATABASE_URL=postgresql://aegis:pass@postgres:5432/aegis
-      # Dragonfly habla protocolo Redis → la var sigue siendo REDIS_URL (redis://).
-      - REDIS_URL=redis://dragonfly:6379
-      - NODE_ENV=production
-      # HOST=0.0.0.0 es OBLIGATORIO en Docker: por defecto el relay bindea a
-      # 127.0.0.1 (apps/relay/src/config.ts) y Caddy/Tor —en otros contenedores—
-      # no podrían alcanzarlo. PORT debe coincidir con el destino de Caddy y torrc.
-      - HOST=0.0.0.0
-      - PORT=8443
-    networks:
-      - relay-net
-    restart: unless-stopped
-    # sin "ports:" hacia el host — solo accesible vía Caddy (clearnet) o Tor (.onion)
+| Servicio | Perfil | Rol | Puerto host |
+|---|---|---|---|
+| `aegis-db` | (base) | Postgres 16 (auth) | `127.0.0.1:15432` |
+| `aegis-dragonfly` | (base) | Cola de blobs (RESP) | `127.0.0.1:16379` |
+| `aegis-relay` | `node` | Fastify (`HOST=0.0.0.0 PORT=8443`) | `127.0.0.1:8443` |
+| `aegis-tor` | `node` | Hidden service `.onion` (`infra/tor`) | `127.0.0.1:9050` (SOCKS) |
+| `aegis-caddy` | `node` | TLS + reverse proxy clearnet (`infra/caddy`) | `80`, `443` |
 
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "443:443"
-      - "80:80"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-    networks:
-      - relay-net
-    restart: unless-stopped
+> - Los servicios se resuelven entre sí por **nombre** en la red por defecto de compose
+>   (`aegis_default` en el nodo). Por eso `aegis-tor`/`aegis-caddy` llegan a `aegis-relay:8443`
+>   sin publicar ese puerto.
+> - `aegis-relay` publica `127.0.0.1:8443` SOLO para `curl` local; en clearnet real entra por
+>   Caddy y Tor lo alcanza por la red interna.
+> - Nota memlock de Dragonfly en LXC no privilegiado: ver la cabecera del `docker-compose.yml`
+>   (se quitó `ulimits: memlock: -1`, rompía en el LXC). Para subirlo, `lxc.prlimit.memlock`
+>   host-side en la config del CT.
 
-  postgres:
-    image: postgres:16
-    environment:
-      - POSTGRES_USER=aegis
-      - POSTGRES_PASSWORD=pass
-      - POSTGRES_DB=aegis
-    volumes:
-      - pg-data:/var/lib/postgresql/data
-    networks:
-      - relay-net
-    restart: unless-stopped
-    # sin "ports:" expuesto
-
-  dragonfly:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
-    # Dragonfly bloquea memoria en RAM y exige memlock ilimitado para arrancar bien.
-    ulimits:
-      memlock: -1
-    # Durabilidad por snapshot (no appendonly): guarda en /data al parar y cada 5 min.
-    command: ["--dir", "/data", "--dbfilename", "dump", "--snapshot_cron", "*/5 * * * *"]
-    volumes:
-      - dragonfly-data:/data
-    networks:
-      - relay-net
-    restart: unless-stopped
-    # sin "ports:" expuesto
-
-networks:
-  relay-net:
-
-volumes:
-  tor-data:
-  caddy-data:
-  pg-data:
-  dragonfly-data:
-```
-
-`Caddyfile` (clearnet, dominio local de pruebas):
+`infra/caddy/Caddyfile` (clearnet, dominio local de pruebas):
 
 ```
 relay.aegis.local {
-    reverse_proxy relay:8443
-    tls internal
+	reverse_proxy aegis-relay:8443
+	tls internal
 }
 ```
 
 > `tls internal` genera un certificado autofirmado válido para pruebas en red local.
 > Añade `relay.aegis.local` a tu `/etc/hosts` en el equipo cliente apuntando a la IP del LXC.
+> En producción: dominio real + quitar `tls internal` (Let's Encrypt automático).
 
-Levantar todo:
+Levantar TODO el nodo (construye relay y tor, arranca los 5):
 
 ```bash
-docker compose up -d
-docker compose ps
-curl -k https://relay.aegis.local/health   # prueba clearnet
+cd ~/Aegis            # la carpeta del repo clonado (no proyecto-Aegis)
+git pull              # trae infra/tor, infra/caddy y el compose actualizado
+docker compose --profile node up -d --build
+docker compose --profile node ps
+curl -sk https://relay.aegis.local/health   # prueba clearnet vía Caddy (o -k con la IP del LXC)
 ```
 
 ---
 
 ## 5. Verificar el hidden service desde fuera
 
-Desde cualquier máquina con Tor instalado (o el propio LXC):
+Desde el propio LXC (usa el SOCKS del contenedor `aegis-tor`, publicado en loopback):
 
 ```bash
 curl --socks5-hostname 127.0.0.1:9050 http://TU_DIRECCION.onion/health
@@ -252,12 +201,12 @@ async function getRelayEndpoint(privacyMode: boolean): Promise<string> {
 ## 7. Logs y depuración
 
 ```bash
-# Tor
-journalctl -u tor -f
+# Tor (contenedorizado; NO hay tor nativo → nada de journalctl -u tor)
+docker compose --profile node logs -f aegis-tor
 
-# Docker
-docker compose logs -f relay
-docker compose logs -f tor
+# Relay / Caddy
+docker compose --profile node logs -f aegis-relay
+docker compose --profile node logs -f aegis-caddy
 ```
 
 > Importante: no mezclar logs de acceso clearnet y `.onion` en el mismo archivo,
@@ -269,11 +218,11 @@ docker compose logs -f tor
 
 - [ ] LXC creado y accesible por `pct enter 200`
 - [ ] Docker funcionando dentro del LXC (`nesting=1` activo)
-- [ ] `docker compose ps` muestra los 5 servicios `Up`
-- [ ] `curl -k https://relay.aegis.local/health` responde OK (modo clearnet)
-- [ ] `docker compose exec tor cat /var/lib/tor/aegis-relay/hostname` devuelve una dirección `.onion` v3
+- [ ] `docker compose --profile node ps` muestra los 5 servicios `Up`
+- [ ] `curl -k https://relay.aegis.local/health` responde OK (modo clearnet vía Caddy)
+- [ ] `docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-relay/hostname` devuelve una dirección `.onion` v3
 - [ ] `curl --socks5-hostname 127.0.0.1:9050 http://TU_ONION/health` responde OK (modo Tor)
-- [ ] Postgres y Dragonfly **no** tienen puertos publicados al host (`docker compose config` para revisar)
+- [ ] Postgres y Dragonfly solo publican en `127.0.0.1` (`docker compose --profile node config` para revisar)
 - [ ] Switch en la app cambia correctamente entre ambos endpoints
 
 ---

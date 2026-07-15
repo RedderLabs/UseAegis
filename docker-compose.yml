@@ -88,6 +88,47 @@ services:
       # este puerto público); Tor tampoco lo necesita (alcanza aegis-relay:8443 por la red interna).
       - "127.0.0.1:8443:8443"
 
+  # --- Tor: hidden service .onion del relay (nodo, perfil "node") -----------------------
+  # Publica el relay como .onion v3. Construye una imagen mínima de Alpine + tor (infra/tor).
+  # El torrc (infra/tor/torrc) define HiddenServicePort 80 → aegis-relay:8443 y lo alcanza por
+  # nombre de servicio en la red interna de compose. La .onion se persiste en el volumen
+  # aegis-tor-data → NO cambia entre reinicios. Obtén la dirección con:
+  #   docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-relay/hostname
+  # y cópiala a NEXT_PUBLIC_RELAY_ONION_URL de la web.
+  aegis-tor:
+    build:
+      context: ./infra/tor
+    container_name: aegis-tor
+    profiles: ["node"]
+    restart: unless-stopped
+    depends_on:
+      - aegis-relay
+    volumes:
+      - ./infra/tor/torrc:/etc/tor/torrc:ro
+      - aegis-tor-data:/var/lib/tor
+    ports:
+      # SOCKS solo en loopback del host, para autocomprobar la .onion (curl --socks5-hostname).
+      - "127.0.0.1:9050:9050"
+
+  # --- Caddy: puerta clearnet (TLS + reverse proxy) (nodo, perfil "node") ---------------
+  # Termina TLS de cara al cliente y proxya al relay por la red interna (aegis-relay:8443).
+  # Config en infra/caddy/Caddyfile (pruebas: relay.aegis.local + tls internal; prod: dominio
+  # real sin `tls internal` → Let's Encrypt automático).
+  aegis-caddy:
+    image: caddy:2-alpine
+    container_name: aegis-caddy
+    profiles: ["node"]
+    restart: unless-stopped
+    depends_on:
+      - aegis-relay
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - aegis-caddy-data:/data
+      - aegis-caddy-config:/config
+
   # --- Umami: analítica SOLO de la landing (opcional, opt-in) ---------------------------
   # Bajo el perfil `umami`, así NO arranca con el flujo normal del relay (infra:up solo nombra
   # aegis-db y aegis-dragonfly). Se levanta a mano para probar la analítica:
@@ -143,5 +184,11 @@ volumes:
     name: aegis-db-data
   aegis-dragonfly-data:
     name: aegis-dragonfly-data
+  aegis-tor-data:
+    name: aegis-tor-data
+  aegis-caddy-data:
+    name: aegis-caddy-data
+  aegis-caddy-config:
+    name: aegis-caddy-config
   aegis-umami-db-data:
     name: aegis-umami-db-data
