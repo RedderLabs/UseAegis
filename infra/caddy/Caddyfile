@@ -1,15 +1,28 @@
 # Caddy — puerta CLEARNET del relay (TLS + reverse proxy), nodo.
 #
-# Pruebas en LAN: dominio local `relay.aegis.local` con certificado autofirmado
-# (`tls internal`). Añade `relay.aegis.local` al /etc/hosts (o hosts de Windows) del
-# equipo cliente apuntando a la IP del LXC.
+# Config PARAMETRIZADA por variables de entorno (las pasa el docker-compose.yml al
+# contenedor, leídas del `.env` del nodo). El MISMO fichero sirve para pruebas locales
+# y para producción con Let's Encrypt — sin editar el repo ni reconstruir la imagen:
 #
-# PRODUCCIÓN: sustituye `relay.aegis.local` por el dominio real (p. ej. relay.aegis.app)
-# y QUITA la línea `tls internal` → Caddy pedirá un certificado a Let's Encrypt solo.
+#   RELAY_DOMAIN  dominio del sitio        (default: relay.aegis.local)
+#   RELAY_TLS     modo TLS                 (default: internal)
+#
+# PRUEBAS EN LAN (defaults):
+#   RELAY_DOMAIN=relay.aegis.local + RELAY_TLS=internal → certificado autofirmado
+#   (`tls internal`). Añade `relay.aegis.local` al /etc/hosts (o hosts de Windows) del
+#   equipo cliente apuntando a la IP del LXC.
+#
+# PRODUCCIÓN (Let's Encrypt automático):
+#   En el `.env` del nodo pon el dominio real y tu email de contacto ACME, p. ej.:
+#     RELAY_DOMAIN=relay.aegis.app
+#     RELAY_TLS=admin@aegis.app
+#   `tls <email>` activa el TLS automático de Caddy (Let's Encrypt) y usa ese correo
+#   para los avisos de caducidad. REQUISITOS: registro DNS A del dominio → IP pública del
+#   nodo, y puertos 80/443 alcanzables desde internet (Caddy resuelve el reto ACME por el 80).
 #
 # El relay escucha HTTP plano en 8443 dentro de la red de compose; Caddy termina el TLS
 # de cara al cliente y proxya en claro por la red interna (nunca sale del LXC).
-relay.aegis.local {
+{$RELAY_DOMAIN:relay.aegis.local} {
 	reverse_proxy aegis-relay:8443
-	tls internal
+	tls {$RELAY_TLS:internal}
 }
