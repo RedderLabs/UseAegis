@@ -16,7 +16,7 @@
     "web": "pnpm --filter @aegis/web"
   },
   "devDependencies": {
-    "turbo": "^2.3.3",
+    "turbo": "^2.10.5",
     "typescript": "^5.7.2"
   }
 }
