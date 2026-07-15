@@ -5,10 +5,9 @@ FROM alpine:3.21
 
 RUN apk add --no-cache tor su-exec
 
-# Arranque (sin script aparte para no depender de bits de ejecución ni CRLF en Windows):
-#   1. Crea el HiddenServiceDir dentro del volumen persistido (/var/lib/tor).
-#   2. Lo pone en propiedad del usuario `tor` con permisos 700 —que Tor EXIGE— tanto en
-#      el DataDirectory como en el HiddenServiceDir.
-#   3. Baja privilegios con su-exec y corre Tor como `tor` (no como root).
-# El torrc se monta read-only desde ./infra/tor/torrc (ver docker-compose.yml).
-ENTRYPOINT ["/bin/sh", "-c", "mkdir -p /var/lib/tor/aegis-relay && chown -R tor:tor /var/lib/tor && chmod 700 /var/lib/tor /var/lib/tor/aegis-relay && exec su-exec tor tor -f /etc/tor/torrc"]
+# El arranque lo hace entrypoint.sh: fija permisos (tor:tor, 700), resuelve aegis-relay a
+# su IP (Tor NO acepta nombres DNS en HiddenServicePort), reescribe el torrc y baja
+# privilegios a `tor`. El torrc se monta read-only desde ./infra/tor/torrc (docker-compose.yml).
+# Se invoca con `sh <script>` para no depender del bit de ejecución en el checkout.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]

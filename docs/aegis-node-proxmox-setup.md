@@ -99,6 +99,10 @@ SocksPort 0.0.0.0:9050
 >   `http://…onion` sin puerto → Tor usa el 80. Con 443 la conexión sería rechazada.
 > - **`aegis-relay:8443`:** `aegis-relay` es el nombre REAL del servicio Fastify en la red de
 >   Docker (no `relay`); `8443` es el puerto del relay (no 3000).
+> - **OJO — Tor no resuelve DNS en `HiddenServicePort`** (exige una IP literal). Por eso el
+>   `entrypoint.sh` del contenedor resuelve `aegis-relay` a su IP de la red de Docker al
+>   arrancar y reescribe una copia del torrc antes de lanzar Tor. El fichero del repo se deja
+>   con el nombre de servicio (legible/portable); la sustitución a IP es en tiempo de arranque.
 > - La imagen de Tor se construye desde `infra/tor/Dockerfile` (Alpine oficial + `tor`, corre
 >   como usuario `tor` con el HiddenServiceDir en 700, sin entrypoints mágicos de terceros).
 
