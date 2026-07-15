@@ -112,8 +112,10 @@ services:
 
   # --- Caddy: puerta clearnet (TLS + reverse proxy) (nodo, perfil "node") ---------------
   # Termina TLS de cara al cliente y proxya al relay por la red interna (aegis-relay:8443).
-  # Config en infra/caddy/Caddyfile (pruebas: relay.aegis.local + tls internal; prod: dominio
-  # real sin `tls internal` → Let's Encrypt automático).
+  # Config en infra/caddy/Caddyfile, PARAMETRIZADA por env: RELAY_DOMAIN + RELAY_TLS.
+  #   Pruebas (defaults): relay.aegis.local + tls internal (certificado autofirmado).
+  #   Producción: RELAY_DOMAIN=tu-dominio + RELAY_TLS=tu-email → Let's Encrypt automático.
+  # Requisitos LE: DNS A del dominio → IP pública del nodo y puertos 80/443 abiertos.
   aegis-caddy:
     image: caddy:2-alpine
     container_name: aegis-caddy
@@ -121,6 +123,11 @@ services:
     restart: unless-stopped
     depends_on:
       - aegis-relay
+    environment:
+      # Caddy sustituye {$RELAY_DOMAIN}/{$RELAY_TLS} en el Caddyfile con estos valores.
+      # Se leen del `.env` del nodo; si no están, quedan los defaults de pruebas locales.
+      RELAY_DOMAIN: ${RELAY_DOMAIN:-relay.aegis.local}
+      RELAY_TLS: ${RELAY_TLS:-internal}
     ports:
       - "80:80"
       - "443:443"

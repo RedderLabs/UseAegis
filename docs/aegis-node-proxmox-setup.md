@@ -142,18 +142,35 @@ bajo el **perfil opt-in `node`**, así que NO arrancan en desarrollo. `aegis-db`
 >   (se quitó `ulimits: memlock: -1`, rompía en el LXC). Para subirlo, `lxc.prlimit.memlock`
 >   host-side en la config del CT.
 
-`infra/caddy/Caddyfile` (clearnet, dominio local de pruebas):
+`infra/caddy/Caddyfile` está **parametrizado por variables de entorno** (`RELAY_DOMAIN`,
+`RELAY_TLS`), que Caddy recibe desde el `docker-compose.yml` (leídas del `.env` del nodo).
+El mismo fichero sirve para pruebas y producción sin editarlo ni reconstruir la imagen:
 
 ```
-relay.aegis.local {
+{$RELAY_DOMAIN:relay.aegis.local} {
 	reverse_proxy aegis-relay:8443
-	tls internal
+	tls {$RELAY_TLS:internal}
 }
 ```
 
-> `tls internal` genera un certificado autofirmado válido para pruebas en red local.
-> Añade `relay.aegis.local` a tu `/etc/hosts` en el equipo cliente apuntando a la IP del LXC.
-> En producción: dominio real + quitar `tls internal` (Let's Encrypt automático).
+**Pruebas en LAN (defaults, sin tocar nada):** `relay.aegis.local` + `tls internal` →
+certificado autofirmado. Añade `relay.aegis.local` al `/etc/hosts` del equipo cliente
+apuntando a la IP del LXC.
+
+**Producción (Let's Encrypt automático):** en el `.env` del nodo pon el dominio real y tu
+email de contacto ACME, y reinicia solo Caddy:
+
+```bash
+# .env del nodo
+RELAY_DOMAIN=relay.aegis.app
+RELAY_TLS=admin@aegis.app
+
+docker compose --profile node up -d aegis-caddy   # relee env y reprovisiona el cert
+```
+
+> `tls <email>` activa el HTTPS automático de Caddy (Let's Encrypt) y usa ese correo para
+> los avisos de caducidad. **Requisitos:** registro DNS A del dominio → IP pública del nodo,
+> y puertos 80/443 alcanzables desde internet (Caddy resuelve el reto ACME por el 80).
 
 Levantar TODO el nodo (construye relay y tor, arranca los 5):
 
@@ -234,6 +251,8 @@ docker compose --profile node logs -f aegis-caddy
 ## 9. Siguientes pasos (fuera de este documento)
 
 - Migrar este mismo `docker-compose.yml` + `torrc` a la VPS (Njalla / 1984 Hosting) para producción 24/7.
-- Sustituir el dominio de pruebas `relay.aegis.local` por el dominio real de producción con Let's Encrypt.
+- Adquirir el dominio real y apuntar su DNS a la IP pública del nodo; luego rellenar
+  `RELAY_DOMAIN` + `RELAY_TLS` en el `.env` (Caddy ya está listo para emitir el cert de
+  Let's Encrypt automáticamente, ver §4).
 - Integrar Arti (Tor en Rust) en `packages/crypto-core` para el modo Tor embebido en la app.
 - Definir política de fallback automático (clearnet bloqueado → `.onion` sin intervención manual).
