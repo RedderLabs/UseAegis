@@ -1,0 +1,6 @@
+# Ficheros que se ejecutan/parsean en Linux dentro de contenedores: forzar LF SIEMPRE.
+# Sin esto, autocrlf de Windows puede meter CRLF y romper Tor/Caddy/sh (un `\r` sobrante
+# hace, p. ej., que Tor no parsee la dirección del HiddenServicePort).
+infra/** text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
