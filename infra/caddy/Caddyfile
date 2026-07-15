@@ -1,28 +1,40 @@
-# Caddy — puerta CLEARNET del relay (TLS + reverse proxy), nodo.
+# Caddy — reverse proxy del nodo. Sirve la WEB y enruta /api al RELAY bajo el MISMO origen
+# (same-origin → sin CORS), por las DOS puertas: clearnet (TLS) y .onion (HTTP plano; Tor cifra).
 #
-# Config PARAMETRIZADA por variables de entorno (las pasa el docker-compose.yml al
-# contenedor, leídas del `.env` del nodo). El MISMO fichero sirve para pruebas locales
-# y para producción con Let's Encrypt — sin editar el repo ni reconstruir la imagen:
+# Parametrizado por env (compose → .env del nodo):
+#   WEB_DOMAIN / WEB_TLS      dominio+TLS de la puerta CLEARNET de la web (def: aegis.local / internal)
+#   RELAY_DOMAIN / RELAY_TLS  dominio+TLS del acceso DIRECTO al relay, solo debug (def: relay.aegis.local / internal)
 #
-#   RELAY_DOMAIN  dominio del sitio        (default: relay.aegis.local)
-#   RELAY_TLS     modo TLS                 (default: internal)
-#
-# PRUEBAS EN LAN (defaults):
-#   RELAY_DOMAIN=relay.aegis.local + RELAY_TLS=internal → certificado autofirmado
-#   (`tls internal`). Añade `relay.aegis.local` al /etc/hosts (o hosts de Windows) del
-#   equipo cliente apuntando a la IP del LXC.
-#
-# PRODUCCIÓN (Let's Encrypt automático):
-#   En el `.env` del nodo pon el dominio real y tu email de contacto ACME, p. ej.:
-#     RELAY_DOMAIN=relay.aegis.app
-#     RELAY_TLS=admin@aegis.app
-#   `tls <email>` activa el TLS automático de Caddy (Let's Encrypt) y usa ese correo
-#   para los avisos de caducidad. REQUISITOS: registro DNS A del dominio → IP pública del
-#   nodo, y puertos 80/443 alcanzables desde internet (Caddy resuelve el reto ACME por el 80).
-#
-# El relay escucha HTTP plano en 8443 dentro de la red de compose; Caddy termina el TLS
-# de cara al cliente y proxya en claro por la red interna (nunca sale del LXC).
-{$RELAY_DOMAIN:relay.aegis.local} {
+# PRUEBAS (defaults): aegis.local + tls internal (autofirmado). Añade `aegis.local` al /etc/hosts
+# del cliente apuntando a la IP del LXC.
+# PRODUCCIÓN: WEB_DOMAIN=aegis.app + WEB_TLS=admin@aegis.app → Let's Encrypt automático (DNS A → IP
+# pública + 80/443 abiertos).
+
+# Enrutado común de la app: /api/* → relay (quita el prefijo /api); todo lo demás → web Next.
+(app) {
+	handle_path /api/* {
+		reverse_proxy aegis-relay:8443
+	}
+	handle {
+		reverse_proxy aegis-web:3000
+	}
+}
+
+# Puerta CLEARNET de la web (solo HTTPS). El scheme https:// explícito evita el redirect :80,
+# que dejamos libre para la .onion.
+https://{$WEB_DOMAIN:aegis.local} {
+	import app
+	tls {$WEB_TLS:internal}
+}
+
+# Puerta .onion de la web: el hidden service de Tor reenvía a Caddy en :80 (HTTP plano; el cifrado
+# por capas de Tor ya protege el circuito). Este bloque atiende el Host .onion que llega por el 80.
+http://:80 {
+	import app
+}
+
+# Acceso DIRECTO al relay por clearnet (SOLO debug; la app usa /api same-origin). Autofirmado.
+https://{$RELAY_DOMAIN:relay.aegis.local} {
 	reverse_proxy aegis-relay:8443
 	tls {$RELAY_TLS:internal}
 }

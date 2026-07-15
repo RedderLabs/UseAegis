@@ -22,9 +22,10 @@ import {
 import {
   authenticate,
   fetchMe,
+  isOnionSession,
   publishPrekey,
   RelayError,
-  TOR_SESSION_NOTICE,
+  WEB_ONION_URL,
 } from "@/lib/relay-client";
 
 const MIN_PASSPHRASE = 8;
@@ -46,9 +47,11 @@ function describeError(err: unknown): string {
 export default function LoginPage() {
   const router = useRouter();
   const [status, setStatus] = useState<KeystoreStatus | null>(null);
-  const [secure, setSecure] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Puerta actual (.onion vs clearnet), derivada del origen. Se fija en un effect para no
+  // provocar mismatch de hidratación (en SSR window no existe → arranca en clearnet).
+  const [onion, setOnion] = useState(false);
 
   // Campos del formulario (según el estado del keystore).
   const [passphrase, setPassphrase] = useState("");
@@ -70,20 +73,19 @@ export default function LoginPage() {
       .catch(() => setStatus({ state: "empty" }));
   }, []);
 
-  // El favicon refleja el estado: verde = sesión segura, ámbar = poco segura.
+  // La PUERTA por la que se sirve la web (.onion vs clearnet) determina el modo y el favicon:
+  // verde en .onion (protegida), ámbar en clearnet. No hay toggle del usuario.
   useEffect(() => {
-    setFaviconSecure(secure);
-  }, [secure]);
-  useEffect(() => {
-    return () => setFaviconSecure(true);
+    const isOnion = isOnionSession();
+    setOnion(isOnion);
+    setFaviconSecure(isOnion);
   }, []);
 
   /** Autentica con la semilla ya desbloqueada, abre sesión y publica la prekey si falta. */
   async function finishLogin(identity: IdentityInfo) {
-    const session = await authenticate(identity.publicKeyB64, signWithUnlockedIdentity, secure);
+    const session = await authenticate(identity.publicKeyB64, signWithUnlockedIdentity);
     startSession({
       id: identity.fingerprint,
-      secure,
       token: session.token,
       publicKey: session.identity.publicKey,
       expiresAt: session.expiresAt,
@@ -91,22 +93,17 @@ export default function LoginPage() {
     // Publica el material de acuerdo de clave (prekey X25519 firmada) si aún no hay uno.
     // Best-effort: si falla, se puede publicar luego desde el panel — no bloquea el acceso.
     try {
-      const me = await fetchMe(session.token, secure);
+      const me = await fetchMe(session.token);
       if (!me.hasPrekey) {
         const pk = await buildSignedPrekey();
-        await publishPrekey(
-          session.token,
-          {
-            x25519PublicKey: toBase64Url(pk.x25519PublicKey),
-            signature: toBase64Url(pk.signature),
-          },
-          secure,
-        );
+        await publishPrekey(session.token, {
+          x25519PublicKey: toBase64Url(pk.x25519PublicKey),
+          signature: toBase64Url(pk.signature),
+        });
       }
     } catch {
       /* el material de contacto se puede publicar más tarde */
     }
-    setFaviconSecure(secure);
     router.push("/panel");
   }
 
@@ -194,38 +191,35 @@ export default function LoginPage() {
     }
   }
 
-  const secureToggle = (
-    <div className="pt-1 space-y-2">
-      <button
-        type="button"
-        onClick={() => setSecure((s) => !s)}
-        className="w-full flex items-center justify-between"
-      >
-        <span className="flex flex-col text-left">
-          <span className="label text-text">Sesión segura (.onion)</span>
-          <span className="font-mono text-[10px] text-muted-2">
-            Enruta el relay por Tor · borra la caché local al salir
-          </span>
-        </span>
-        <span
-          className={`relative w-11 h-6 rounded-full border transition-colors ${
-            secure ? "bg-accent/20 border-accent/40" : "bg-surface-2 border-line"
-          }`}
-        >
-          <span
-            className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
-            style={{
-              backgroundColor: secure ? "#c3f400" : "#8e9379",
-              transform: secure ? "translateX(20px)" : "none",
-            }}
-          />
-        </span>
-      </button>
-      {secure && (
-        <p className="font-mono text-[10px] leading-relaxed text-muted-2 border-l-2 border-accent/40 pl-2">
-          {TOR_SESSION_NOTICE}
-        </p>
-      )}
+  // Indicador de la PUERTA actual (no un control): el transporte lo decide el origen por el que
+  // entras. En clearnet, si conocemos la .onion, invitamos a usarla ante censura/anonimato.
+  const gatewayInfo = onion ? (
+    <div className="pt-1 flex items-start gap-2 rounded-sm border border-accent/30 bg-accent/5 px-3 py-2">
+      <span
+        className="mt-[3px] w-1.5 h-1.5 rounded-full shrink-0"
+        style={{ backgroundColor: "#c3f400", boxShadow: "0 0 8px #c3f400" }}
+      />
+      <p className="font-mono text-[10px] leading-relaxed text-muted-2">
+        <span className="text-accent">Puerta protegida .onion</span> — el tráfico va por Tor y tu
+        IP no es visible para el relay.
+      </p>
+    </div>
+  ) : (
+    <div className="pt-1 flex items-start gap-2 rounded-sm border border-line px-3 py-2">
+      <span
+        className="mt-[3px] w-1.5 h-1.5 rounded-full shrink-0"
+        style={{ backgroundColor: "#fbbf24" }}
+      />
+      <p className="font-mono text-[10px] leading-relaxed text-muted-2">
+        <span className="text-text">Puerta normal (clearnet)</span> — tu IP es visible para el relay.
+        {WEB_ONION_URL && (
+          <>
+            {" "}
+            Si hay censura o quieres anonimato, abre nuestra{" "}
+            <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
+          </>
+        )}
+      </p>
     </div>
   );
 
@@ -361,7 +355,7 @@ export default function LoginPage() {
                   </span>
                 </button>
 
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -411,7 +405,7 @@ export default function LoginPage() {
                 </div>
 
                 {passphraseInput("Passphrase", true)}
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -445,7 +439,7 @@ export default function LoginPage() {
 
                 {passphraseInput("Nueva passphrase", true)}
                 {confirmInput}
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -479,7 +473,7 @@ export default function LoginPage() {
                 </div>
                 {passphraseInput("Passphrase para proteger esta identidad")}
                 {confirmInput}
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>

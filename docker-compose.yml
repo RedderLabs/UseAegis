@@ -88,21 +88,46 @@ services:
       # este puerto público); Tor tampoco lo necesita (alcanza aegis-relay:8443 por la red interna).
       - "127.0.0.1:8443:8443"
 
-  # --- Tor: hidden service .onion del relay (nodo, perfil "node") -----------------------
-  # Publica el relay como .onion v3. Construye una imagen mínima de Alpine + tor (infra/tor).
-  # El torrc (infra/tor/torrc) define HiddenServicePort 80 → aegis-relay:8443 y lo alcanza por
-  # nombre de servicio en la red interna de compose. La .onion se persiste en el volumen
-  # aegis-tor-data → NO cambia entre reinicios. Obtén la dirección con:
+  # --- Web (Next.js) en Docker (nodo, perfil "node") ------------------------------------
+  # Sirve la app web compilada; la alcanzan Caddy (clearnet) y Tor (.onion) por la red interna
+  # (aegis-web:3000). El cliente habla con el relay como /api RELATIVO (same-origin) → Caddy enruta
+  # /api al relay. Las NEXT_PUBLIC_* se INCRUSTAN en build-time, por eso van como build args.
+  aegis-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # URL de la .onion de la WEB, para el enlace "abre nuestra .onion" desde la puerta clearnet.
+        # Se obtiene tras el 1er arranque de Tor (cat .../aegis-web/hostname) → ponla en el .env y
+        # reconstruye: docker compose --profile node up -d --build aegis-web.
+        NEXT_PUBLIC_WEB_ONION_URL: ${NEXT_PUBLIC_WEB_ONION_URL:-}
+    container_name: aegis-web
+    profiles: ["node"]
+    restart: unless-stopped
+    environment:
+      # Red de seguridad: en el nodo Caddy intercepta /api antes que Next, pero si algún /api
+      # llegara a Next, el rewrite lo manda al relay por la red interna (no a 127.0.0.1:8443).
+      RELAY_ORIGIN: http://aegis-relay:8443
+    depends_on:
+      - aegis-relay
+
+  # --- Tor: hidden services .onion (nodo, perfil "node") --------------------------------
+  # DOS hidden services v3 (imagen mínima Alpine + tor, infra/tor):
+  #   1) aegis-relay → API del relay directa (aegis-relay:8443), para clientes nativos/directos.
+  #   2) aegis-web   → puerta .onion de la WEB → aegis-caddy:80 (Caddy sirve web + /api→relay).
+  # Se persisten en el volumen aegis-tor-data → las .onion NO cambian entre reinicios. Direcciones:
   #   docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-relay/hostname
-  # y cópiala a NEXT_PUBLIC_RELAY_ONION_URL de la web.
+  #   docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-web/hostname
   aegis-tor:
     build:
       context: ./infra/tor
     container_name: aegis-tor
     profiles: ["node"]
     restart: unless-stopped
+    # Depende de Caddy (la .onion de la web apunta a Caddy) y, transitivamente, del relay y la web.
+    # El entrypoint resuelve aegis-relay y aegis-caddy a IP (Tor no acepta nombres en HiddenServicePort).
     depends_on:
-      - aegis-relay
+      - aegis-caddy
     volumes:
       - ./infra/tor/torrc:/etc/tor/torrc:ro
       - aegis-tor-data:/var/lib/tor
@@ -113,12 +138,12 @@ services:
     #   docker compose --profile node exec aegis-tor \
     #     curl --socks5-hostname 127.0.0.1:9050 http://<tu-onion>/health
 
-  # --- Caddy: puerta clearnet (TLS + reverse proxy) (nodo, perfil "node") ---------------
-  # Termina TLS de cara al cliente y proxya al relay por la red interna (aegis-relay:8443).
-  # Config en infra/caddy/Caddyfile, PARAMETRIZADA por env: RELAY_DOMAIN + RELAY_TLS.
-  #   Pruebas (defaults): relay.aegis.local + tls internal (certificado autofirmado).
-  #   Producción: RELAY_DOMAIN=tu-dominio + RELAY_TLS=tu-email → Let's Encrypt automático.
-  # Requisitos LE: DNS A del dominio → IP pública del nodo y puertos 80/443 abiertos.
+  # --- Caddy: reverse proxy de las dos puertas (nodo, perfil "node") --------------------
+  # Sirve la WEB y enruta /api al RELAY bajo el MISMO origen (same-origin, sin CORS), por clearnet
+  # (TLS) y por la .onion (HTTP en :80; Tor cifra). Config en infra/caddy/Caddyfile, parametrizada:
+  #   WEB_DOMAIN/WEB_TLS      puerta clearnet de la WEB (def: aegis.local / internal autofirmado)
+  #   RELAY_DOMAIN/RELAY_TLS  acceso directo al relay, solo debug (def: relay.aegis.local / internal)
+  #   Producción: WEB_DOMAIN=aegis.app + WEB_TLS=tu-email → Let's Encrypt (DNS A → IP pública, 80/443).
   aegis-caddy:
     image: caddy:2-alpine
     container_name: aegis-caddy
@@ -126,9 +151,12 @@ services:
     restart: unless-stopped
     depends_on:
       - aegis-relay
+      - aegis-web
     environment:
-      # Caddy sustituye {$RELAY_DOMAIN}/{$RELAY_TLS} en el Caddyfile con estos valores.
+      # Caddy sustituye {$WEB_DOMAIN}/{$WEB_TLS}/{$RELAY_DOMAIN}/{$RELAY_TLS} en el Caddyfile.
       # Se leen del `.env` del nodo; si no están, quedan los defaults de pruebas locales.
+      WEB_DOMAIN: ${WEB_DOMAIN:-aegis.local}
+      WEB_TLS: ${WEB_TLS:-internal}
       RELAY_DOMAIN: ${RELAY_DOMAIN:-relay.aegis.local}
       RELAY_TLS: ${RELAY_TLS:-internal}
     ports:

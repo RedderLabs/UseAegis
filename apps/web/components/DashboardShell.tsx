@@ -65,7 +65,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     const token = getToken();
     if (token) {
       try {
-        await logout(token, session?.secure ?? false);
+        await logout(token);
       } catch {
         /* el relay puede estar caído; la sesión local se limpia igualmente */
       }
