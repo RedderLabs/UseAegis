@@ -4,11 +4,12 @@
 import type { FastifyBaseLogger } from "fastify";
 import { deleteExpiredChallenges } from "./challenges";
 import { deleteDeadSessions } from "./sessions";
+import { deleteExpiredBlobs } from "../messaging/blobs";
 
 export interface Maintenance {
   stop: () => void;
   /** Ejecuta un barrido inmediato (usado también por los tests). */
-  runOnce: () => Promise<{ challenges: number; sessions: number }>;
+  runOnce: () => Promise<{ challenges: number; sessions: number; blobs: number }>;
 }
 
 export function startMaintenance(
@@ -18,10 +19,11 @@ export function startMaintenance(
   async function runOnce() {
     const challenges = await deleteExpiredChallenges();
     const sessions = await deleteDeadSessions();
-    if (challenges > 0 || sessions > 0) {
-      logger.info({ challenges, sessions }, "mantenimiento: filas vencidas borradas");
+    const blobs = await deleteExpiredBlobs();
+    if (challenges > 0 || sessions > 0 || blobs > 0) {
+      logger.info({ challenges, sessions, blobs }, "mantenimiento: filas vencidas borradas");
     }
-    return { challenges, sessions };
+    return { challenges, sessions, blobs };
   }
 
   const timer = setInterval(() => {

@@ -40,8 +40,14 @@ export const config = {
     // resolución es enumerable, así que lleva su propio cubo (más holgado que verify
     // pero acotado) para dificultar el raspado del padrón de usuarios.
     directory: intFromEnv("RL_DIRECTORY_MAX", 60),
+    // Mensajería: enviar/recibir sobres. Más holgado (una conversación activa hace muchas
+    // peticiones), pero acotado para frenar el flooding de buzones.
+    messaging: intFromEnv("RL_MESSAGING_MAX", 120),
   },
-  // Cada cuánto barre la tarea de mantenimiento challenges/sesiones vencidas.
+  // TTL de los sobres en el buzón. Se retienen (no se borran al entregar) para la continuidad
+  // de conversación entre puertas; el barrido de mantenimiento borra los vencidos.
+  blobTtlSeconds: intFromEnv("BLOB_TTL_SECONDS", 60 * 60 * 24 * 30),
+  // Cada cuánto barre la tarea de mantenimiento challenges/sesiones/sobres vencidos.
   maintenanceIntervalSeconds: intFromEnv("MAINTENANCE_INTERVAL_SECONDS", 300),
   // Orígenes permitidos por CORS. Si se define CORS_ORIGINS (coma-separado) se usa esa
   // lista estricta; si no, `null` → en dev se permite cualquier localhost/127.0.0.1
@@ -60,4 +66,5 @@ export interface RateLimitOverrides {
   challenge?: number;
   verify?: number;
   directory?: number;
+  messaging?: number;
 }
