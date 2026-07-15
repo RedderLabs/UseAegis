@@ -18,6 +18,9 @@ export function Nav() {
           <a className="hover:text-text transition-colors" href="#transporte">
             Transporte
           </a>
+          <a className="hover:text-text transition-colors" href="#segura">
+            Sesión por Tor
+          </a>
           <a className="hover:text-text transition-colors" href="#limites">
             Qué no protege
           </a>
