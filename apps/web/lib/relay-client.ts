@@ -39,13 +39,23 @@ export function relayBaseUrl(secure: boolean): string {
 }
 
 /**
+ * Aviso PREVENTIVO para mostrar al usuario cuando ACTIVA la sesión protegida (.onion) en la
+ * web. El navegador no embebe Tor: apuntar el fetch a la .onion solo enruta de verdad bajo
+ * Tor Browser o Brave con pestaña Tor. El modo con Tor embebido (Arti) llegará en la app
+ * nativa, no en el navegador (ver docs/aegis-node-proxmox-setup.md §6). Copy compartido por
+ * el switch de login y el de Ajustes para no divergir.
+ */
+export const TOR_SESSION_NOTICE =
+  "Se enruta por el hidden service .onion (Tor). Ábrelo en el Navegador Tor o en Brave con una pestaña Tor: en un navegador normal la sesión protegida no podrá conectar.";
+
+/**
  * Mensaje accionable cuando `fetch` al relay lanza (no responde). Las causas típicas en
  * desarrollo: (1) apuntar a la .onion desde un navegador normal, que no resuelve .onion sin
  * Tor, y (2) un bloqueador de anuncios/privacidad cortando la petición (net::ERR_BLOCKED_BY_CLIENT).
  */
 function relayUnreachableMessage(baseUrl: string): string {
   return baseUrl.includes(".onion")
-    ? "No se pudo contactar con el relay .onion. La sesión protegida necesita Tor Browser o un proxy Tor; en desarrollo desactiva la sesión protegida para usar clearnet. Un bloqueador de anuncios/privacidad también puede estar cortando la petición."
+    ? "No se pudo contactar con el relay .onion. La sesión protegida necesita el Navegador Tor o Brave con Tor; en desarrollo desactiva la sesión protegida para usar clearnet. Un bloqueador de anuncios/privacidad también puede estar cortando la petición."
     : "No se pudo contactar con el relay. Comprueba que está levantado y que ningún bloqueador del navegador corta la petición.";
 }
 
