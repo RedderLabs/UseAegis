@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
 import {
+  currentGateway,
   fetchHealth,
-  relayGateway,
   RelayError,
   type HealthResult,
   type RelayGateway,
@@ -46,7 +46,10 @@ function formatTtl(ms: number): string {
 
 function Transport() {
   const session = useDashboardSession();
-  const gateway: RelayGateway = relayGateway(session.secure);
+  // La puerta (transporte) se deriva del origen; se fija en un effect para no romper la
+  // hidratación (en SSR window no existe → arranca en clearnet/"").
+  const [gateway, setGateway] = useState<RelayGateway>({ kind: "clearnet", host: "" });
+  useEffect(() => setGateway(currentGateway()), []);
 
   const [probe, setProbe] = useState<Probe>(INITIAL);
   const [ttl, setTtl] = useState<number>(() =>
@@ -60,7 +63,7 @@ function Transport() {
     setProbe((p) => ({ ...p, phase: "probing" }));
     const started = performance.now();
     try {
-      const health = await fetchHealth(session.secure);
+      const health = await fetchHealth();
       setProbe({
         phase: "ok",
         health,
@@ -79,7 +82,7 @@ function Transport() {
     } finally {
       busyRef.current = false;
     }
-  }, [session.secure]);
+  }, []);
 
   // Sondeo inicial + periódico.
   useEffect(() => {
@@ -149,7 +152,7 @@ function Transport() {
               </span>
             </span>
             <span className="font-mono text-[10px] text-muted-2 break-all mt-1 block">
-              {gateway.url.replace(/^https?:\/\//, "")}
+              {gateway.host || "—"}
             </span>
           </Tile>
 
@@ -181,30 +184,21 @@ function Transport() {
           </Tile>
         </div>
 
-        {/* Aviso: .onion pero sin Tor */}
+        {/* Aviso: puerta .onion pero el circuito aún no responde */}
         {onionUnreachable && (
           <Alert tone="warn" title="Circuito .onion no disponible">
-            La sesión segura apunta a un servicio oculto <code className="text-text">.onion</code>,
-            pero este navegador no puede enrutar por Tor. Ábrelo en <b>Tor Browser</b> (o con un
-            proxy Tor del sistema), o desactiva la sesión segura para usar clearnet. No es que el
-            relay esté caído: es que no hay circuito.
+            Estás en la puerta <code className="text-text">.onion</code> pero el relay no responde
+            por Tor. El circuito puede tardar unos segundos en abrir tras cargar la página: reintenta.
+            Si abriste esta <code>.onion</code> fuera del Navegador Tor, no habrá circuito. No es que
+            el relay esté caído.
           </Alert>
         )}
 
-        {/* Aviso: se pidió segura pero no hay .onion configurada */}
-        {gateway.fellBackToClearnet && (
-          <Alert tone="info" title="Sin .onion configurada">
-            Pediste sesión segura, pero no hay <code className="text-text">NEXT_PUBLIC_RELAY_ONION_URL</code>{" "}
-            definida, así que el tráfico va por clearnet. Configura la dirección del hidden service
-            para enrutar por Tor.
-          </Alert>
-        )}
-
-        {/* Fallo genérico (relay caído en clearnet, o error no-red) */}
+        {/* Fallo genérico (relay caído, o error no-red) */}
         {probe.phase === "down" && !onionUnreachable && (
           <Alert tone="error" title="Relay inalcanzable">
             {probe.error?.status === 0
-              ? "No hubo respuesta del relay. ¿Está levantado? (pnpm --filter @aegis/relay dev)"
+              ? "No hubo respuesta del relay por esta puerta. Reintenta; si persiste, comprueba que el nodo está levantado."
               : probe.error?.message ?? "Error contactando con el relay."}
           </Alert>
         )}

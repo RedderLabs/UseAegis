@@ -3,41 +3,16 @@
 import { useState } from "react";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
-import { startSession, getToken } from "@/lib/session";
-import { setFaviconSecure } from "@/lib/favicon";
-import { fetchMe } from "@/lib/relay-client";
+import { WEB_ONION_URL } from "@/lib/relay-client";
 import { IconCopy, IconDownload } from "@/components/Icons";
 
 function Settings() {
   const session = useDashboardSession();
   const grouped = groupIdentity(session.id);
-  const [secure, setSecure] = useState(session.secure);
   const [copied, setCopied] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [secureError, setSecureError] = useState<string | null>(null);
-
-  // Es el MISMO switch de sesión protegida (.onion) que en login. Al cambiarlo hacemos una
-  // comprobación REAL contra el relay por la puerta destino (clearnet/.onion): si esa puerta no
-  // enruta (p. ej. .onion sin Tor, o un bloqueador cortando la petición) NO fijamos el estado y
-  // mostramos el error, en vez de dejar el flag ON en silencio.
-  async function toggleSecure() {
-    if (checking) return;
-    const next = !secure;
-    setChecking(true);
-    setSecureError(null);
-    try {
-      await fetchMe(getToken() ?? "", next);
-      setSecure(next);
-      startSession({ ...session, secure: next });
-      setFaviconSecure(next);
-    } catch (err) {
-      setSecureError(
-        (err as Error)?.message ?? "No se pudo verificar la sesión por esa puerta.",
-      );
-    } finally {
-      setChecking(false);
-    }
-  }
+  // La puerta (transporte) la fija el origen por el que se abrió la app; `session.secure` la
+  // guarda al iniciar sesión (true = .onion). Ya NO es un toggle: aquí solo se muestra.
+  const onion = session.secure;
 
   async function copyId() {
     try {
@@ -72,63 +47,34 @@ function Settings() {
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Sesión segura */}
+        {/* Transporte / puerta */}
         <section className="bg-surface border border-line rounded-sm p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="label text-text">Sesión protegida (.onion)</p>
-              <p className="font-mono text-[11px] text-muted-2 mt-1">
-                Enruta el relay por el hidden service .onion. Requiere Tor: ábrelo en el
-                Navegador Tor o en Brave con una pestaña Tor. En un navegador normal no funciona.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={toggleSecure}
-              role="switch"
-              aria-checked={secure}
-              aria-busy={checking}
-              disabled={checking}
-              className={`relative w-11 h-6 rounded-full border transition-colors shrink-0 disabled:opacity-50 ${
-                secure
-                  ? "bg-accent/20 border-accent/40"
-                  : "bg-surface-2 border-line"
-              }`}
-            >
-              <span
-                className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
-                style={{
-                  backgroundColor: secure ? "#c3f400" : "#8e9379",
-                  transform: secure ? "translateX(20px)" : "none",
-                }}
-              />
-            </button>
-          </div>
+          <p className="label text-text">Transporte</p>
+          <p className="font-mono text-[11px] text-muted-2 mt-1">
+            Lo decide la puerta por la que abriste la app: no hay nada que activar. Para el modo
+            protegido, abre la <code className="text-text">.onion</code> en el Navegador Tor.
+          </p>
           <div className="mt-4 pt-4 border-t border-line flex items-center gap-2">
             <span
               className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: secure ? "#c3f400" : "#fbbf24" }}
+              style={{ backgroundColor: onion ? "#c3f400" : "#fbbf24" }}
             />
-            <span
-              className="label"
-              style={{ color: secure ? "#c3f400" : "#fbbf24" }}
-            >
-              {secure ? "Sesión protegida" : "Sesión sin proteger"}
-            </span>
-            <span className="font-mono text-[10px] text-muted-2">
-              — se refleja en el icono y en el estado de la sesión
+            <span className="label" style={{ color: onion ? "#c3f400" : "#fbbf24" }}>
+              {onion ? "Puerta protegida (.onion)" : "Puerta normal (clearnet)"}
             </span>
           </div>
-          {checking && (
-            <p className="font-mono text-[11px] text-muted mt-2">
-              Comprobando la sesión por esa puerta…
-            </p>
-          )}
-          {secureError && (
-            <p className="font-mono text-[11px] text-status-p2p leading-relaxed mt-2">
-              {secureError}
-            </p>
-          )}
+          <p className="font-mono text-[11px] text-muted-2 mt-3 leading-relaxed">
+            {onion
+              ? "El tráfico va por Tor; tu IP no es visible para el relay."
+              : "Tu IP es visible para el relay."}
+            {!onion && WEB_ONION_URL && (
+              <>
+                {" "}
+                Para anonimato o ante censura, abre nuestra{" "}
+                <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
+              </>
+            )}
+          </p>
         </section>
 
         {/* Identidad */}
