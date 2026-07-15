@@ -1,0 +1,15 @@
+# Caddy — puerta CLEARNET del relay (TLS + reverse proxy), nodo.
+#
+# Pruebas en LAN: dominio local `relay.aegis.local` con certificado autofirmado
+# (`tls internal`). Añade `relay.aegis.local` al /etc/hosts (o hosts de Windows) del
+# equipo cliente apuntando a la IP del LXC.
+#
+# PRODUCCIÓN: sustituye `relay.aegis.local` por el dominio real (p. ej. relay.aegis.app)
+# y QUITA la línea `tls internal` → Caddy pedirá un certificado a Let's Encrypt solo.
+#
+# El relay escucha HTTP plano en 8443 dentro de la red de compose; Caddy termina el TLS
+# de cara al cliente y proxya en claro por la red interna (nunca sale del LXC).
+relay.aegis.local {
+	reverse_proxy aegis-relay:8443
+	tls internal
+}
