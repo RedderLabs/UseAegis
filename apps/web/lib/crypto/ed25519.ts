@@ -30,6 +30,24 @@ export function signWithSeed(seed: Uint8Array, message: Uint8Array): Promise<Uin
   return ed.signAsync(message, seed);
 }
 
+/**
+ * Verifica una firma Ed25519 contra una clave PÚBLICA (32 bytes). Necesario para:
+ *  - validar la prekey X25519 de un peer al descargarla (anti-MITM del relay), y
+ *  - autenticar al remitente de un mensaje (firma dentro del sobre sealed-sender).
+ * Devuelve false ante cualquier entrada malformada en vez de lanzar.
+ */
+export async function verifyWithPublicKey(
+  publicKey: Uint8Array,
+  message: Uint8Array,
+  signature: Uint8Array,
+): Promise<boolean> {
+  try {
+    return await ed.verifyAsync(signature, message, publicKey);
+  } catch {
+    return false;
+  }
+}
+
 // --- Codificación ---------------------------------------------------------------
 
 export function toBase64Url(bytes: Uint8Array): string {
