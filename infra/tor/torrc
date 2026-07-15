@@ -14,6 +14,10 @@ HiddenServiceDir /var/lib/tor/aegis-relay
 HiddenServiceVersion 3
 HiddenServicePort 80 aegis-relay:8443
 
-# SOCKS en 0.0.0.0 DENTRO del contenedor para poder autocomprobar la .onion desde el host
-# (`curl --socks5-hostname`). El compose publica SOLO 127.0.0.1:9050 → nunca en la LAN.
-SocksPort 0.0.0.0:9050
+# SOCKS SOLO en el loopback DEL CONTENEDOR (127.0.0.1). Antes escuchaba en 0.0.0.0, lo que
+# provocaba el warning "open proxy" de Tor y lo dejaba alcanzable por otros contenedores del
+# bridge de compose. El hidden service NO necesita SocksPort para funcionar; queda únicamente
+# para autocomprobar la .onion DESDE DENTRO del contenedor (la imagen ya trae curl):
+#   docker compose --profile node exec aegis-tor \
+#     curl --socks5-hostname 127.0.0.1:9050 http://<tu-onion>/health
+SocksPort 127.0.0.1:9050

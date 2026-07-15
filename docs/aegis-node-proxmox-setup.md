@@ -92,7 +92,8 @@ HiddenServiceVersion 3
 # El cliente hace fetch a http://xxxxxxxx.onion → puerto virtual 80 (HTTP plano).
 # Se reenvía al relay Fastify, que escucha en 8443 dentro de la red de Docker.
 HiddenServicePort 80 aegis-relay:8443
-SocksPort 0.0.0.0:9050
+# SOCKS solo en el loopback DEL contenedor: sin warning "open proxy" y sin exposición al bridge.
+SocksPort 127.0.0.1:9050
 ```
 
 > - **Puerto virtual 80, no 443:** el cliente (`apps/web/lib/relay-client.ts`) apunta a
@@ -130,7 +131,7 @@ bajo el **perfil opt-in `node`**, así que NO arrancan en desarrollo. `aegis-db`
 | `aegis-db` | (base) | Postgres 16 (auth) | `127.0.0.1:15432` |
 | `aegis-dragonfly` | (base) | Cola de blobs (RESP) | `127.0.0.1:16379` |
 | `aegis-relay` | `node` | Fastify (`HOST=0.0.0.0 PORT=8443`) | `127.0.0.1:8443` |
-| `aegis-tor` | `node` | Hidden service `.onion` (`infra/tor`) | `127.0.0.1:9050` (SOCKS) |
+| `aegis-tor` | `node` | Hidden service `.onion` (`infra/tor`) | — (SOCKS solo en loopback del contenedor) |
 | `aegis-caddy` | `node` | TLS + reverse proxy clearnet (`infra/caddy`) | `80`, `443` |
 
 > - Los servicios se resuelven entre sí por **nombre** en la red por defecto de compose
@@ -186,10 +187,13 @@ curl -sk https://relay.aegis.local/health   # prueba clearnet vía Caddy (o -k c
 
 ## 5. Verificar el hidden service desde fuera
 
-Desde el propio LXC (usa el SOCKS del contenedor `aegis-tor`, publicado en loopback):
+El SOCKS de Tor escucha solo en el loopback DEL contenedor (no se publica al host ni al
+bridge), así que la autocomprobación se hace DESDE DENTRO del contenedor `aegis-tor` (su
+imagen ya trae `curl`):
 
 ```bash
-curl --socks5-hostname 127.0.0.1:9050 http://TU_DIRECCION.onion/health
+docker compose --profile node exec aegis-tor \
+  curl --socks5-hostname 127.0.0.1:9050 http://TU_DIRECCION.onion/health
 ```
 
 Si responde el healthcheck, el circuito completo funciona:
@@ -242,7 +246,7 @@ docker compose --profile node logs -f aegis-caddy
 - [ ] `docker compose --profile node ps` muestra los 5 servicios `Up`
 - [ ] `curl -k https://relay.aegis.local/health` responde OK (modo clearnet vía Caddy)
 - [ ] `docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-relay/hostname` devuelve una dirección `.onion` v3
-- [ ] `curl --socks5-hostname 127.0.0.1:9050 http://TU_ONION/health` responde OK (modo Tor)
+- [ ] `docker compose --profile node exec aegis-tor curl --socks5-hostname 127.0.0.1:9050 http://TU_ONION/health` responde OK (modo Tor)
 - [ ] Postgres y Dragonfly solo publican en `127.0.0.1` (`docker compose --profile node config` para revisar)
 - [ ] Switch en la app cambia correctamente entre ambos endpoints
 

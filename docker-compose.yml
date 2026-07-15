@@ -106,9 +106,12 @@ services:
     volumes:
       - ./infra/tor/torrc:/etc/tor/torrc:ro
       - aegis-tor-data:/var/lib/tor
-    ports:
-      # SOCKS solo en loopback del host, para autocomprobar la .onion (curl --socks5-hostname).
-      - "127.0.0.1:9050:9050"
+    # SIN publish del SOCKS: el SocksPort ahora escucha solo en el loopback DEL contenedor
+    # (elimina el warning "open proxy" de Tor y el acceso desde otros contenedores del bridge).
+    # El hidden service alcanza aegis-relay:8443 por la red interna sin necesitar puertos. La
+    # autocomprobación de la .onion se hace desde dentro (la imagen trae curl):
+    #   docker compose --profile node exec aegis-tor \
+    #     curl --socks5-hostname 127.0.0.1:9050 http://<tu-onion>/health
 
   # --- Caddy: puerta clearnet (TLS + reverse proxy) (nodo, perfil "node") ---------------
   # Termina TLS de cara al cliente y proxya al relay por la red interna (aegis-relay:8443).

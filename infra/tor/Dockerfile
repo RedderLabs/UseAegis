@@ -3,7 +3,9 @@
 # terceros (evitamos dperson/torproxy, que regenera el torrc por su cuenta).
 FROM alpine:3.21
 
-RUN apk add --no-cache tor su-exec
+# curl: para autocomprobar la .onion desde DENTRO del contenedor (el SocksPort ahora escucha
+# solo en el loopback del contenedor, así que el self-check ya no se hace desde el host).
+RUN apk add --no-cache tor su-exec curl
 
 # El arranque lo hace entrypoint.sh: fija permisos (tor:tor, 700), resuelve aegis-relay a
 # su IP (Tor NO acepta nombres DNS en HiddenServicePort), reescribe el torrc y baja
