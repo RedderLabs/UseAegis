@@ -19,14 +19,23 @@ import {
   type IdentityInfo,
   type KeystoreStatus,
 } from "@/lib/crypto/identity-store";
-import { authenticate, fetchMe, publishPrekey, RelayError } from "@/lib/relay-client";
+import {
+  authenticate,
+  fetchMe,
+  publishPrekey,
+  RelayError,
+  TOR_SESSION_NOTICE,
+} from "@/lib/relay-client";
 
 const MIN_PASSPHRASE = 8;
 
 function describeError(err: unknown): string {
   if (err instanceof RelayError) {
     if (err.status === 0) {
-      return "No se pudo contactar con el relay. ¿Está levantado? (pnpm --filter @aegis/relay dev)";
+      // El propio RelayError ya trae el texto accionable según la puerta (clearnet vs .onion):
+      // en .onion menciona el Navegador Tor / Brave con Tor y el posible bloqueador; en clearnet,
+      // relay caído o bloqueador. Respetarlo en vez de pisarlo con un mensaje genérico de clearnet.
+      return err.message;
     }
     if (err.code === "signature_verification_failed") return "Firma rechazada por el relay.";
     return `El relay respondió con un error (${err.status}).`;
@@ -186,29 +195,38 @@ export default function LoginPage() {
   }
 
   const secureToggle = (
-    <button
-      type="button"
-      onClick={() => setSecure((s) => !s)}
-      className="w-full flex items-center justify-between pt-1"
-    >
-      <span className="flex flex-col text-left">
-        <span className="label text-text">Sesión segura</span>
-        <span className="font-mono text-[10px] text-muted-2">Borra la caché local al salir</span>
-      </span>
-      <span
-        className={`relative w-11 h-6 rounded-full border transition-colors ${
-          secure ? "bg-accent/20 border-accent/40" : "bg-surface-2 border-line"
-        }`}
+    <div className="pt-1 space-y-2">
+      <button
+        type="button"
+        onClick={() => setSecure((s) => !s)}
+        className="w-full flex items-center justify-between"
       >
+        <span className="flex flex-col text-left">
+          <span className="label text-text">Sesión segura (.onion)</span>
+          <span className="font-mono text-[10px] text-muted-2">
+            Enruta el relay por Tor · borra la caché local al salir
+          </span>
+        </span>
         <span
-          className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
-          style={{
-            backgroundColor: secure ? "#c3f400" : "#8e9379",
-            transform: secure ? "translateX(20px)" : "none",
-          }}
-        />
-      </span>
-    </button>
+          className={`relative w-11 h-6 rounded-full border transition-colors ${
+            secure ? "bg-accent/20 border-accent/40" : "bg-surface-2 border-line"
+          }`}
+        >
+          <span
+            className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
+            style={{
+              backgroundColor: secure ? "#c3f400" : "#8e9379",
+              transform: secure ? "translateX(20px)" : "none",
+            }}
+          />
+        </span>
+      </button>
+      {secure && (
+        <p className="font-mono text-[10px] leading-relaxed text-muted-2 border-l-2 border-accent/40 pl-2">
+          {TOR_SESSION_NOTICE}
+        </p>
+      )}
+    </div>
   );
 
   const passphraseInput = (label: string, autoFocus = false) => (

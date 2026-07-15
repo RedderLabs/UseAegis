@@ -78,8 +78,8 @@ function Settings() {
             <div>
               <p className="label text-text">Sesión protegida (.onion)</p>
               <p className="font-mono text-[11px] text-muted-2 mt-1">
-                Enruta el relay por el hidden service .onion. Requiere Tor; en un navegador
-                normal no funciona.
+                Enruta el relay por el hidden service .onion. Requiere Tor: ábrelo en el
+                Navegador Tor o en Brave con una pestaña Tor. En un navegador normal no funciona.
               </p>
             </div>
             <button
