@@ -52,35 +52,59 @@ completo**, con extras no previstos en el roadmap original (Caddy clearnet, la W
 | Despliegue en **nodo Proxmox** (LXC, todo en Docker, perfil `node`, restart automático) | ✅ |
 | Landing: sección **"Sesión por Tor"** (aviso + descarga Tor Browser + dirección `.onion`) | ✅ |
 
-> **Alcance honesto (actualizado 2026-07-15):** el **acceso** (identidad, registro, login, sesión,
+> **Alcance honesto (actualizado 2026-07-16):** el **acceso** (identidad, registro, login, sesión,
 > directorio de prekeys) y el **transporte** (clearnet + `.onion`, dos puertas) son **REALES y
-> desplegados**. Lo que **todavía NO existe** es la **MENSAJERÍA**: envío/recepción de mensajes,
-> cripto de **contenido** (sobre + sealed sender + `crypto_secretstream`), cola de blobs (BullMQ),
-> audio, y toda la capa P2P/mesh. Es decir: ya puedes **entrar de forma segura**, pero aún **no
-> conversar**. La Fase 1 se recentra en esa mensajería (abajo), con el acceso y el `.onion` ya resueltos.
+> desplegados**. La **mensajería de TEXTO E2E** (sobre sealed-sender + XChaCha20-Poly1305 + buzón del
+> relay + contactos + Canal) ya **funciona de punta a punta**, verificada contra el relay real (ver
+> abajo): dos identidades verificadas **ya conversan por texto**. Lo que **todavía NO existe**: cola
+> **BullMQ** (hoy el buzón es por polling), **audio** y **archivos** (cifrado en streaming por chunks),
+> **QR de contacto**, y toda la capa **P2P/mesh**. El grueso restante de la Fase 1 es **audio + push en
+> tiempo real**; P2P, mesh y móvil siguen en fases posteriores.
 >
 > Nota: los tokens visuales salen de `stitch-aegis/DESIGN.md`, que difiere de `docs/DISENO.md`
 > (paleta y tipografía) — reconciliación de ese doc **pendiente**.
+
+### Mensajería de texto E2E (Modo A) — hecho 2026-07-16 (adelanta el grueso de Fase 1) ✅
+
+Primera rebanada vertical de la mensajería, **verificada end-to-end contra el relay real**
+(dos identidades: auth → prekey → resolver → sellar → enviar → recibir → abrir). Ver
+[[aegis-messaging-phase1]].
+
+| Entregable | Estado |
+|---|---|
+| Cripto de **contenido**: XChaCha20-Poly1305 + HKDF; sobre **sealed-sender** (X25519 efímero→ECDH con prekey; remitente firmado y cifrado dentro) | ✅ |
+| **Buzón del relay** sealed-sender: `POST/GET/DELETE /messages`, cursor incremental, TTL (retiene para continuidad cross-puerta) | ✅ |
+| Cliente: `sendMessage/fetchMessages`, **contactos** locales (IndexedDB, prekey verificada anti-MITM), servicio de chat (seal/open + polling) | ✅ |
+| **Canal**: desplegable de contactos, alta por nombre de usuario, envío/recepción reales, persistencia local | ✅ |
+| **Nombre de usuario** público: reclamar en Ajustes, **autogenerado** (palabra+número, CSPRNG); regex endurecido (`^[a-z][a-z0-9_]{2,19}$`) + **lista de reservados** en el relay (anti-suplantación) | ✅ |
+| **Generador de contraseña** fuerte en el registro (longitud + símbolos, CSPRNG) | ✅ |
+| Simplificación de **copy** de toda la app a lenguaje claro (algoritmos como detalle secundario) | ✅ |
+
+> **Resta de la Fase 1 (mensajería):** cola **BullMQ** (sustituir polling), **audio**
+> (MediaRecorder/Opus + AEAD por chunks) y **archivos** (mismo chunking), **QR** de contacto,
+> **frase de recuperación** tipo BIP39, y consolidar cripto/protocolo a `packages/crypto-core` +
+> `packages/protocol` (hoy en `apps/web/lib/crypto`).
 
 ---
 
 ## Fases
 
-### Fase 1 — MVP Modo A (relay): texto + audio, E2E completo · **~5 sd restantes** (de 9)
-El grueso del proyecto. Parte del bloque de relay/acceso ya está hecho (ver "Backend de acceso"
-arriba): quedan **la mensajería y la cripto de contenido**. Es la **siguiente fase**.
+### Fase 1 — MVP Modo A (relay): texto + audio, E2E completo · **~3,5 sd restantes** (de 9)
+El grueso del proyecto. Ya están hechos el bloque de relay/acceso **y el TEXTO E2E** (ver
+"Mensajería de texto E2E" arriba): queda sobre todo **audio, archivos y push en tiempo real**.
+Es la **fase en curso**.
 
 | Bloque | Tareas | Estado | Resta |
 |---|---|---|---|
-| `crypto-core` | Ed25519 / X25519 / Argon2id + almacén de claves ✅ (acceso). **Resta**: XChaCha20-Poly1305 + `crypto_secretstream` (cifrado de contenido/streaming) | 🟡 parcial | 1 sd |
-| `protocol` | Formato de sobre, versión, serialización, construcción de **sealed sender** | ⬜ pendiente | 1 sd |
-| `apps/relay` | Fastify + PostgreSQL + Dragonfly + auth/directorio ✅. **Resta**: cola BullMQ, entrega sealed-sender, TTL de blobs | 🟡 parcial | 1 sd |
-| `transport` (Modo A) | Interfaz única `send/receive/onMessage` sobre el relay (el cliente HTTP `/api` ya existe) | 🟡 parcial | 0,5 sd |
-| Cliente chat (`apps/web`) | UI de dashboard ✅. **Resta**: cablear `crypto-core`+`transport` reales para mensajes, QR de contacto, audio (MediaRecorder/Opus) + descifrado en streaming | ⬜ pendiente | 2 sd |
+| `crypto-core` | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅** (en `apps/web/lib/crypto`). **Resta**: AEAD por chunks para streaming (audio/archivos) | 🟡 parcial | 0,5 sd |
+| `protocol` | Formato de sobre + sealed sender **✅ implementado** (en `apps/web`). **Resta**: subirlo a `packages/protocol` (versión, serialización compartida con móvil) | 🟡 parcial | 0,3 sd |
+| `apps/relay` | Fastify + PG + Dragonfly + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Resta**: cola **BullMQ** (push en tiempo real, sustituir polling) | 🟡 parcial | 0,7 sd |
+| `transport` (Modo A) | Funcionalidad Modo A **operativa** en `apps/web/lib/chat.ts` (send/fetch/poll sobre `/api`). **Resta**: formalizar `send/receive/onMessage` en `packages/transport` (hoy stub) | 🟡 parcial | 0,3 sd |
+| Cliente chat (`apps/web`) | **Texto E2E ✅** (Canal, contactos, envío/recepción, persistencia, nombre de usuario). **Resta**: QR de contacto, **audio** (MediaRecorder/Opus) + descifrado en streaming, **archivos** | 🟡 parcial | 1,2 sd |
 | Backup de clave | Código de recuperación (cifrado, bajo control del usuario) ✅; endurecer a frase tipo BIP39 | 🟢 casi | 0,5 sd |
 
 **Riesgo humano:** el pipeline de audio (chunking en streaming + reproducción progresiva) es lo que más debugging manual pide; Claude aporta el código, el humano lo estabiliza.
-**Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay.**
+**Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay.** El **texto ya está** (verificado E2E); falta el **audio** para cerrar M1.
 
 ### Fase 2 — Capa de abstracción de transporte consolidada · **1 sd**
 Endurecer la interfaz `packages/transport/` ya pensada para B y C (aunque solo exista A). En parte se solapa con la Fase 1.
@@ -122,26 +146,26 @@ Dockerfile determinista, hash publicado por release, instrucciones de reproducci
 |---|---|---|
 | 0 · Base + capa visual del cliente | hecha | — |
 | — · Backend de acceso + transporte `.onion` (Fase 2.5 completa + parte de la 1) | hecho (~4 sd) | — |
-| 1 · MVP relay — **mensajería (restante)** | 5 sd | 5 sd |
-| 2 · Abstracción transporte | 1 sd | 6 sd |
-| 2.5 · `.onion` | ✅ hecha | 6 sd |
-| 3 · libp2p | 4 sd | 10 sd |
-| 4 · Failover + UI | 1 sd | 11 sd |
-| — · Móvil (track paralelo) | 4 sd | 15 sd |
-| 5 · Mesh (BLE / Wi-Fi Aware) | 6 sd | 21 sd |
-| 6 · Archivos | 1 sd | 22 sd |
-| 7 · Reproducible + audit | 2 sd | 24 sd |
+| 1 · MVP relay — **texto E2E ✅, resta audio/BullMQ/archivos** | 3,5 sd | 3,5 sd |
+| 2 · Abstracción transporte | 1 sd | 4,5 sd |
+| 2.5 · `.onion` | ✅ hecha | 4,5 sd |
+| 3 · libp2p | 4 sd | 8,5 sd |
+| 4 · Failover + UI | 1 sd | 9,5 sd |
+| — · Móvil (track paralelo) | 4 sd | 13,5 sd |
+| 5 · Mesh (BLE / Wi-Fi Aware) | 6 sd | 19,5 sd |
+| 6 · Archivos | 1 sd | 20,5 sd |
+| 7 · Reproducible + audit | 2 sd | 22,5 sd |
 
-**Total ingeniería restante: ~24 sd ≈ 6 meses** (–5 sd respecto a los 29 previos: la Fase 2.5
-`.onion` completa y ~4 sd de acceso/relay ya están entregados y desplegados). Referencia: sigue
+**Total ingeniería restante: ~22,5 sd ≈ 5,5 meses** (–6,5 sd respecto a los 29 previos: la Fase 2.5
+`.onion`, ~4 sd de acceso/relay y el **texto E2E** de la Fase 1 ya están entregados y desplegados). Referencia: sigue
 entre el escenario ideal de 2 devs y el de 1 dev sin asistencia — Claude tira hacia el lado
 rápido, pero el único humano y las fases de investigación (3 y 5) mantienen el suelo.
 
 ### Milestones (en semanas relativas desde ahora)
 
-- **M1 — MVP privado** (fin Fase 1): **~5 sd ≈ 5–6 semanas**. Dos personas verificadas intercambian texto y audio cifrados por el relay (cripto de contenido real). El **acceso** y el **`.onion`** ya están.
-- **M2 — Beta resistente a censura** (fin Fase 4): **~11 sd ≈ 2,75 meses**. Relay + `.onion` (✅) + failover a P2P, con indicador de estado.
-- **M3 — v1 auditable** (fin Fase 7): **~24 sd ≈ 6 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
+- **M1 — MVP privado** (fin Fase 1): **~3,5 sd ≈ 3–4 semanas**. El **texto E2E ya intercambia** entre dos identidades verificadas; falta el **audio** para cerrar el hito. El **acceso** y el **`.onion`** ya están.
+- **M2 — Beta resistente a censura** (fin Fase 4): **~9,5 sd ≈ 2,4 meses**. Relay + `.onion` (✅) + failover a P2P, con indicador de estado.
+- **M3 — v1 auditable** (fin Fase 7): **~22,5 sd ≈ 5,5 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
 
 > Las Fases 3 y 5 son las que más pueden mover el total: son investigación, no
 > ingeniería resuelta, y son justamente las que menos se comprimen con asistencia.
