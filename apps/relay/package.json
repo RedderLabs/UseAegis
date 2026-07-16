@@ -4,7 +4,7 @@
   "private": true,
   "description": "Relay del Modo A (Fastify + PostgreSQL): Auth Ed25519 challenge-response y sesiones.",
   "scripts": {
-    "infra:up": "docker compose -f ../../docker-compose.yml up -d --wait aegis-db aegis-dragonfly",
+    "infra:up": "docker compose -f ../../docker-compose.yml up -d --wait aegis-db",
     "infra:down": "docker compose -f ../../docker-compose.yml down",
     "infra:reset": "docker compose -f ../../docker-compose.yml down -v && pnpm infra:up && pnpm migrate",
     "migrate": "dotenv -e .env -- node-pg-migrate up",

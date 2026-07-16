@@ -1,13 +1,13 @@
 # Infraestructura local de desarrollo de Aegis.
 #
-# Levanta PostgreSQL (Auth / AuthSession del relay) y DragonflyDB (base para la cola de blobs
-# sealed-sender con BullMQ, ver docs/ARQUITECTURA.md §4). Dragonfly es drop-in compatible con
-# el protocolo Redis (habla RESP en :6379), así que BullMQ/ioredis se conectan con la misma
-# REDIS_URL (redis://...) sin tocar código. BullMQ se conectará cuando entre la cola; por ahora
-# Dragonfly queda listo y verificable.
+# Levanta PostgreSQL (Auth / AuthSession del relay). DragonflyDB (base de la futura cola BullMQ,
+# ver docs/ARQUITECTURA.md §4) es ahora OPT-IN (perfil "queue"): el relay aún NO usa Redis (el
+# buzón es por polling sobre Postgres), así que no se arranca por defecto — se ahorran ~300-500 MB
+# (importa en VPS pequeños). Cuando entre BullMQ se re-activa con `--profile queue` y se descomenta
+# REDIS_URL en aegis-relay. Dragonfly es drop-in compatible con Redis (RESP en :6379).
 #
 # Uso:
-#   docker compose up -d --wait aegis-db aegis-redis   # arranca y espera a "healthy"
+#   docker compose up -d --wait aegis-db                # solo Postgres (dev/tests)
 #   docker compose down                                # para los contenedores (conserva volúmenes)
 #   docker compose down -v                             # ...y borra los datos
 #
@@ -35,9 +35,14 @@ services:
       retries: 15
       start_period: 5s
 
+  # OPT-IN (perfil "queue"): el relay NO usa Redis/Dragonfly todavía (el buzón es por polling
+  # sobre Postgres). Dragonfly es la base de la futura cola BullMQ (push en tiempo real). Hasta
+  # entonces NO se arranca por defecto — así se ahorran ~300-500 MB (clave en VPS pequeños). Para
+  # levantarlo cuando entre la cola: `docker compose --profile node --profile queue up -d`.
   aegis-dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
     container_name: aegis-dragonfly
+    profiles: ["queue"]
     restart: unless-stopped
     # OJO memlock: Dragonfly recomienda `ulimits: memlock: -1`, pero fijar memlock a
     # "ilimitado" falla en LXC NO privilegiados (Proxmox): runc → "error setting rlimit
@@ -72,13 +77,11 @@ services:
     depends_on:
       aegis-db:
         condition: service_healthy
-      aegis-dragonfly:
-        condition: service_healthy
     environment:
       # Conexión por NOMBRE de servicio + puerto interno (no 127.0.0.1:15432, que sería el
       # propio contenedor). Reusa las credenciales del .env raíz (POSTGRES_*).
       DATABASE_URL: postgres://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis_dev_pw}@aegis-db:5432/${POSTGRES_DB:-aegis_relay}
-      REDIS_URL: redis://aegis-dragonfly:6379
+      # REDIS_URL: redis://aegis-dragonfly:6379   # se re-activa cuando entre BullMQ (perfil "queue")
       HOST: 0.0.0.0
       PORT: "8443"
       LOG_LEVEL: info
