@@ -80,14 +80,14 @@ export function removeContact(pub: string): Promise<void> {
  */
 export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Contact> {
   if (!entry.keyBundle) {
-    throw new Error("Ese usuario aún no ha publicado su clave de cifrado; no se puede añadir.");
+    throw new Error("Ese usuario aún no ha publicado su llave de cifrado; no se puede añadir.");
   }
   const edPub = fromBase64Url(entry.publicKey);
   const x25519Pub = fromBase64Url(entry.keyBundle.x25519PublicKey);
   const signature = fromBase64Url(entry.keyBundle.x25519Signature);
   const ok = await verifyPeerPrekey(edPub, x25519Pub, signature);
   if (!ok) {
-    throw new Error("La clave de cifrado no está firmada por esa identidad (posible MITM); rechazada.");
+    throw new Error("No podemos verificar que esta llave sea de verdad de esa persona; se rechaza por seguridad.");
   }
   const contact: Contact = {
     pub: entry.publicKey,
