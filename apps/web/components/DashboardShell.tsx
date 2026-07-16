@@ -129,12 +129,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               {session.secure ? (
                 <>
                   <p className="label text-muted mb-1">Sesión segura</p>
-                  <p className="label text-accent">E2E verificado</p>
+                  <p className="label text-accent">Cifrado verificado</p>
                 </>
               ) : (
                 <>
                   <p className="label text-muted mb-1">Sesión sin proteger</p>
-                  <p className="label text-status-p2p">Auto-wipe desactivado</p>
+                  <p className="label text-status-p2p">Sin borrado automático</p>
                 </>
               )}
             </div>

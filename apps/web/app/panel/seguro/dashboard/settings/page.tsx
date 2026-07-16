@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
-import { WEB_ONION_URL } from "@/lib/relay-client";
+import { getToken } from "@/lib/session";
+import { claimUsername, fetchMe, RelayError, WEB_ONION_URL } from "@/lib/relay-client";
+import { generateUsername } from "@/lib/username";
 import { IconCopy, IconDownload } from "@/components/Icons";
 
 function Settings() {
@@ -13,6 +15,71 @@ function Settings() {
   // La puerta (transporte) la fija el origen por el que se abrió la app; `session.secure` la
   // guarda al iniciar sesión (true = .onion). Ya NO es un toggle: aquí solo se muestra.
   const onion = session.secure;
+
+  // Nombre de usuario público (handle): con él te encuentran para añadirte como contacto.
+  // NO se teclea a mano — se GENERA (palabra + número, legible) y el usuario re-genera hasta que
+  // le guste. Así el campo no tiene texto libre (cero superficie de inyección) y siempre es válido.
+  const [username, setUsername] = useState<string | null>(null);
+  const [usernameLoaded, setUsernameLoaded] = useState(false);
+  const [candidate, setCandidate] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameSaved, setNameSaved] = useState(false);
+
+  // Lee el nombre actual del servidor y propone un primer candidato (solo en cliente: usa crypto).
+  useEffect(() => {
+    setCandidate(generateUsername());
+    const token = getToken();
+    if (!token) {
+      setUsernameLoaded(true);
+      return;
+    }
+    fetchMe(token)
+      .then((me) => setUsername(me.username))
+      .catch(() => {
+        /* el servidor puede estar caído; se puede reintentar al guardar */
+      })
+      .finally(() => setUsernameLoaded(true));
+  }, []);
+
+  function regenerate() {
+    setNameError(null);
+    setNameSaved(false);
+    setCandidate(generateUsername());
+  }
+
+  async function claimCandidate() {
+    const token = getToken();
+    if (!token || savingName || !candidate) return;
+    setSavingName(true);
+    setNameError(null);
+    setNameSaved(false);
+    try {
+      // Reintenta con nombres nuevos por si el sorteo choca con alguno ya existente.
+      let attempt = candidate;
+      for (let i = 0; i < 6; i++) {
+        try {
+          const res = await claimUsername(token, attempt);
+          setUsername(res.username);
+          setCandidate(generateUsername());
+          setNameSaved(true);
+          window.setTimeout(() => setNameSaved(false), 2500);
+          return;
+        } catch (err) {
+          if (err instanceof RelayError && err.code === "username_taken") {
+            attempt = generateUsername(); // otro nombre y a reintentar
+            continue;
+          }
+          throw err;
+        }
+      }
+      setNameError("No conseguimos reservar un nombre libre. Prueba «Regenerar» y de nuevo.");
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : "No se pudo guardar el nombre.");
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   async function copyId() {
     try {
@@ -27,7 +94,7 @@ function Settings() {
   function downloadId() {
     const blob = new Blob(
       [
-        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (para reconocerla o compartirla).\nNO sirve para recuperar el acceso: para eso está el código de recuperación\nque descargaste al crear la identidad.`,
+        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (sirve para reconocerte o compartirte).\nNO sirve para recuperar el acceso: para eso está el código de recuperación\nque descargaste al crear la identidad.`,
       ],
       { type: "text/plain" },
     );
@@ -47,11 +114,79 @@ function Settings() {
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Nombre de usuario público (handle) */}
+        <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
+          <p className="label text-text">Tu nombre de usuario</p>
+          <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
+            Es el nombre público con el que te añaden como contacto. Para que sea único y nadie
+            tenga que pelearse por el mismo, lo generamos por ti (una palabra + un número). Dale a
+            «Regenerar» hasta que te guste y pulsa «Usar este».
+          </p>
+
+          <div className="mt-4 pt-4 border-t border-line">
+            <p className="label text-muted-2 mb-1">Ahora mismo</p>
+            {!usernameLoaded ? (
+              <p className="font-mono text-[13px] text-muted-2">Comprobando…</p>
+            ) : username ? (
+              <div className="flex items-center gap-3">
+                <p className="font-mono text-[15px] text-accent">@{username}</p>
+                <button
+                  onClick={() => void navigator.clipboard?.writeText(`@${username}`).catch(() => {})}
+                  className="inline-flex items-center gap-1 label text-muted-2 hover:text-text transition-colors"
+                >
+                  <IconCopy className="w-3.5 h-3.5" /> Copiar
+                </button>
+              </div>
+            ) : (
+              <p className="font-mono text-[13px] text-muted">
+                Todavía no tienes nombre. Genera uno para que puedan añadirte.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <p className="label text-muted-2 mb-1.5">
+              {username ? "Cambiar por otro" : "Tu nombre propuesto"}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="flex-1 flex items-center bg-bg border border-line rounded-sm px-3 py-2.5">
+                <span className="font-mono text-[15px] text-accent select-all">
+                  @{candidate ?? "…"}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={regenerate}
+                  disabled={savingName}
+                  className="shrink-0 label py-2.5 px-4 border border-line text-muted hover:text-text hover:border-accent-dim rounded-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  Regenerar
+                </button>
+                <button
+                  onClick={claimCandidate}
+                  disabled={savingName || !candidate}
+                  className="shrink-0 label py-2.5 px-5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  {savingName ? "Guardando…" : "Usar este"}
+                </button>
+              </div>
+            </div>
+            {nameError && (
+              <p className="font-mono text-[11px] text-status-p2p mt-2">{nameError}</p>
+            )}
+            {nameSaved && (
+              <p className="font-mono text-[11px] text-accent mt-2">
+                Guardado ✓ · comparte tu @nombre completo para que te añadan.
+              </p>
+            )}
+          </div>
+        </section>
+
         {/* Transporte / puerta */}
         <section className="bg-surface border border-line rounded-sm p-5">
-          <p className="label text-text">Transporte</p>
+          <p className="label text-text">Conexión</p>
           <p className="font-mono text-[11px] text-muted-2 mt-1">
-            Lo decide la puerta por la que abriste la app: no hay nada que activar. Para el modo
+            La decide la dirección por la que abriste la app: no hay nada que activar. Para el modo
             protegido, abre la <code className="text-text">.onion</code> en el Navegador Tor.
           </p>
           <div className="mt-4 pt-4 border-t border-line flex items-center gap-2">
@@ -60,17 +195,17 @@ function Settings() {
               style={{ backgroundColor: onion ? "#c3f400" : "#fbbf24" }}
             />
             <span className="label" style={{ color: onion ? "#c3f400" : "#fbbf24" }}>
-              {onion ? "Puerta protegida (.onion)" : "Puerta normal (clearnet)"}
+              {onion ? "Conexión protegida (Tor)" : "Conexión normal"}
             </span>
           </div>
           <p className="font-mono text-[11px] text-muted-2 mt-3 leading-relaxed">
             {onion
-              ? "El tráfico va por Tor; tu IP no es visible para el relay."
-              : "Tu IP es visible para el relay."}
+              ? "Tu conexión va por Tor; tu IP no es visible para el servidor."
+              : "Tu IP es visible para el servidor."}
             {!onion && WEB_ONION_URL && (
               <>
                 {" "}
-                Para anonimato o ante censura, abre nuestra{" "}
+                Para más anonimato o si hay censura, abre nuestra{" "}
                 <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
               </>
             )}

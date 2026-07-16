@@ -38,8 +38,8 @@ function describeError(err: unknown): string {
       // relay caído o bloqueador. Respetarlo en vez de pisarlo con un mensaje genérico de clearnet.
       return err.message;
     }
-    if (err.code === "signature_verification_failed") return "Firma rechazada por el relay.";
-    return `El relay respondió con un error (${err.status}).`;
+    if (err.code === "signature_verification_failed") return "Firma rechazada por el servidor.";
+    return `El servidor respondió con un error (${err.status}).`;
   }
   return (err as Error)?.message ?? "Error desconocido.";
 }
@@ -125,11 +125,11 @@ export default function LoginPage() {
   async function onMigrate() {
     if (busy) return;
     if (passphrase.length < MIN_PASSPHRASE) {
-      setError(`La passphrase debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
       return;
     }
     if (passphrase !== confirmPass) {
-      setError("Las passphrases no coinciden.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
     setBusy(true);
@@ -147,11 +147,11 @@ export default function LoginPage() {
   async function onImport() {
     if (busy) return;
     if (passphrase.length < MIN_PASSPHRASE) {
-      setError(`La passphrase debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
       return;
     }
     if (passphrase !== confirmPass) {
-      setError("Las passphrases no coinciden.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
     setBusy(true);
@@ -200,8 +200,8 @@ export default function LoginPage() {
         style={{ backgroundColor: "#c3f400", boxShadow: "0 0 8px #c3f400" }}
       />
       <p className="font-mono text-[10px] leading-relaxed text-muted-2">
-        <span className="text-accent">Puerta protegida .onion</span> — el tráfico va por Tor y tu
-        IP no es visible para el relay.
+        <span className="text-accent">Conexión protegida (Tor)</span> — el tráfico va por Tor y tu
+        IP no es visible para el servidor.
       </p>
     </div>
   ) : (
@@ -211,7 +211,7 @@ export default function LoginPage() {
         style={{ backgroundColor: "#fbbf24" }}
       />
       <p className="font-mono text-[10px] leading-relaxed text-muted-2">
-        <span className="text-text">Puerta normal (clearnet)</span> — tu IP es visible para el relay.
+        <span className="text-text">Conexión normal</span> — tu IP es visible para el servidor.
         {WEB_ONION_URL && (
           <>
             {" "}
@@ -248,7 +248,7 @@ export default function LoginPage() {
         onKeyDown={(e) => {
           if (e.key === "Enter" && status?.state === "locked") onUnlock();
         }}
-        placeholder="Tu passphrase"
+        placeholder="Tu contraseña"
         className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
     </div>
@@ -257,7 +257,7 @@ export default function LoginPage() {
   const confirmInput = (
     <div className="space-y-2">
       <label htmlFor="confirm" className="label text-muted">
-        Repite la passphrase
+        Repite la contraseña
       </label>
       <input
         id="confirm"
@@ -270,7 +270,7 @@ export default function LoginPage() {
       />
       {confirmPass.length > 0 && confirmPass !== passphrase && (
         <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
-          Las passphrases no coinciden todavía.
+          Las contraseñas no coinciden todavía.
         </p>
       )}
     </div>
@@ -296,7 +296,7 @@ export default function LoginPage() {
             <Link href="/" className="font-mono font-semibold tracking-[0.14em] text-lg text-text">
               AEGIS
             </Link>
-            <p className="label text-muted-2 mt-1">Inicializar sesión</p>
+            <p className="label text-muted-2 mt-1">Iniciar sesión</p>
           </div>
 
           <div className="bg-surface/70 backdrop-blur-xl border border-line rounded-md p-6">
@@ -306,7 +306,7 @@ export default function LoginPage() {
               /* --- Entrar desde fichero de keystore (USB) --- */
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <span className="label text-muted">Keystore desde fichero (USB)</span>
+                  <span className="label text-muted">Tus llaves desde fichero (USB)</span>
                   <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
                     Elige tu fichero <span className="text-text">.aegis-key.json</span>. En modo
                     portátil la identidad solo vive en memoria durante esta sesión: al cerrar no
@@ -327,7 +327,7 @@ export default function LoginPage() {
                   />
                 </label>
 
-                {passphraseInput("Passphrase")}
+                {passphraseInput("Contraseña")}
 
                 <button
                   type="button"
@@ -337,7 +337,7 @@ export default function LoginPage() {
                   <span className="flex flex-col text-left">
                     <span className="label text-text">Recordar en este equipo</span>
                     <span className="font-mono text-[10px] text-muted-2">
-                      {persistFile ? "Se guardará el keystore aquí" : "Modo portátil: no se guarda nada"}
+                      {persistFile ? "Se guardarán tus llaves aquí" : "Modo portátil: no se guarda nada"}
                     </span>
                   </span>
                   <span
@@ -399,12 +399,12 @@ export default function LoginPage() {
                     </span>
                   </div>
                   <p className="font-mono text-[11px] text-muted-2">
-                    La clave privada está cifrada. Introduce tu passphrase para desbloquearla en
+                    Tu identidad está cifrada. Introduce tu contraseña para desbloquearla en
                     esta sesión — nadie más puede usar esta identidad sin ella.
                   </p>
                 </div>
 
-                {passphraseInput("Passphrase", true)}
+                {passphraseInput("Contraseña", true)}
                 {gatewayInfo}
 
                 {error && (
@@ -432,12 +432,12 @@ export default function LoginPage() {
                   </div>
                   <p className="text-[13px] text-muted leading-relaxed">
                     Esta identidad estaba guardada <span className="text-text">sin protección</span>:
-                    cualquiera con acceso al equipo podía usarla. Protégela ahora con una passphrase
+                    cualquiera con acceso al equipo podía usarla. Protégela ahora con una contraseña
                     para cifrarla. A partir de entonces se pedirá al entrar.
                   </p>
                 </div>
 
-                {passphraseInput("Nueva passphrase", true)}
+                {passphraseInput("Nueva contraseña", true)}
                 {confirmInput}
                 {gatewayInfo}
 
@@ -471,7 +471,7 @@ export default function LoginPage() {
                     className="w-full bg-bg border border-line rounded-sm px-3 py-2 font-mono text-[12px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent break-all"
                   />
                 </div>
-                {passphraseInput("Passphrase para proteger esta identidad")}
+                {passphraseInput("Contraseña para proteger esta identidad")}
                 {confirmInput}
                 {gatewayInfo}
 

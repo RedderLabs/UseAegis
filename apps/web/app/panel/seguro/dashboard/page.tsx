@@ -146,7 +146,7 @@ function Channel() {
       setAddOpen(false);
     } catch (err) {
       if (err instanceof RelayError && err.status === 404) {
-        setAddError(`No existe ningún usuario con el handle «${h}».`);
+        setAddError(`No existe ningún usuario con el nombre de usuario «${h}».`);
       } else {
         setAddError(err instanceof Error ? err.message : "No se pudo añadir el contacto.");
       }
@@ -196,13 +196,13 @@ function Channel() {
 
           {addOpen && (
             <div className="mt-3 flex flex-col gap-2 bg-bg border border-line rounded-sm p-3">
-              <p className="label text-muted-2">Añadir contacto por handle público</p>
+              <p className="label text-muted-2">Añadir contacto por su nombre de usuario</p>
               <div className="flex items-center gap-2">
                 <input
                   value={handle}
                   onChange={(e) => setHandle(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addContact()}
-                  placeholder="handle (p. ej. alicia)"
+                  placeholder="nombre de usuario (p. ej. alicia)"
                   className="flex-1 bg-surface-2 border border-line rounded-sm px-3 py-2 text-[13px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent/50"
                 />
                 <button
@@ -215,8 +215,8 @@ function Channel() {
               </div>
               {addError && <p className="text-[12px] text-error">{addError}</p>}
               <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
-                Se descarga su clave de cifrado del directorio y se verifica su firma antes de
-                guardarla (anti-MITM). El buzón es el mismo por clearnet y .onion.
+                Descargamos su llave de cifrado y comprobamos que es de verdad suya antes de
+                guardarla. El buzón es el mismo por conexión normal y protegida (Tor).
               </p>
             </div>
           )}
@@ -226,7 +226,7 @@ function Channel() {
         <div ref={threadRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-4">
           <div className="flex justify-center">
             <span className="label text-muted-2 bg-surface-2 border border-line rounded-sm px-3 py-1.5 text-center">
-              Canal cifrado extremo a extremo · XChaCha20-Poly1305 · Sealed sender
+              Solo tú y tu contacto podéis leerlo · cifrado de extremo a extremo · XChaCha20-Poly1305
             </span>
           </div>
 
@@ -234,7 +234,7 @@ function Channel() {
             <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
               <p className="text-[14px] text-muted">No tienes contactos todavía.</p>
               <p className="font-mono text-[11px] text-muted-2">
-                Pulsa «+ Añadir» e introduce el handle de otro usuario para empezar.
+                Pulsa «+ Añadir» e introduce el nombre de usuario de otra persona para empezar.
               </p>
             </div>
           ) : messages.length === 0 ? (
@@ -282,7 +282,7 @@ function Channel() {
           <div className="flex items-center justify-between mb-2">
             <span className="inline-flex items-center gap-1.5 label text-muted-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent-dim" />
-              Cifrado en el dispositivo · XChaCha20-Poly1305
+              Se cifra en tu dispositivo · XChaCha20-Poly1305
             </span>
           </div>
           <div className="flex items-center gap-2 bg-surface-2 border border-line rounded-sm px-2 py-1.5 focus-within:border-accent/50 transition-colors">
@@ -316,10 +316,10 @@ function Channel() {
         <h2 className="label text-muted border-b border-line pb-2 mb-4">Estado de la sesión</h2>
         <div className="space-y-3">
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">Transporte</p>
+            <p className="label text-muted-2 mb-1">Conexión</p>
             <div className="flex items-center justify-between">
               <span className="font-mono text-[13px] text-accent">
-                {session.secure ? "Relay · .onion" : "Relay · clearnet"}
+                {session.secure ? "Protegida (Tor)" : "Normal"}
               </span>
               <span className="w-2 h-2 rounded-full bg-accent" style={{ boxShadow: "0 0 8px #c3f400" }} />
             </div>
@@ -330,7 +330,7 @@ function Channel() {
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
             <p className="label text-muted-2 mb-1">Remitente</p>
-            <span className="font-mono text-[12px] text-accent">Sealed sender</span>
+            <span className="font-mono text-[12px] text-accent">Remitente oculto</span>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
             <p className="label text-muted-2 mb-1">Contactos verificados</p>

@@ -49,14 +49,14 @@ export function gatewayNotice(): { onion: boolean; text: string } {
   if (isOnionSession()) {
     return {
       onion: true,
-      text: "Estás en la puerta protegida .onion: el tráfico va por Tor y tu IP no es visible para el relay.",
+      text: "Estás en la conexión protegida (Tor): el tráfico va por Tor y tu IP no es visible para el servidor.",
     };
   }
   return {
     onion: false,
     text: WEB_ONION_URL
-      ? "Estás en la puerta normal (clearnet). Si hay censura o quieres anonimato, abre nuestra .onion en el Navegador Tor."
-      : "Estás en la puerta normal (clearnet). Tu IP es visible para el relay.",
+      ? "Estás en la conexión normal. Si hay censura o quieres anonimato, abre nuestra .onion en el Navegador Tor."
+      : "Estás en la conexión normal. Tu IP es visible para el servidor.",
   };
 }
 
@@ -74,8 +74,8 @@ export class RelayError extends Error {
 /** Mensaje accionable cuando `fetch` al relay lanza (no responde), según la puerta actual. */
 function relayUnreachableMessage(): string {
   return isOnionSession()
-    ? "No se pudo contactar con el relay por Tor. El circuito .onion puede tardar unos segundos en abrir; reintenta. Un bloqueador del navegador también puede estar cortando la petición."
-    : "No se pudo contactar con el relay. Comprueba tu conexión y que ningún bloqueador del navegador corta la petición.";
+    ? "No se pudo contactar con el servidor por Tor. El circuito .onion puede tardar unos segundos en abrir; reintenta. Un bloqueador del navegador también puede estar cortando la petición."
+    : "No se pudo contactar con el servidor. Comprueba tu conexión y que ningún bloqueador del navegador corta la petición.";
 }
 
 async function request<T>(
@@ -130,7 +130,7 @@ export async function fetchHealth(): Promise<HealthResult> {
   } catch {
     throw new RelayError(relayUnreachableMessage(), 0);
   }
-  if (!res.ok) throw new RelayError(`El relay respondió ${res.status}.`, res.status);
+  if (!res.ok) throw new RelayError(`El servidor respondió ${res.status}.`, res.status);
   return res.json() as Promise<HealthResult>;
 }
 

@@ -45,22 +45,22 @@ function buildChecks(variant: "acceso" | "canal", s: Session | null): Check[] {
         ok: !!s && validIdentity(s.id),
         required: true,
       },
-      { label: "Almacén local disponible", ok: storageOk(), required: true },
+      { label: "Guardado local disponible", ok: storageOk(), required: true },
     ];
   }
   return [
-    { label: "CSPRNG disponible (Web Crypto)", ok: cryptoOk(), required: true },
+    { label: "Generador seguro de aleatoriedad disponible", ok: cryptoOk(), required: true },
     {
-      label: "Cifrado E2E · X25519 / XChaCha20-Poly1305",
+      label: "Cifrado de extremo a extremo · X25519 / XChaCha20-Poly1305",
       ok: true,
       required: false,
     },
-    { label: "Sealed sender activo", ok: true, required: false },
+    { label: "Remitente oculto activo", ok: true, required: false },
     {
-      label: "Sesión segura · caché efímera (auto-wipe)",
+      label: "Sesión protegida · sin rastro al cerrar",
       ok: !!s && s.secure,
       required: false,
-      detail: s && !s.secure ? "Desactivada en el login" : undefined,
+      detail: s && !s.secure ? "Se activa entrando por Tor" : undefined,
     },
   ];
 }
@@ -212,7 +212,7 @@ export function SecurityGate({
                 >
                   {complete
                     ? warnings
-                      ? "Verificado · sin protección segura"
+                      ? "Verificado · sin conexión protegida"
                       : "Verificado"
                     : "Comprobando…"}
                 </span>

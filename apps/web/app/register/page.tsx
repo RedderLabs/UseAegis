@@ -10,6 +10,7 @@ import {
   toBase64Url,
 } from "@/lib/crypto/ed25519";
 import { createKeystore, exportKeystore } from "@/lib/crypto/identity-store";
+import { generatePassword, PASSWORD_LENGTHS } from "@/lib/password-gen";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const MIN_PASSPHRASE = 8;
@@ -36,6 +37,18 @@ export default function RegisterPage() {
   const [confirmPass, setConfirmPass] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [passError, setPassError] = useState<string | null>(null);
+  // Opciones del generador de contraseña fuerte (para la contraseña que cifra la bóveda).
+  const [pwLen, setPwLen] = useState<number>(24);
+  const [pwSymbols, setPwSymbols] = useState(true);
+
+  // Genera una contraseña fuerte (CSPRNG), la rellena en ambos campos y la muestra para copiarla.
+  function fillGeneratedPassword() {
+    const pw = generatePassword(pwLen, pwSymbols);
+    setPassphrase(pw);
+    setConfirmPass(pw);
+    setShowPass(true);
+    setPassError(null);
+  }
   const logRef = useRef<HTMLDivElement>(null);
   const scrambleRef = useRef<number | null>(null);
 
@@ -85,11 +98,11 @@ export default function RegisterPage() {
     if (!candidate || confirmed || saving) return;
     setPassError(null);
     if (passphrase.length < MIN_PASSPHRASE) {
-      setPassError(`La passphrase debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setPassError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
       return;
     }
     if (passphrase !== confirmPass) {
-      setPassError("Las passphrases no coinciden.");
+      setPassError("Las contraseñas no coinciden.");
       return;
     }
     setSaving(true);
@@ -98,7 +111,7 @@ export default function RegisterPage() {
       // nunca se guarda en claro. Ver lib/crypto/vault.ts.
       await createKeystore(candidate.seed, passphrase);
       setConfirmed(true);
-      addLog(`> IDENTIDAD CIFRADA · protegida con tu passphrase (Argon2id)`);
+      addLog(`> IDENTIDAD CIFRADA · protegida con tu contraseña (Argon2id)`);
       addLog("> Clave privada cifrada en almacén local · nunca sale del dispositivo");
     } catch (err) {
       setPassError((err as Error).message);
@@ -152,9 +165,9 @@ export default function RegisterPage() {
       a.download = `aegis-keystore-${candidate.fingerprint}.aegis-key.json`;
       a.click();
       URL.revokeObjectURL(url);
-      addLog("> Exportación del keystore cifrado (USB): OK");
+      addLog("> Exportación de tus llaves cifradas (USB): OK");
     } catch (err) {
-      addLog(`> ERROR al exportar keystore: ${(err as Error).message}`);
+      addLog(`> ERROR al exportar tus llaves: ${(err as Error).message}`);
     }
   }
 
@@ -175,7 +188,7 @@ export default function RegisterPage() {
               <img src="/Aegis.svg" alt="Aegis Secure Messaging" className="h-12 w-auto" />
             </Link>
             <h1 className="font-sans text-3xl md:text-4xl font-bold tracking-tight text-text">
-              Génesis de identidad
+              Crea tu identidad
             </h1>
             <p className="label text-muted-2 mt-2">Sin datos personales</p>
           </div>
@@ -207,12 +220,12 @@ export default function RegisterPage() {
 
             <div className="space-y-2">
               <h2 className="font-sans text-lg font-semibold text-text">
-                Soberanía matemática
+                Solo tú tienes el control
               </h2>
               <p className="text-[13px] leading-relaxed text-muted">
                 Tu identidad es un par de claves Ed25519 de 256 bits generado en este
                 dispositivo. La clave privada se guarda <span className="text-text">cifrada
-                con tu passphrase</span> (Argon2id): sin ella, lo almacenado es ruido y nadie
+                con tu contraseña</span> (Argon2id): sin ella, lo almacenado es ruido y nadie
                 más puede usar tu identidad. Estas 16 letras son su{" "}
                 <span className="text-text">huella pública</span>: sirven para reconocerla, no
                 para iniciar sesión tecleándolas. Descarga el código de recuperación para
@@ -241,7 +254,7 @@ export default function RegisterPage() {
                     Protege tu identidad
                   </h2>
                   <p className="text-[12px] leading-relaxed text-muted">
-                    La clave privada se cifra con esta passphrase (Argon2id) antes de guardarse.
+                    La clave privada se cifra con esta contraseña (Argon2id) antes de guardarse.
                     Se pedirá cada vez que inicies sesión.{" "}
                     <span className="text-text">
                       No hay forma de recuperarla si la olvidas
@@ -249,20 +262,69 @@ export default function RegisterPage() {
                     — para eso está el código de recuperación.
                   </p>
                 </div>
+
+                {/* Generador de contraseña fuerte (recomendado) */}
+                <div className="rounded-sm border border-accent/25 bg-accent/5 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="label text-accent">Generar contraseña segura</p>
+                    <span className="font-mono text-[10px] text-muted-2">recomendado</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[11px] text-muted-2">Longitud</span>
+                    {PASSWORD_LENGTHS.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setPwLen(n)}
+                        className={`label rounded-sm border px-2.5 py-1 transition-colors ${
+                          pwLen === n
+                            ? "border-accent/50 text-accent bg-accent/10"
+                            : "border-line text-muted hover:text-text"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setPwSymbols((s) => !s)}
+                      aria-pressed={pwSymbols}
+                      className={`label rounded-sm border px-2.5 py-1 transition-colors ${
+                        pwSymbols
+                          ? "border-accent/50 text-accent bg-accent/10"
+                          : "border-line text-muted hover:text-text"
+                      }`}
+                    >
+                      Símbolos (!&*)
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fillGeneratedPassword}
+                    className="w-full label py-2.5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition"
+                  >
+                    Generar contraseña
+                  </button>
+                  <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
+                    Se rellena arriba y se muestra para que la copies. Guárdala en tu gestor de
+                    contraseñas: no hay forma de recuperarla si la pierdes.
+                  </p>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setShowPass((s) => !s)}
                   className="label w-fit rounded-sm border border-accent/40 px-2 py-1 text-accent hover:bg-accent hover:text-bg transition-colors"
                   aria-pressed={showPass}
                 >
-                  {showPass ? "Ocultar passphrase" : "Mostrar passphrase"}
+                  {showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
                 </button>
                 <input
                   type={showPass ? "text" : "password"}
                   value={passphrase}
                   autoComplete="new-password"
                   onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder={`Passphrase (mín. ${MIN_PASSPHRASE} caracteres)`}
+                  placeholder={`Contraseña (mín. ${MIN_PASSPHRASE} caracteres)`}
                   className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
                 />
                 <input
@@ -270,12 +332,12 @@ export default function RegisterPage() {
                   value={confirmPass}
                   autoComplete="new-password"
                   onChange={(e) => setConfirmPass(e.target.value)}
-                  placeholder="Repite la passphrase"
+                  placeholder="Repite la contraseña"
                   className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
                 />
                 {confirmPass.length > 0 && confirmPass !== passphrase && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
-                    Las passphrases no coinciden todavía.
+                    Las contraseñas no coinciden todavía.
                   </p>
                 )}
                 {passError && (
@@ -314,7 +376,7 @@ export default function RegisterPage() {
                 onClick={downloadKeystore}
                 className="label text-muted hover:text-accent transition-colors self-center"
               >
-                Exportar keystore cifrado a fichero (USB)
+                Exportar tus llaves cifradas a fichero (USB)
               </button>
             )}
           </div>
