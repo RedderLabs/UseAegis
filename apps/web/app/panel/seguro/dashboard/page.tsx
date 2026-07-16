@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { getToken } from "@/lib/session";
-import { RelayError, resolveUsername } from "@/lib/relay-client";
+import { listBlocks, RelayError, resolveUsername } from "@/lib/relay-client";
 import {
   addContactFromDirectory,
   listContacts,
   type Contact,
 } from "@/lib/contacts";
 import {
+  conversationPeers,
+  hasIncoming,
   loadHistory,
   mergeIncoming,
   pollInbox,
@@ -18,6 +22,8 @@ import {
   type ChatMessage,
 } from "@/lib/chat";
 import { IconSend, IconCheck } from "@/components/Icons";
+
+const BASE = "/panel/seguro/dashboard";
 
 const POLL_MS = 4000;
 
@@ -33,12 +39,15 @@ function contactLabel(c: Contact): string {
 function Channel() {
   const session = useDashboardSession();
   const ownPub = session.publicKey;
+  const searchParams = useSearchParams();
+  const peerParam = searchParams.get("peer");
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState(0); // solicitudes de contacto sin resolver
 
   // Alta de contacto por handle.
   const [addOpen, setAddOpen] = useState(false);
@@ -49,19 +58,38 @@ function Channel() {
   const threadRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<Contact | null>(null);
   selectedRef.current = selected;
+  const contactsRef = useRef<Contact[]>([]);
+  contactsRef.current = contacts;
+  const blockedRef = useRef<Set<string>>(new Set());
 
-  // Carga inicial de la libreta; selecciona el primer contacto si lo hay.
+  // Recalcula cuántos peers nos han escrito sin ser contacto ni estar bloqueados (solicitudes).
+  const refreshPending = useCallback(() => {
+    const contactPubs = new Set(contactsRef.current.map((c) => c.pub));
+    const count = conversationPeers(ownPub).filter(
+      (p) => hasIncoming(ownPub, p) && !contactPubs.has(p) && !blockedRef.current.has(p),
+    ).length;
+    setPending(count);
+  }, [ownPub]);
+
+  // Carga inicial: libreta + lista de bloqueados; selecciona contacto (?peer= o el primero).
   useEffect(() => {
     let alive = true;
-    listContacts().then((list) => {
+    const token = getToken();
+    Promise.all([
+      listContacts(),
+      token ? listBlocks(token).catch(() => []) : Promise.resolve([]),
+    ]).then(([list, blocks]) => {
       if (!alive) return;
+      blockedRef.current = new Set(blocks.map((b) => b.publicKey));
       setContacts(list);
-      setSelected((cur) => cur ?? list[0] ?? null);
+      setSelected((cur) => cur ?? list.find((c) => c.pub === peerParam) ?? list[0] ?? null);
+      contactsRef.current = list;
+      refreshPending();
     });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [peerParam, refreshPending]);
 
   // Al cambiar de contacto, carga su historial local.
   useEffect(() => {
@@ -78,11 +106,12 @@ function Channel() {
       try {
         const { incoming } = await pollInbox(token!, ownPub);
         if (!alive || incoming.length === 0) return;
-        const touched = mergeIncoming(ownPub, incoming);
+        const touched = mergeIncoming(ownPub, incoming, (p) => blockedRef.current.has(p));
         const open = selectedRef.current;
         if (open && touched.has(open.pub)) {
           setMessages(loadHistory(ownPub, open.pub));
         }
+        refreshPending(); // un entrante de un no-contacto es una solicitud nueva
       } catch {
         /* relay caído o sesión expirada: la próxima vuelta reintenta */
       }
@@ -94,7 +123,7 @@ function Channel() {
       alive = false;
       window.clearInterval(id);
     };
-  }, [ownPub]);
+  }, [ownPub, refreshPending]);
 
   useEffect(() => {
     threadRef.current?.scrollTo(0, threadRef.current.scrollHeight);
@@ -141,9 +170,11 @@ function Channel() {
       const contact = await addContactFromDirectory(entry);
       const list = await listContacts();
       setContacts(list);
+      contactsRef.current = list;
       setSelected(contact);
       setHandle("");
       setAddOpen(false);
+      refreshPending();
     } catch (err) {
       if (err instanceof RelayError && err.status === 404) {
         setAddError(`No existe ningún usuario con el nombre de usuario «${h}».`);
@@ -221,6 +252,19 @@ function Channel() {
             </div>
           )}
         </div>
+
+        {/* Aviso de solicitudes de contacto (gente que te ha escrito sin ser contacto) */}
+        {pending > 0 && (
+          <Link
+            href={`${BASE}/contactos`}
+            className="shrink-0 flex items-center justify-between gap-3 bg-accent/10 border-b border-accent/30 px-4 md:px-6 py-2.5 hover:bg-accent/15 transition-colors"
+          >
+            <span className="label text-accent">
+              Tienes {pending} {pending === 1 ? "solicitud" : "solicitudes"} de contacto
+            </span>
+            <span className="label text-accent">Ver →</span>
+          </Link>
+        )}
 
         {/* Mensajes */}
         <div ref={threadRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-4">
@@ -345,7 +389,9 @@ function Channel() {
 export default function DashboardPage() {
   return (
     <DashboardShell>
-      <Channel />
+      <Suspense fallback={null}>
+        <Channel />
+      </Suspense>
     </DashboardShell>
   );
 }

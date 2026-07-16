@@ -62,3 +62,10 @@ export const IconShield = make(<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V
 export const IconDownload = make(
   <path d="M12 3v12M7 11l5 5 5-5M5 21h14" />,
 );
+export const IconUsers = make(
+  <>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+  </>,
+);

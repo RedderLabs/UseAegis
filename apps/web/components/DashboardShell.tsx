@@ -17,6 +17,7 @@ import { lockKeystore } from "@/lib/crypto/identity-store";
 import { setFaviconSecure } from "@/lib/favicon";
 import {
   IconChat,
+  IconUsers,
   IconKey,
   IconTerminal,
   IconSettings,
@@ -28,6 +29,7 @@ const BASE = "/panel/seguro/dashboard";
 
 const NAV = [
   { href: BASE, label: "Canal", Icon: IconChat },
+  { href: `${BASE}/contactos`, label: "Contactos", Icon: IconUsers },
   { href: `${BASE}/vault`, label: "Bóveda", Icon: IconKey },
   { href: `${BASE}/logs`, label: "Transporte", Icon: IconTerminal },
   { href: `${BASE}/settings`, label: "Ajustes", Icon: IconSettings },

@@ -271,3 +271,31 @@ export async function fetchMessages(token: string, after?: string): Promise<Stor
 export function deleteMessage(token: string, id: string): Promise<void> {
   return request<void>("DELETE", `/messages/${encodeURIComponent(id)}`, undefined, token);
 }
+
+// --- Bloqueos -------------------------------------------------------------------------
+//
+// Un bloqueo es direccional y lo IMPONE el relay: si has bloqueado a alguien, sus sobres se
+// descartan en el envío (silenciosamente, sin revelarle el bloqueo). El bloqueo va por
+// identidad → vale igual por clearnet y por .onion.
+
+/** Una entrada de la lista de bloqueados. */
+export interface BlockedEntry {
+  publicKey: string; // Ed25519 (base64url) del bloqueado
+  createdAt: string; // ISO-8601
+}
+
+/** Bloquea a una identidad por su clave pública Ed25519 (base64url). */
+export function blockUser(token: string, publicKeyB64: string): Promise<{ ok: true }> {
+  return request("PUT", `/blocks/${encodeURIComponent(publicKeyB64)}`, undefined, token);
+}
+
+/** Desbloquea a una identidad. Idempotente. */
+export function unblockUser(token: string, publicKeyB64: string): Promise<{ ok: true }> {
+  return request("DELETE", `/blocks/${encodeURIComponent(publicKeyB64)}`, undefined, token);
+}
+
+/** Lista de bloqueados de la propia identidad, del más reciente al más antiguo. */
+export async function listBlocks(token: string): Promise<BlockedEntry[]> {
+  const { blocks } = await request<{ blocks: BlockedEntry[] }>("GET", "/blocks", undefined, token);
+  return blocks;
+}
