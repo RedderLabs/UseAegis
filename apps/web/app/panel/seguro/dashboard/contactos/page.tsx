@@ -23,6 +23,7 @@ import {
   hasIncoming,
   lastMessage,
   loadHistory,
+  markUnread,
 } from "@/lib/chat";
 import { fingerprint16, fromBase64Url } from "@/lib/crypto/ed25519";
 import { groupIdentity } from "@/lib/identity";
@@ -171,6 +172,8 @@ function Contactos() {
       if (!token) throw new Error("Sesión no disponible.");
       const entry = await fetchBundle(token, pub);
       await addContactFromDirectory(entry); // verifica la prekey antes de guardar
+      // Ya es contacto: su mensaje pendiente pasa a contar como no leído (badge del Canal).
+      if (hasIncoming(ownPub, pub)) markUnread(ownPub, pub);
     });
   }
 
