@@ -10,7 +10,7 @@
  *
  * Solo se ejecuta en navegador (IndexedDB).
  */
-import { fromBase64Url } from "./crypto/ed25519";
+import { fingerprint16, fromBase64Url } from "./crypto/ed25519";
 import { verifyPeerPrekey } from "./crypto/messaging";
 import type { DirectoryEntry } from "./relay-client";
 
@@ -93,7 +93,9 @@ export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Co
     pub: entry.publicKey,
     x25519: entry.keyBundle.x25519PublicKey,
     handle: entry.username,
-    fingerprint: entry.fingerprint,
+    // Huella LEGIBLE de 16 letras (no la clave cruda: `entry.fingerprint` del relay ES la clave
+    // en base64url). Así ninguna vista muestra la clave pública en bruto.
+    fingerprint: await fingerprint16(edPub),
     addedAt: new Date().toISOString(),
   };
   await tx("readwrite", (s) => s.put(contact));
