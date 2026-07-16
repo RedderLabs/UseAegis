@@ -146,6 +146,48 @@ test("handle ya tomado por otra identidad → 409", async () => {
   assert.equal(second.json().error, "username_taken");
 });
 
+test("el handle es inmutable: reclamar un segundo → 409 username_locked", async () => {
+  const ip = "10.20.0.12";
+  const client = await newAuthedClient(ip);
+  const first = `frank_${randomBytes(3).toString("hex")}`;
+  const second = `grace_${randomBytes(3).toString("hex")}`;
+
+  const claim1 = await app.inject({
+    method: "PUT",
+    url: "/directory/username",
+    headers: authHeaders(client, ip),
+    payload: { username: first },
+  });
+  assert.equal(claim1.statusCode, 200);
+  assert.equal(claim1.json().username, first);
+
+  // Intentar cambiarlo por otro nombre (libre) NO debe prender: se elige una sola vez.
+  const claim2 = await app.inject({
+    method: "PUT",
+    url: "/directory/username",
+    headers: authHeaders(client, ip),
+    payload: { username: second },
+  });
+  assert.equal(claim2.statusCode, 409);
+  assert.equal(claim2.json().error, "username_locked");
+
+  // El handle original sigue en pie; el segundo nombre quedó libre (nadie lo tomó).
+  const stillFirst = await app.inject({
+    method: "GET",
+    url: `/directory/resolve/${first}`,
+    headers: authHeaders(client, ip),
+  });
+  assert.equal(stillFirst.statusCode, 200);
+  assert.equal(stillFirst.json().publicKey, client.publicKeyB64);
+
+  const secondFree = await app.inject({
+    method: "GET",
+    url: `/directory/resolve/${second}`,
+    headers: authHeaders(client, ip),
+  });
+  assert.equal(secondFree.statusCode, 404);
+});
+
 test("handle con formato inválido → 400", async () => {
   const ip = "10.20.0.5";
   const client = await newAuthedClient(ip);

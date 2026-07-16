@@ -3,7 +3,7 @@
 // Todas requieren sesión (bearer): solo un usuario autenticado publica su handle/prekey o
 // consulta a otros. Así el directorio no es un padrón anónimo raspable por cualquiera.
 //
-//   PUT /directory/username        { username }                     → reclama/cambia handle
+//   PUT /directory/username        { username }                     → reclama handle (inmutable: una sola vez)
 //   PUT /directory/prekey          { x25519PublicKey, signature }   → publica prekey firmada
 //   GET /directory/resolve/:username                                → handle → { identidad, keyBundle }
 //   GET /directory/bundle/:publicKey                                → pubkey → { identidad, keyBundle }
@@ -60,7 +60,7 @@ export const directoryRoutes: FastifyPluginAsync<DirectoryRoutesOptions> = async
     rateLimit: { max: opts.rateLimit.directory, timeWindow: opts.rateLimit.windowMs },
   };
 
-  // 1) Reclamar / cambiar el handle público con el que otros te encuentran.
+  // 1) Reclamar el handle público con el que otros te encuentran. Se elige UNA vez y queda fijo.
   app.put<{ Body: UsernameBody }>(
     "/directory/username",
     { preHandler: requireSession, schema: { body: usernameBodySchema }, config: perRoute },
