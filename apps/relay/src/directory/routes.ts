@@ -13,6 +13,7 @@ import { requireSession } from "../plugins/authenticate";
 import { verifyPrekeySignature } from "./prekey";
 import {
   getEntry,
+  isReservedUsername,
   normalizeUsername,
   publishPrekey,
   resolveByUsername,
@@ -67,6 +68,9 @@ export const directoryRoutes: FastifyPluginAsync<DirectoryRoutesOptions> = async
       const username = normalizeUsername(request.body.username);
       if (!USERNAME_RE.test(username)) {
         return reply.code(400).send({ error: "invalid_username" });
+      }
+      if (isReservedUsername(username)) {
+        return reply.code(400).send({ error: "username_reserved" });
       }
       const result = await setUsername(request.identity!.publicKey, username);
       if (!result.ok) {

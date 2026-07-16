@@ -6,8 +6,32 @@
 import { pool } from "../db/pool";
 import { toBase64Url } from "../auth/ed25519";
 
-/** Handle válido: 3–20 chars, minúsculas/dígitos/guion bajo. Igual que el CHECK de la BBDD. */
-export const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+/**
+ * Handle válido: 3–20 chars, DEBE empezar por letra (así no puede ser solo dígitos, que se
+ * confundirían con el número aleatorio) y solo minúsculas/dígitos/guion bajo. Es un SUBCONJUNTO
+ * del CHECK de la BBDD (`^[a-z0-9_]{3,20}$`), por lo que todo lo que acepta esto pasa el CHECK.
+ * Al ser una lista blanca de caracteres, es imposible colar HTML/SQL/espacios: no hay superficie
+ * de inyección por el nombre.
+ */
+export const USERNAME_RE = /^[a-z][a-z0-9_]{2,19}$/;
+
+/**
+ * Nombres RESERVADOS: no se pueden reclamar. No es defensa contra inyección (de eso se encarga
+ * USERNAME_RE), sino contra la SUPLANTACIÓN: evita que alguien se haga pasar por el equipo o por
+ * un rol de sistema (soporte, admin…). Comparación exacta sobre el nombre ya normalizado.
+ */
+export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
+  "admin", "administrator", "administrador", "root", "system", "sys", "sistema",
+  "support", "soporte", "help", "ayuda", "aegis", "official", "oficial", "staff",
+  "team", "equipo", "mod", "moderator", "moderador", "security", "seguridad",
+  "info", "contact", "contacto", "abuse", "noreply", "bot", "service", "servicio",
+  "owner", "null", "undefined", "anonymous", "anonimo", "anon",
+]);
+
+/** true si el handle está reservado (no reclamable). Recibe el nombre ya normalizado. */
+export function isReservedUsername(username: string): boolean {
+  return RESERVED_USERNAMES.has(username);
+}
 
 /** Normaliza lo que teclea el usuario a la forma canónica (minúsculas, sin espacios). */
 export function normalizeUsername(raw: string): string {
