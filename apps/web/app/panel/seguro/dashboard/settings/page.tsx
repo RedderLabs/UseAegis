@@ -114,13 +114,15 @@ function Settings() {
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Nombre de usuario público (handle) */}
+        {/* Nombre de usuario público (handle) — se elige UNA vez y es definitivo */}
         <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
           <p className="label text-text">Tu nombre de usuario</p>
           <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
-            Es el nombre público con el que te añaden como contacto. Para que sea único y nadie
-            tenga que pelearse por el mismo, lo generamos por ti (una palabra + un número). Dale a
-            «Regenerar» hasta que te guste y pulsa «Usar este».
+            Es el nombre público con el que te añaden como contacto. Lo generamos por ti (una
+            palabra + un número) para que sea único.{" "}
+            <span className="text-muted">
+              Se elige una sola vez y queda fijo: no se puede cambiar después.
+            </span>
           </p>
 
           <div className="mt-4 pt-4 border-t border-line">
@@ -139,47 +141,61 @@ function Settings() {
               </div>
             ) : (
               <p className="font-mono text-[13px] text-muted">
-                Todavía no tienes nombre. Genera uno para que puedan añadirte.
+                Todavía no tienes nombre. Elige uno para que puedan añadirte.
               </p>
             )}
           </div>
 
-          <div className="mt-4">
-            <p className="label text-muted-2 mb-1.5">
-              {username ? "Cambiar por otro" : "Tu nombre propuesto"}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="flex-1 flex items-center bg-bg border border-line rounded-sm px-3 py-2.5">
-                <span className="font-mono text-[15px] text-accent select-all">
-                  @{candidate ?? "…"}
-                </span>
+          {/* Una vez fijado, el nombre es definitivo: se oculta la reclamación. */}
+          {usernameLoaded &&
+            (username ? (
+              <div className="mt-4 flex items-start gap-2 bg-bg border border-line rounded-sm p-3">
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
+                  Tu nombre de usuario es <span className="text-accent">definitivo</span>. Comparte
+                  tu <span className="text-text">@{username}</span> completo para que te añadan como
+                  contacto.
+                </p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={regenerate}
-                  disabled={savingName}
-                  className="shrink-0 label py-2.5 px-4 border border-line text-muted hover:text-text hover:border-accent-dim rounded-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                >
-                  Regenerar
-                </button>
-                <button
-                  onClick={claimCandidate}
-                  disabled={savingName || !candidate}
-                  className="shrink-0 label py-2.5 px-5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none"
-                >
-                  {savingName ? "Guardando…" : "Usar este"}
-                </button>
+            ) : (
+              <div className="mt-4">
+                <p className="label text-muted-2 mb-1.5">Tu nombre propuesto</p>
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                  <div className="flex-1 flex items-center bg-bg border border-line rounded-sm px-3 py-2.5">
+                    <span className="font-mono text-[15px] text-accent select-all">
+                      @{candidate ?? "…"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={regenerate}
+                      disabled={savingName}
+                      className="shrink-0 label py-2.5 px-4 border border-line text-muted hover:text-text hover:border-accent-dim rounded-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      Regenerar
+                    </button>
+                    <button
+                      onClick={claimCandidate}
+                      disabled={savingName || !candidate}
+                      className="shrink-0 label py-2.5 px-5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      {savingName ? "Guardando…" : "Usar este"}
+                    </button>
+                  </div>
+                </div>
+                <p className="font-mono text-[11px] text-status-p2p mt-2">
+                  Elige con calma: una vez lo confirmes con «Usar este», no podrás cambiarlo.
+                </p>
+                {nameError && (
+                  <p className="font-mono text-[11px] text-status-p2p mt-2">{nameError}</p>
+                )}
+                {nameSaved && (
+                  <p className="font-mono text-[11px] text-accent mt-2">
+                    Guardado ✓ · comparte tu @nombre completo para que te añadan.
+                  </p>
+                )}
               </div>
-            </div>
-            {nameError && (
-              <p className="font-mono text-[11px] text-status-p2p mt-2">{nameError}</p>
-            )}
-            {nameSaved && (
-              <p className="font-mono text-[11px] text-accent mt-2">
-                Guardado ✓ · comparte tu @nombre completo para que te añadan.
-              </p>
-            )}
-          </div>
+            ))}
         </section>
 
         {/* Transporte / puerta */}
