@@ -87,6 +87,41 @@ export function saveHistory(ownPub: string, peerPub: string, messages: ChatMessa
   }
 }
 
+/** Borra el hilo local con un peer (p. ej. al bloquear). No toca el buzón del relay. */
+export function clearConversation(ownPub: string, peerPub: string): void {
+  try {
+    localStorage.removeItem(historyKey(ownPub, peerPub));
+  } catch {
+    /* noop */
+  }
+}
+
+/** Todos los peers con los que hay hilo local (contactos o no), leyendo las claves guardadas. */
+export function conversationPeers(ownPub: string): string[] {
+  const prefix = `${HISTORY_PREFIX}.${ownPub}.`;
+  const peers: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) peers.push(key.slice(prefix.length));
+    }
+  } catch {
+    /* noop */
+  }
+  return peers;
+}
+
+/** true si en el hilo con `peerPub` hay al menos un mensaje ENTRANTE (nos escribió). */
+export function hasIncoming(ownPub: string, peerPub: string): boolean {
+  return loadHistory(ownPub, peerPub).some((m) => m.dir === "in");
+}
+
+/** Último mensaje del hilo con `peerPub` (para previsualizar una solicitud), o undefined. */
+export function lastMessage(ownPub: string, peerPub: string): ChatMessage | undefined {
+  const h = loadHistory(ownPub, peerPub);
+  return h[h.length - 1];
+}
+
 function loadCursor(ownPub: string): string | undefined {
   try {
     return localStorage.getItem(`${CURSOR_PREFIX}.${ownPub}`) ?? undefined;
@@ -192,11 +227,20 @@ export async function pollInbox(token: string, ownPub: string): Promise<InboxUpd
  * Integra los entrantes de una vuelta de polling en la conversación de cada remitente,
  * evitando duplicados por id. Persiste cada conversación tocada. Devuelve el set de
  * `peerPub` afectados para que la UI refresque la conversación abierta si procede.
+ *
+ * `isBlocked` (opcional): los mensajes de un peer bloqueado se descartan aquí (no se guardan ni
+ * reaparecen como solicitud). El relay ya frena los envíos POSTERIORES al bloqueo; esto cubre
+ * los sobres que quedaran en el buzón de ANTES de bloquear.
  */
-export function mergeIncoming(ownPub: string, incoming: ChatMessage[]): Set<string> {
+export function mergeIncoming(
+  ownPub: string,
+  incoming: ChatMessage[],
+  isBlocked?: (peerPub: string) => boolean,
+): Set<string> {
   const touched = new Set<string>();
   const byPeer = new Map<string, ChatMessage[]>();
   for (const m of incoming) {
+    if (m.dir === "in" && isBlocked?.(m.peerPub)) continue; // entrante de bloqueado: descartar
     const arr = byPeer.get(m.peerPub) ?? [];
     arr.push(m);
     byPeer.set(m.peerPub, arr);
