@@ -143,7 +143,8 @@ function Channel() {
         return next;
       });
     } catch (err) {
-      const msg = err instanceof RelayError ? err.message : "No se pudo enviar el mensaje.";
+      // Muestra la causa real (RelayError o cualquier Error, p. ej. "Identidad bloqueada").
+      const msg = err instanceof Error ? err.message : "No se pudo enviar el mensaje.";
       setMessages((prev) => [
         ...prev,
         {
