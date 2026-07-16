@@ -81,21 +81,27 @@ const SELECT_COLS =
 
 export type SetUsernameResult =
   | { ok: true; username: string }
-  | { ok: false; reason: "username_taken" };
+  | { ok: false; reason: "username_taken" | "username_locked" };
 
 /**
- * Reclama o cambia el handle de una identidad. El handle es único case-insensitive; si
- * otra identidad ya lo tiene, devuelve `username_taken` (violación de índice único 23505).
+ * Reclama el handle de una identidad. El nombre se elige UNA SOLA VEZ y es INMUTABLE: el
+ * UPDATE solo prende si el handle actual es NULL. Si la identidad ya tiene uno, no se toca
+ * nada y se devuelve `username_locked` (la autoridad es el relay, no la UI). Si otra identidad
+ * ya tiene ese handle, es `username_taken` (violación de índice único 23505).
  */
 export async function setUsername(
   publicKey: Buffer,
   username: string,
 ): Promise<SetUsernameResult> {
   try {
-    await pool.query(
-      `UPDATE identities SET username = $2 WHERE public_key = $1`,
+    const { rowCount } = await pool.query(
+      `UPDATE identities SET username = $2 WHERE public_key = $1 AND username IS NULL`,
       [publicKey, username],
     );
+    // 0 filas afectadas con una sesión válida (la identidad existe) ⟹ ya tenía nombre: inmutable.
+    if (rowCount === 0) {
+      return { ok: false, reason: "username_locked" };
+    }
     return { ok: true, username };
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
