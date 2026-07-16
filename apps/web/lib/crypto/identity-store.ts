@@ -18,6 +18,12 @@
 import { fingerprint16, fromBase64Url, publicKeyFromSeed, signWithSeed, toBase64Url } from "./ed25519";
 import { openSeed, sealSeed, type VaultBlob } from "./vault";
 import { buildSignedPrekey as buildPrekey, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
+import {
+  openEnvelope,
+  sealEnvelope,
+  type IncomingMessage,
+  type OutgoingMessage,
+} from "./messaging";
 
 const DB_NAME = "aegis";
 const DB_VERSION = 1;
@@ -277,4 +283,25 @@ export function buildSignedPrekey(): Promise<{ x25519PublicKey: Uint8Array; sign
 /** Secreto compartido (ECDH) con la prekey X25519 de un peer. El relay nunca lo ve. */
 export function sharedSecretWithPeer(peerX25519PublicKey: Uint8Array): Promise<Uint8Array> {
   return sharedSecretWith(requireSeed(), peerX25519PublicKey);
+}
+
+// --- Mensajería sealed-sender (requieren keystore desbloqueado) -----------------------
+//
+// Se envuelven aquí para que la semilla NUNCA salga de este módulo: el sobre se sella/abre
+// con la semilla en memoria y solo cruzan la frontera bytes ya cifrados o ya verificados.
+
+/** Sella un mensaje para un peer con la identidad desbloqueada. Devuelve el sobre opaco. */
+export function sealMessageFor(params: {
+  recipientEd25519Pub: Uint8Array; // identidad del destinatario (ata la firma)
+  recipientX25519Pub: Uint8Array; // prekey X25519 del destinatario (ya VERIFICADA)
+  message: OutgoingMessage;
+}): Promise<Uint8Array> {
+  return sealEnvelope({ senderSeed: requireSeed(), ...params });
+}
+
+/** Abre un sobre recibido con la identidad desbloqueada. Verifica la firma del remitente. */
+export async function openMessageBlob(blob: Uint8Array): Promise<IncomingMessage> {
+  const seed = requireSeed();
+  const recipientEd25519Pub = await publicKeyFromSeed(seed);
+  return openEnvelope({ recipientSeed: seed, recipientEd25519Pub, blob });
 }

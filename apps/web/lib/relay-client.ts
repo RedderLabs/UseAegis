@@ -79,7 +79,7 @@ function relayUnreachableMessage(): string {
 }
 
 async function request<T>(
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
   token?: string,
@@ -216,4 +216,58 @@ export function resolveUsername(token: string, username: string): Promise<Direct
 /** Descarga el key bundle de una identidad por su clave pública (p. ej. tras un QR). */
 export function fetchBundle(token: string, publicKeyB64: string): Promise<DirectoryEntry> {
   return request("GET", `/directory/bundle/${encodeURIComponent(publicKeyB64)}`, undefined, token);
+}
+
+// --- Buzón de mensajes (sealed sender, Modo A) ---------------------------------------
+//
+// La web habla siempre por `/api` same-origin: el TRANSPORTE SIGUE LA PUERTA (clearnet o
+// .onion) sin que el usuario elija. El sobre `blob` es OPACO para el relay (contenido +
+// identidad del remitente cifrados dentro, ver lib/crypto/messaging.ts): aquí solo se mueve
+// base64url. El buzón se identifica por la clave pública Ed25519 del destinatario.
+
+/** Sobre almacenado tal como lo devuelve el buzón del propio destinatario. */
+export interface StoredEnvelope {
+  id: string; // uuid del sobre en el buzón (para DELETE/ack)
+  blob: string; // base64url del sobre opaco
+  createdAt: string; // ISO-8601 (cursor incremental)
+}
+
+/**
+ * Deja un sobre en el buzón de `recipientPubB64` (Ed25519, base64url). El remitente va
+ * autenticado por la sesión (anti-spam) pero NO se almacena junto al sobre (sealed sender):
+ * su identidad viaja cifrada dentro de `blob`.
+ */
+export function sendMessage(
+  token: string,
+  recipientPubB64: string,
+  blob: Uint8Array,
+): Promise<{ ok: true }> {
+  return request(
+    "POST",
+    `/messages/${encodeURIComponent(recipientPubB64)}`,
+    { blob: toBase64Url(blob) },
+    token,
+  );
+}
+
+/**
+ * Recupera los sobres del propio buzón. `after` = cursor incremental (ISO): solo devuelve
+ * los sobres con `createdAt > after`; omítelo para leer desde el principio (dentro del TTL).
+ * NO borra al leer: los sobres se retienen bajo TTL para poder retomar la conversación al
+ * cambiar de puerta (clearnet ↔ .onion) o de dispositivo.
+ */
+export async function fetchMessages(token: string, after?: string): Promise<StoredEnvelope[]> {
+  const qs = after ? `?after=${encodeURIComponent(after)}` : "";
+  const { messages } = await request<{ messages: StoredEnvelope[] }>(
+    "GET",
+    `/messages${qs}`,
+    undefined,
+    token,
+  );
+  return messages;
+}
+
+/** Purga un sobre del propio buzón por su id (ack/borrado explícito por el destinatario). */
+export function deleteMessage(token: string, id: string): Promise<void> {
+  return request<void>("DELETE", `/messages/${encodeURIComponent(id)}`, undefined, token);
 }
