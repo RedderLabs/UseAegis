@@ -15,10 +15,13 @@ import {
   conversationPeers,
   hasIncoming,
   loadHistory,
+  markRead,
+  markUnread,
   mergeIncoming,
   pollInbox,
   saveHistory,
   sendText,
+  unreadPeers,
   type ChatMessage,
 } from "@/lib/chat";
 import { IconSend, IconCheck } from "@/components/Icons";
@@ -48,6 +51,7 @@ function Channel() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState(0); // solicitudes de contacto sin resolver
+  const [unread, setUnread] = useState<Set<string>>(new Set()); // conversaciones con no leídos
 
   // Alta de contacto por handle.
   const [addOpen, setAddOpen] = useState(false);
@@ -91,9 +95,13 @@ function Channel() {
     };
   }, [peerParam, refreshPending]);
 
-  // Al cambiar de contacto, carga su historial local.
+  // Al cambiar de contacto, carga su historial local y lo marca como leído.
   useEffect(() => {
     setMessages(selected ? loadHistory(ownPub, selected.pub) : []);
+    if (selected) {
+      markRead(ownPub, selected.pub);
+      setUnread(unreadPeers(ownPub));
+    }
   }, [selected, ownPub]);
 
   // Sondeo del buzón: abre entrantes, los integra por conversación y refresca la abierta.
@@ -108,9 +116,18 @@ function Channel() {
         if (!alive || incoming.length === 0) return;
         const touched = mergeIncoming(ownPub, incoming, (p) => blockedRef.current.has(p));
         const open = selectedRef.current;
+        // No leído = entrante de un CONTACTO cuya conversación no está abierta. Los no-contactos
+        // se avisan por «Solicitudes» (banner), no por este badge (no se pueden abrir en el Canal).
+        const contactPubs = new Set(contactsRef.current.map((c) => c.pub));
+        for (const m of incoming) {
+          if (m.dir !== "in" || blockedRef.current.has(m.peerPub) || !contactPubs.has(m.peerPub)) continue;
+          if (m.peerPub !== open?.pub) markUnread(ownPub, m.peerPub);
+        }
         if (open && touched.has(open.pub)) {
           setMessages(loadHistory(ownPub, open.pub));
+          markRead(ownPub, open.pub); // lo abierto se lee al vuelo
         }
+        setUnread(unreadPeers(ownPub));
         refreshPending(); // un entrante de un no-contacto es una solicitud nueva
       } catch {
         /* relay caído o sesión expirada: la próxima vuelta reintenta */
@@ -209,6 +226,7 @@ function Channel() {
                 ) : (
                   contacts.map((c) => (
                     <option key={c.pub} value={c.pub}>
+                      {unread.has(c.pub) ? "● " : ""}
                       {contactLabel(c)}
                     </option>
                   ))

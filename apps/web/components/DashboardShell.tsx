@@ -14,6 +14,7 @@ import { groupIdentity } from "@/lib/identity";
 import { endSession, getSession, getToken, type Session } from "@/lib/session";
 import { logout } from "@/lib/relay-client";
 import { isUnlocked, lockKeystore } from "@/lib/crypto/identity-store";
+import { unreadCount } from "@/lib/chat";
 import { setFaviconSecure } from "@/lib/favicon";
 import {
   IconChat,
@@ -50,6 +51,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [unread, setUnread] = useState(0);
+
+  // Badge de no leídos: se recalcula al navegar y cuando el Canal emite `aegis:unread`.
+  useEffect(() => {
+    if (!session) return;
+    const refresh = () => setUnread(unreadCount(session.publicKey));
+    refresh();
+    window.addEventListener("aegis:unread", refresh);
+    return () => window.removeEventListener("aegis:unread", refresh);
+  }, [session, pathname]);
 
   useEffect(() => {
     const s = getSession();
@@ -167,6 +178,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   >
                     <Icon className="w-4 h-4" />
                     <span className="label">{label}</span>
+                    {href === BASE && unread > 0 && (
+                      <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center">
+                        {unread}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -212,11 +228,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               <Link
                 key={href}
                 href={href}
-                className={`flex flex-col items-center gap-1 ${
+                className={`relative flex flex-col items-center gap-1 ${
                   active ? "text-accent" : "text-muted-2"
                 }`}
               >
                 <Icon className="w-5 h-5" />
+                {href === BASE && unread > 0 && (
+                  <span className="absolute -top-1 right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center">
+                    {unread}
+                  </span>
+                )}
                 <span className="label text-[9px]">{label}</span>
               </Link>
             );

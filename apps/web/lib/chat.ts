@@ -94,6 +94,7 @@ export function clearConversation(ownPub: string, peerPub: string): void {
   } catch {
     /* noop */
   }
+  markRead(ownPub, peerPub); // deja de contar como no leído
 }
 
 /** Todos los peers con los que hay hilo local (contactos o no), leyendo las claves guardadas. */
@@ -120,6 +121,59 @@ export function hasIncoming(ownPub: string, peerPub: string): boolean {
 export function lastMessage(ownPub: string, peerPub: string): ChatMessage | undefined {
   const h = loadHistory(ownPub, peerPub);
   return h[h.length - 1];
+}
+
+// --- No leídos (aviso de mensajes entrantes) ------------------------------------------
+//
+// Conjunto de peers con mensajes entrantes sin leer, por identidad. Al recibir un entrante de
+// una conversación que NO está abierta se marca; al abrir esa conversación se limpia. Cualquier
+// cambio dispara el evento `aegis:unread` para que el badge del menú (DashboardShell) se refresque.
+
+const UNREAD_PREFIX = "aegis.unread"; // aegis.unread.<ownPub> = JSON string[] de peerPub
+
+const UNREAD_EVENT = "aegis:unread";
+
+function notifyUnread(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(UNREAD_EVENT));
+}
+
+/** Peers con al menos un mensaje entrante sin leer. */
+export function unreadPeers(ownPub: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(`${UNREAD_PREFIX}.${ownPub}`);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Nº de conversaciones con no leídos. */
+export function unreadCount(ownPub: string): number {
+  return unreadPeers(ownPub).size;
+}
+
+function saveUnread(ownPub: string, set: Set<string>): void {
+  try {
+    localStorage.setItem(`${UNREAD_PREFIX}.${ownPub}`, JSON.stringify([...set]));
+  } catch {
+    /* noop */
+  }
+  notifyUnread();
+}
+
+/** Marca la conversación con `peerPub` como con no leídos. */
+export function markUnread(ownPub: string, peerPub: string): void {
+  const s = unreadPeers(ownPub);
+  if (s.has(peerPub)) return;
+  s.add(peerPub);
+  saveUnread(ownPub, s);
+}
+
+/** Marca la conversación con `peerPub` como leída (al abrirla o al bloquear/eliminar). */
+export function markRead(ownPub: string, peerPub: string): void {
+  const s = unreadPeers(ownPub);
+  if (!s.delete(peerPub)) return;
+  saveUnread(ownPub, s);
 }
 
 function loadCursor(ownPub: string): string | undefined {
