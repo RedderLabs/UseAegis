@@ -16,7 +16,6 @@ import {
   addContactFromDirectory,
   listContacts,
   removeContact,
-  type Contact,
 } from "@/lib/contacts";
 import {
   clearConversation,
@@ -25,40 +24,47 @@ import {
   lastMessage,
   loadHistory,
 } from "@/lib/chat";
+import { fingerprint16, fromBase64Url } from "@/lib/crypto/ed25519";
+import { groupIdentity } from "@/lib/identity";
 import { IconSend, IconUsers } from "@/components/Icons";
 
 const BASE = "/panel/seguro/dashboard";
 
-/** Una solicitud: alguien que NO es contacto y nos ha escrito. */
-interface Request {
-  pub: string;
-  handle: string | null;
-  fingerprint: string;
-  preview: string;
+/** Fila de la lista: identidad legible por su @nombre o su huella (nunca la clave cruda). */
+interface Row {
+  pub: string; // clave pública (base64url) — solo para acciones/enlaces, no se muestra
+  handle: string | null; // @nombre público, si lo tiene
+  fp: string; // huella legible de 16 letras agrupada (ABCD · EFGH · …)
+  preview?: string; // último mensaje, para previsualizar una solicitud
 }
 
-/** Un bloqueado, con su handle resuelto si aún está en el directorio. */
-interface Blocked {
-  pub: string;
-  handle: string | null;
-  fingerprint: string;
+/** Huella legible (16 letras agrupadas) derivada de la clave pública. Nunca muestra la clave. */
+async function readableFp(pub: string): Promise<string> {
+  try {
+    return groupIdentity(await fingerprint16(fromBase64Url(pub)));
+  } catch {
+    return "—";
+  }
 }
 
-function short(pub: string): string {
-  return `${pub.slice(0, 10)}…`;
+/** Texto principal de una fila: su @nombre si lo tiene, si no la huella legible. */
+function title(row: Row): string {
+  return row.handle ? `@${row.handle}` : row.fp;
 }
 
-function label(handle: string | null, fingerprint: string): string {
-  return handle ? `@${handle}` : fingerprint;
+/** Iniciales para el avatar (2 letras). */
+function initials(row: Row): string {
+  const base = row.handle ?? row.fp;
+  return base.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase();
 }
 
 function Contactos() {
   const session = useDashboardSession();
   const ownPub = session.publicKey;
 
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [requests, setRequests] = useState<Request[]>([]);
-  const [blocked, setBlocked] = useState<Blocked[]>([]);
+  const [contacts, setContacts] = useState<Row[]>([]);
+  const [requests, setRequests] = useState<Row[]>([]);
+  const [blocked, setBlocked] = useState<Row[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); // pub en curso
   const [error, setError] = useState<string | null>(null);
@@ -76,33 +82,38 @@ function Contactos() {
       (p) => hasIncoming(ownPub, p) && !contactPubs.has(p) && !blockedPubs.has(p),
     );
 
-    // Resuelve handle/huella de solicitudes y bloqueados (best-effort contra el directorio).
-    const resolve = async (pub: string) => {
-      if (!token) return { handle: null, fingerprint: short(pub) };
+    // Resuelve el @nombre desde el directorio (best-effort); la huella se deriva de la clave.
+    const handleOf = async (pub: string): Promise<string | null> => {
+      if (!token) return null;
       try {
-        const e = await fetchBundle(token, pub);
-        return { handle: e.username, fingerprint: e.fingerprint };
+        return (await fetchBundle(token, pub)).username;
       } catch {
-        return { handle: null, fingerprint: short(pub) };
+        return null;
       }
     };
 
-    const reqs: Request[] = await Promise.all(
-      reqPubs.map(async (pub) => {
-        const { handle, fingerprint } = await resolve(pub);
-        return { pub, handle, fingerprint, preview: lastMessage(ownPub, pub)?.body ?? "" };
-      }),
+    const contactRows: Row[] = await Promise.all(
+      cts.map(async (c) => ({ pub: c.pub, handle: c.handle, fp: await readableFp(c.pub) })),
     );
-    const blocks: Blocked[] = await Promise.all(
-      blk.map(async (b) => {
-        const { handle, fingerprint } = await resolve(b.publicKey);
-        return { pub: b.publicKey, handle, fingerprint };
-      }),
+    const requestRows: Row[] = await Promise.all(
+      reqPubs.map(async (pub) => ({
+        pub,
+        handle: await handleOf(pub),
+        fp: await readableFp(pub),
+        preview: lastMessage(ownPub, pub)?.body ?? "",
+      })),
+    );
+    const blockedRows: Row[] = await Promise.all(
+      blk.map(async (b) => ({
+        pub: b.publicKey,
+        handle: await handleOf(b.publicKey),
+        fp: await readableFp(b.publicKey),
+      })),
     );
 
-    setContacts(cts);
-    setRequests(reqs);
-    setBlocked(blocks);
+    setContacts(contactRows);
+    setRequests(requestRows);
+    setBlocked(blockedRows);
     setLoaded(true);
   }, [ownPub]);
 
@@ -189,29 +200,21 @@ function Contactos() {
         {/* Solicitudes */}
         {requests.length > 0 && (
           <section className="mb-6 bg-surface border border-accent/30 rounded-sm p-5">
-            <p className="label text-accent mb-1">
-              Solicitudes de contacto · {requests.length}
-            </p>
+            <p className="label text-accent mb-1">Solicitudes de contacto · {requests.length}</p>
             <p className="font-mono text-[11px] text-muted-2 mb-4">
               Estas personas te han escrito y aún no las tienes en contactos. Acéptalas para poder
               responder, o bloquéalas.
             </p>
             <ul className="space-y-2">
               {requests.map((r) => (
-                <li
-                  key={r.pub}
-                  className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3"
-                >
+                <li key={r.pub} className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3">
                   <div className="w-9 h-9 rounded-sm bg-surface-2 border border-line flex items-center justify-center font-mono text-accent text-xs shrink-0">
-                    {label(r.handle, r.fingerprint).slice(r.handle ? 1 : 0, r.handle ? 3 : 2).toUpperCase()}
+                    {initials(r)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-mono text-[13px] text-accent truncate">
-                      {label(r.handle, r.fingerprint)}
-                    </p>
-                    {r.preview && (
-                      <p className="text-[12px] text-muted truncate">«{r.preview}»</p>
-                    )}
+                    <p className="font-mono text-[13px] text-accent truncate">{title(r)}</p>
+                    {r.handle && <p className="font-mono text-[10px] text-muted-2 truncate">{r.fp}</p>}
+                    {r.preview && <p className="text-[12px] text-muted truncate">«{r.preview}»</p>}
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button
@@ -251,18 +254,13 @@ function Contactos() {
           ) : (
             <ul className="space-y-2">
               {contacts.map((c) => (
-                <li
-                  key={c.pub}
-                  className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3"
-                >
+                <li key={c.pub} className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3">
                   <div className="w-9 h-9 rounded-sm bg-surface-2 border border-line flex items-center justify-center font-mono text-accent text-xs shrink-0">
-                    {label(c.handle, c.fingerprint).slice(c.handle ? 1 : 0, c.handle ? 3 : 2).toUpperCase()}
+                    {initials(c)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-mono text-[13px] text-accent truncate">
-                      {label(c.handle, c.fingerprint)}
-                    </p>
-                    <p className="font-mono text-[10px] text-muted-2 truncate">{c.fingerprint}</p>
+                    <p className="font-mono text-[13px] text-accent truncate">{title(c)}</p>
+                    <p className="font-mono text-[10px] text-muted-2 truncate">{c.fp}</p>
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <Link
@@ -301,14 +299,10 @@ function Contactos() {
             </p>
             <ul className="space-y-2">
               {blocked.map((b) => (
-                <li
-                  key={b.pub}
-                  className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3"
-                >
+                <li key={b.pub} className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3">
                   <div className="min-w-0 flex-1">
-                    <p className="font-mono text-[13px] text-muted truncate">
-                      {label(b.handle, b.fingerprint)}
-                    </p>
+                    <p className="font-mono text-[13px] text-muted truncate">{title(b)}</p>
+                    {b.handle && <p className="font-mono text-[10px] text-muted-2 truncate">{b.fp}</p>}
                   </div>
                   <button
                     onClick={() => void unblockAction(b.pub)}
