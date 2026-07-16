@@ -10,6 +10,7 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { decodePublicKey, fromBase64Url } from "../auth/ed25519";
 import { requireSession } from "../plugins/authenticate";
+import { isBlocked } from "../blocks/blocks";
 import { deleteBlob, insertBlob, listBlobsFor } from "./blobs";
 
 // Tope del sobre en base64url: 64 KiB ≈ 87381 chars; margen hasta 90000. El límite duro real
@@ -54,6 +55,13 @@ export const messagingRoutes: FastifyPluginAsync<MessagingRoutesOptions> = async
       const payload = fromBase64Url(request.body.blob);
       if (!payload || payload.length === 0) return reply.code(400).send({ error: "invalid_blob" });
       if (payload.length > 65_536) return reply.code(413).send({ error: "blob_too_large" });
+
+      // Bloqueo: si el destinatario ha bloqueado al remitente (autenticado por su sesión, aunque
+      // el sobre almacenado sea sealed-sender), se DESCARTA en silencio y se responde como si se
+      // hubiera entregado (201) — así el remitente no puede deducir que está bloqueado.
+      if (await isBlocked(recipient, request.identity!.publicKey)) {
+        return reply.code(201).send({ ok: true });
+      }
 
       const result = await insertBlob(recipient, payload, opts.blobTtlSeconds);
       if (!result.ok) return reply.code(404).send({ error: result.reason });
