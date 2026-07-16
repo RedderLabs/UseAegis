@@ -12,7 +12,7 @@
  * puerta (clearnet ↔ .onion) o de dispositivo se puede reconstruir lo recibido re-sondeando
  * desde el principio. El historial de lo ENVIADO se guarda localmente por conversación.
  */
-import { openMessageBlob, sealMessageFor } from "./crypto/identity-store";
+import { openMessageBlob, sealForSelf, sealMessageFor } from "./crypto/identity-store";
 import { fromBase64Url } from "./crypto/ed25519";
 import { deleteMessage, fetchMessages, sendMessage } from "./relay-client";
 import type { Contact } from "./contacts";
@@ -25,6 +25,39 @@ export interface ChatMessage {
   sentAt: string; // ISO-8601 (del sobre para entrantes, del envío para salientes)
   peerPub: string; // Ed25519 del otro extremo (base64url): clave de la conversación
   pending?: boolean; // saliente aún sin confirmar por el relay
+}
+
+// --- Self-copy de lo enviado (continuidad cross-puerta / multi-dispositivo) ------------
+//
+// Al enviar, además de dejar el sobre en el buzón del destinatario, se sella una COPIA para
+// el propio buzón. Su cuerpo (cifrado, opaco para el relay) lleva el peer real y un id de
+// mensaje estable. Al sondear el propio buzón, un sobre cuyo remitente somos nosotros es una
+// self-copy → se reconstruye como mensaje SALIENTE en la conversación de `to`. Así, en una
+// puerta o dispositivo nuevos, se recupera también lo enviado, no solo lo recibido.
+
+const SELF_COPY_V = 1;
+
+interface SelfCopyBody {
+  v: typeof SELF_COPY_V;
+  mid: string; // id estable del mensaje (dedup contra el optimista local)
+  to: string; // Ed25519 (base64url) del destinatario real
+  text: string;
+}
+
+function encodeSelfCopy(mid: string, to: string, text: string): string {
+  return JSON.stringify({ v: SELF_COPY_V, mid, to, text } satisfies SelfCopyBody);
+}
+
+function decodeSelfCopy(body: string): SelfCopyBody | null {
+  try {
+    const o = JSON.parse(body) as SelfCopyBody;
+    if (o?.v === SELF_COPY_V && typeof o.mid === "string" && typeof o.to === "string" && typeof o.text === "string") {
+      return o;
+    }
+  } catch {
+    /* cuerpo no reconocido */
+  }
+  return null;
 }
 
 // --- Persistencia local por conversación ----------------------------------------------
@@ -72,20 +105,36 @@ function saveCursor(ownPub: string, cursor: string): void {
 
 // --- Operaciones de red ---------------------------------------------------------------
 
-/** Sella un texto para el contacto y lo deja en su buzón. Devuelve el mensaje saliente. */
+/**
+ * Sella un texto para el contacto y lo deja en su buzón. Además deja una self-copy sellada en
+ * el PROPIO buzón (`ownPub`) para reconstruir el lado saliente al cambiar de puerta/dispositivo.
+ * Devuelve el mensaje saliente con `id` = `mid` (mismo id que llevará la self-copy → dedup).
+ */
 export async function sendText(
   token: string,
+  ownPub: string,
   contact: Contact,
   text: string,
 ): Promise<ChatMessage> {
+  const mid = crypto.randomUUID();
   const blob = await sealMessageFor({
     recipientEd25519Pub: fromBase64Url(contact.pub),
     recipientX25519Pub: fromBase64Url(contact.x25519),
     message: { kind: "text", body: text },
   });
   await sendMessage(token, contact.pub, blob);
+
+  // Self-copy al propio buzón. Best-effort: si falla, el mensaje YA se entregó al destinatario;
+  // solo se pierde la continuidad del lado saliente en otras puertas/dispositivos.
+  try {
+    const selfBlob = await sealForSelf({ kind: "text", body: encodeSelfCopy(mid, contact.pub, text) });
+    await sendMessage(token, ownPub, selfBlob);
+  } catch {
+    /* la entrega principal ya ocurrió */
+  }
+
   return {
-    id: crypto.randomUUID(),
+    id: mid,
     dir: "out",
     body: text,
     sentAt: new Date().toISOString(),
@@ -94,7 +143,10 @@ export async function sendText(
 }
 
 export interface InboxUpdate {
-  /** Mensajes entrantes nuevos, ya abiertos y verificados, agrupados por remitente. */
+  /**
+   * Mensajes nuevos de esta vuelta, ya abiertos y verificados: entrantes (`dir:"in"`) y
+   * self-copies de lo propio enviado (`dir:"out"`), listos para integrar por conversación.
+   */
   incoming: ChatMessage[];
   /** Nuevo cursor a persistir (el createdAt del último sobre leído), si avanzó. */
   cursor?: string;
@@ -102,8 +154,9 @@ export interface InboxUpdate {
 
 /**
  * Sondea el propio buzón desde el cursor guardado. Abre cada sobre (los que no descifran o
- * no verifican se descartan silenciosamente y se marcan para purga). Avanza y guarda el
- * cursor. Devuelve solo los mensajes de texto entrantes nuevos.
+ * no verifican se descartan silenciosamente y se marcan para purga). Un sobre cuyo remitente
+ * somos nosotros es una self-copy → se reclasifica como mensaje SALIENTE. Avanza y guarda el
+ * cursor. Devuelve los mensajes de texto nuevos (entrantes + salientes reconstruidos).
  */
 export async function pollInbox(token: string, ownPub: string): Promise<InboxUpdate> {
   const cursor = loadCursor(ownPub);
@@ -115,13 +168,14 @@ export async function pollInbox(token: string, ownPub: string): Promise<InboxUpd
     try {
       const msg = await openMessageBlob(fromBase64Url(env.blob));
       if (msg.kind !== "text") continue; // archivos/audio: fase posterior
-      incoming.push({
-        id: env.id,
-        dir: "in",
-        body: msg.body,
-        sentAt: msg.sentAt,
-        peerPub: msg.senderPub,
-      });
+      if (msg.senderPub === ownPub) {
+        // Self-copy: mensaje que YO envié, replicado a mi buzón para continuidad saliente.
+        const self = decodeSelfCopy(msg.body);
+        if (!self) continue; // cuerpo no reconocido: ignorar (es nuestro, no purgar)
+        incoming.push({ id: self.mid, dir: "out", body: self.text, sentAt: msg.sentAt, peerPub: self.to });
+      } else {
+        incoming.push({ id: env.id, dir: "in", body: msg.body, sentAt: msg.sentAt, peerPub: msg.senderPub });
+      }
     } catch {
       // Sobre corrupto o no dirigido a nosotros: purgar para no reintentar cada vuelta.
       void deleteMessage(token, env.id).catch(() => undefined);

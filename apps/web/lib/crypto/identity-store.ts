@@ -299,6 +299,19 @@ export function sealMessageFor(params: {
   return sealEnvelope({ senderSeed: requireSeed(), ...params });
 }
 
+/**
+ * Sella un mensaje dirigido a UNO MISMO (self-copy). Se usa para replicar lo ENVIADO al
+ * propio buzón y poder reconstruir el lado saliente al cambiar de puerta o de dispositivo.
+ * Como solo el titular de la semilla puede firmar como él mismo, un sobre abierto cuyo
+ * `senderPub` coincide con la propia identidad es, de forma infalsificable, una self-copy.
+ */
+export async function sealForSelf(message: OutgoingMessage): Promise<Uint8Array> {
+  const seed = requireSeed();
+  const recipientEd25519Pub = await publicKeyFromSeed(seed);
+  const recipientX25519Pub = await x25519PublicFromSeed(seed);
+  return sealEnvelope({ senderSeed: seed, recipientEd25519Pub, recipientX25519Pub, message });
+}
+
 /** Abre un sobre recibido con la identidad desbloqueada. Verifica la firma del remitente. */
 export async function openMessageBlob(blob: Uint8Array): Promise<IncomingMessage> {
   const seed = requireSeed();

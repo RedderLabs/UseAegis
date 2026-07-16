@@ -107,7 +107,7 @@ function Channel() {
     setSending(true);
     setDraft("");
     try {
-      const sent = await sendText(token, selected, text);
+      const sent = await sendText(token, ownPub, selected, text);
       setMessages((prev) => {
         const next = [...prev, sent];
         saveHistory(ownPub, selected.pub, next);
