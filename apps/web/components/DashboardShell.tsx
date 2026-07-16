@@ -13,7 +13,7 @@ import { LogoMark } from "./Logo";
 import { groupIdentity } from "@/lib/identity";
 import { endSession, getSession, getToken, type Session } from "@/lib/session";
 import { logout } from "@/lib/relay-client";
-import { lockKeystore } from "@/lib/crypto/identity-store";
+import { isUnlocked, lockKeystore } from "@/lib/crypto/identity-store";
 import { setFaviconSecure } from "@/lib/favicon";
 import {
   IconChat,
@@ -54,6 +54,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const s = getSession();
     if (!s) {
+      router.replace("/login");
+      return;
+    }
+    // El token persiste en localStorage, pero la semilla vive SOLO en memoria: al recargar la
+    // página hay sesión pero el keystore está bloqueado y NO se puede firmar ni cifrar (enviar/
+    // recibir fallaría). Volvemos a /login para re-desbloquear con la contraseña (como una
+    // pantalla de bloqueo). Es coherente con el modelo de equipo compartido de identity-store.
+    if (!isUnlocked()) {
       router.replace("/login");
       return;
     }
