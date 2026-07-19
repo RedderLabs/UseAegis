@@ -19,6 +19,36 @@ function intFromEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+/** Config del almacén de objetos S3-compatible. `null` si no está configurado (media off). */
+export interface MediaConfig {
+  endpoint: string; // p.ej. https://s3.us-east-005.backblazeb2.com
+  region: string; // p.ej. us-east-005
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+}
+
+/**
+ * Lee la config S3 del entorno. Todo-o-nada: si están las 5 variables, devuelve la config;
+ * si falta alguna, devuelve null (media deshabilitada). No lanza: la media es opcional y el
+ * relay debe arrancar sin ella (los endpoints /media responderán 503).
+ */
+function readMediaConfig(): MediaConfig | null {
+  const endpoint = process.env.S3_ENDPOINT;
+  const region = process.env.S3_REGION;
+  const bucket = process.env.S3_BUCKET;
+  const accessKey = process.env.S3_ACCESS_KEY;
+  const secretKey = process.env.S3_SECRET_KEY;
+  if (!endpoint || !region || !bucket || !accessKey || !secretKey) return null;
+  return {
+    endpoint: endpoint.replace(/\/+$/, ""), // sin barra final
+    region,
+    bucket,
+    accessKey,
+    secretKey,
+  };
+}
+
 export const config = {
   databaseUrl: required("DATABASE_URL"),
   host: process.env.HOST ?? "127.0.0.1",
@@ -47,6 +77,15 @@ export const config = {
   // TTL de los sobres en el buzón. Se retienen (no se borran al entregar) para la continuidad
   // de conversación entre puertas; el barrido de mantenimiento borra los vencidos.
   blobTtlSeconds: intFromEnv("BLOB_TTL_SECONDS", 60 * 60 * 24 * 30),
+  // Almacenamiento de OBJETOS (S3-compatible: Backblaze B2, Cloudflare R2, AWS S3, MinIO) para
+  // los adjuntos cifrados grandes (audio/archivos), que no caben en el buzón inline de 64 KiB.
+  // Es OPCIONAL: si falta cualquiera de las 5 variables, `media` es null y las rutas /media
+  // responden 503 (el relay arranca igual, solo sin adjuntos). Ver src/media/.
+  media: readMediaConfig(),
+  // Tope de tamaño de un objeto de media (ciphertext ya cifrado, base64 NO — va binario). 50 MiB.
+  mediaMaxBytes: intFromEnv("MEDIA_MAX_BYTES", 50 * 1024 * 1024),
+  // TTL de los objetos de media en el bucket + su fila de rastreo. Igual que el buzón por defecto.
+  mediaTtlSeconds: intFromEnv("MEDIA_TTL_SECONDS", 60 * 60 * 24 * 30),
   // Cada cuánto barre la tarea de mantenimiento challenges/sesiones/sobres vencidos.
   maintenanceIntervalSeconds: intFromEnv("MAINTENANCE_INTERVAL_SECONDS", 300),
   // Orígenes permitidos por CORS. Si se define CORS_ORIGINS (coma-separado) se usa esa
