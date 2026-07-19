@@ -52,6 +52,9 @@ services:
         # Vacío en clearnet-only. Cuando exista la .onion de la web, ponla aquí y redeploya
         # (se incrusta en build-time para el enlace "abre nuestra .onion").
         NEXT_PUBLIC_WEB_ONION_URL: ${NEXT_PUBLIC_WEB_ONION_URL:-}
+        # BUILD-TIME: Next congela el rewrite /api→relay en el build (no en runtime). Sin Caddy
+        # delante (caso Coolify), este rewrite ES el proxy, así que el destino debe hornearse aquí.
+        RELAY_ORIGIN: ${RELAY_ORIGIN:-http://relay:8443}
     restart: unless-stopped
     environment:
       # La web (server-side) reenvía /api/* al relay por la red interna. El navegador solo habla
