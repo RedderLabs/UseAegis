@@ -23,7 +23,31 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Aegis — El servidor solo transporta ruido",
   description:
-    "Mensajería cifrada extremo a extremo. Una sola función: enviar un mensaje cifrado que llegue. Sin perfiles, sin telemetría, sin cuentas.",
+    "Mensajería cifrada extremo a extremo, de código abierto y auditable. La alternativa a WhatsApp y Telegram: sin perfiles, sin telemetría, sin cuentas. El servidor solo transporta ruido.",
+  keywords: [
+    // Posicionamiento: alternativa auditable frente a apps cerradas.
+    "mensajería cifrada",
+    "cifrado de extremo a extremo",
+    "código abierto",
+    "auditable",
+    "alternativa a WhatsApp",
+    "alternativa a Telegram",
+    "alternativa a apps de código cerrado",
+    "mensajería privada",
+    "mensajería de código abierto",
+    "sin metadatos",
+    "sin telemetría",
+    "privacidad",
+    "comunicación segura",
+    "Tor",
+    ".onion",
+    "encrypted messaging",
+    "end-to-end encryption",
+    "open source messenger",
+    "auditable messaging",
+    "WhatsApp alternative",
+    "Telegram alternative",
+  ],
 };
 
 export default function RootLayout({
