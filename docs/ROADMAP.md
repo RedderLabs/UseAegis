@@ -89,10 +89,10 @@ Primera rebanada vertical de la mensajería, **verificada end-to-end contra el r
 
 ## Fases
 
-### Fase 1 — MVP Modo A (relay): texto + audio, E2E completo · **~3,5 sd restantes** (de 9)
-El grueso del proyecto. Ya están hechos el bloque de relay/acceso **y el TEXTO E2E** (ver
-"Mensajería de texto E2E" arriba): queda sobre todo **audio, archivos y push en tiempo real**.
-Es la **fase en curso**.
+### Fase 1 — MVP Modo A (relay): texto + audio, E2E completo · **~1 sd restante** (de 9)
+El grueso del proyecto. Ya están hechos el bloque de relay/acceso, el **TEXTO**, los **ARCHIVOS**
+y el **AUDIO** E2E (ver arriba): **M1 alcanzado en código**. Queda solo pulido no bloqueante
+(QR de contacto, push en tiempo real con BullMQ, frase de recuperación).
 
 | Bloque | Tareas | Estado | Resta |
 |---|---|---|---|
@@ -100,11 +100,11 @@ Es la **fase en curso**.
 | `protocol` | Formato de sobre + sealed sender **✅ implementado** (en `apps/web`). **Resta**: subirlo a `packages/protocol` (versión, serialización compartida con móvil) | 🟡 parcial | 0,3 sd |
 | `apps/relay` | Fastify + PG + Dragonfly + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Almacén de media (proxy a S3/B2, SigV4 propio) ✅**. **Resta**: cola **BullMQ** (push en tiempo real, sustituir polling) | 🟡 parcial | 0,7 sd |
 | `transport` (Modo A) | Funcionalidad Modo A **operativa** en `apps/web/lib/chat.ts` (send/fetch/poll sobre `/api`). **Resta**: formalizar `send/receive/onMessage` en `packages/transport` (hoy stub) | 🟡 parcial | 0,3 sd |
-| Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** (adjuntar/descargar cifrado en el Canal, sobre la misma tubería de media). **Resta**: **audio** (MediaRecorder/Opus, reusa la tubería de archivos → solo UI grabar/reproducir), **QR** de contacto | 🟡 parcial | 0,7 sd |
+| Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** + **audio E2E ✅** (grabar con MediaRecorder/Opus, notas de voz cifradas y reproducción en el Canal, sobre la misma tubería de media). **Resta**: **QR** de contacto | 🟢 casi | 0,3 sd |
 | Backup de clave | Código de recuperación (cifrado, bajo control del usuario) ✅; endurecer a frase tipo BIP39 | 🟢 casi | 0,5 sd |
 
 **Riesgo humano:** el pipeline de audio (chunking en streaming + reproducción progresiva) es lo que más debugging manual pide; Claude aporta el código, el humano lo estabiliza.
-**Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay.** El **texto** y los **archivos** ya están (verificados E2E, media sobre S3/B2); falta solo la **UI de audio** (misma tubería) para cerrar M1.
+**Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay. ✅ ALCANZADO (código).** Texto, archivos y **audio** están implementados y cifrados E2E (media sobre S3/B2). El pipeline cripto/transporte está verificado E2E; la captura de micrófono y la reproducción quedan a falta de una prueba manual en navegador real con micro. Restan solo mejoras (QR, BullMQ, backup) que no bloquean M1.
 
 ### Fase 2 — Capa de abstracción de transporte consolidada · **1 sd**
 Endurecer la interfaz `packages/transport/` ya pensada para B y C (aunque solo exista A). En parte se solapa con la Fase 1.
@@ -146,7 +146,7 @@ Dockerfile determinista, hash publicado por release, instrucciones de reproducci
 |---|---|---|
 | 0 · Base + capa visual del cliente | hecha | — |
 | — · Backend de acceso + transporte `.onion` (Fase 2.5 completa + parte de la 1) | hecho (~4 sd) | — |
-| 1 · MVP relay — **texto E2E ✅, resta audio/BullMQ/archivos** | 3,5 sd | 3,5 sd |
+| 1 · MVP relay — **texto + archivos + audio E2E ✅ (M1), resta QR/BullMQ/backup** | 1 sd | 1 sd |
 | 2 · Abstracción transporte | 1 sd | 4,5 sd |
 | 2.5 · `.onion` | ✅ hecha | 4,5 sd |
 | 3 · libp2p | 4 sd | 8,5 sd |
@@ -163,7 +163,7 @@ rápido, pero el único humano y las fases de investigación (3 y 5) mantienen e
 
 ### Milestones (en semanas relativas desde ahora)
 
-- **M1 — MVP privado** (fin Fase 1): **~3,5 sd ≈ 3–4 semanas**. El **texto E2E ya intercambia** entre dos identidades verificadas; falta el **audio** para cerrar el hito. El **acceso** y el **`.onion`** ya están.
+- **M1 — MVP privado** (fin Fase 1): **✅ alcanzado en código**. Texto, archivos y audio se intercambian cifrados E2E entre identidades verificadas (pendiente solo prueba manual del micro en navegador). El **acceso** y el **`.onion`** ya están. Resta pulido (QR, BullMQ, backup).
 - **M2 — Beta resistente a censura** (fin Fase 4): **~9,5 sd ≈ 2,4 meses**. Relay + `.onion` (✅) + failover a P2P, con indicador de estado.
 - **M3 — v1 auditable** (fin Fase 7): **~22,5 sd ≈ 5,5 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
 
