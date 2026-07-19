@@ -36,6 +36,7 @@ export interface FileAttachment {
   name: string;
   mime: string;
   size: number; // bytes del claro
+  durationMs?: number; // duración (solo notas de voz/audio); MediaRecorder no siempre la incrusta
 }
 
 /** Un mensaje tal como lo muestra la UI del Canal. */
@@ -297,6 +298,7 @@ export async function sendFile(
   contact: Contact,
   file: File,
   kind: "file" | "audio" = "file",
+  durationMs?: number,
 ): Promise<ChatMessage> {
   const mid = crypto.randomUUID();
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -309,6 +311,7 @@ export async function sendFile(
     name: file.name || (kind === "audio" ? "nota-de-voz" : "archivo"),
     mime: file.type || "application/octet-stream",
     size: bytes.length,
+    ...(durationMs && durationMs > 0 ? { durationMs: Math.round(durationMs) } : {}),
   };
 
   const blob = await sealMessageFor({
