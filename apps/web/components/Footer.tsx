@@ -4,6 +4,8 @@ import { LogoMark } from "./Logo";
 
 const REPO = "https://github.com/RedderLabs/Aegis";
 const BLOB = `${REPO}/blob/main`;
+// Panel PÚBLICO de analítica (Umami, sin cookies): transparencia total, cualquiera ve las visitas.
+const STATS_URL = "https://stats.useaegis.app/share/sDFD9RSBa4h54r1P";
 
 /** Enlace externo (abre en pestaña nueva, con rel de seguridad). */
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
@@ -73,6 +75,14 @@ export function Footer() {
               <StatusDot className="w-1.5 h-1.5" />
               <span className="label text-accent">Relay operativo</span>
             </div>
+            <a
+              href={STATS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 flex w-fit items-center gap-2 border border-line rounded-sm px-3 py-2 label text-muted hover:text-text hover:border-accent transition-colors"
+            >
+              Estadísticas públicas →
+            </a>
             <p className="mt-3 label text-muted-2">Auditoría externa: pendiente</p>
           </div>
         </div>
