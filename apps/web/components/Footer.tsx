@@ -1,5 +1,23 @@
+import Link from "next/link";
 import { StatusDot } from "./StatusDot";
 import { LogoMark } from "./Logo";
+
+const REPO = "https://github.com/RedderLabs/Aegis";
+const BLOB = `${REPO}/blob/main`;
+
+/** Enlace externo (abre en pestaña nueva, con rel de seguridad). */
+function Ext({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      className="hover:text-text transition-colors"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  );
+}
 
 export function Footer() {
   return (
@@ -22,19 +40,13 @@ export function Footer() {
             <p className="label text-muted mb-4">Proyecto</p>
             <ul className="space-y-2.5 text-[13px] text-muted">
               <li>
-                <a className="hover:text-text transition-colors" href="#">
-                  Código fuente
-                </a>
+                <Ext href={REPO}>Código fuente</Ext>
               </li>
               <li>
-                <a className="hover:text-text transition-colors" href="#">
-                  Modelo de amenaza
-                </a>
+                <Ext href={`${BLOB}/docs/THREAT_MODEL.md`}>Modelo de amenaza</Ext>
               </li>
               <li>
-                <a className="hover:text-text transition-colors" href="#">
-                  Reproducible builds
-                </a>
+                <Ext href={`${BLOB}/docs/ROADMAP.md`}>Reproducible builds</Ext>
               </li>
             </ul>
           </div>
@@ -42,19 +54,16 @@ export function Footer() {
             <p className="label text-muted mb-4">Comunidad</p>
             <ul className="space-y-2.5 text-[13px] text-muted">
               <li>
-                <a className="hover:text-text transition-colors" href="#">
-                  Contribuir
-                </a>
+                <Ext href={`${REPO}/blob/main/README.md`}>Contribuir</Ext>
               </li>
               <li>
-                <a className="hover:text-text transition-colors" href="#">
-                  Anuncios
-                </a>
+                <Ext href={`${REPO}/releases`}>Anuncios</Ext>
               </li>
               <li>
-                <a className="hover:text-text transition-colors" href="#">
-                  Reportar un fallo
-                </a>
+                <Ext href={`${REPO}/issues`}>Reportar un fallo</Ext>
+              </li>
+              <li>
+                <Ext href={`${BLOB}/SECURITY.md`}>Seguridad (divulgación)</Ext>
               </li>
             </ul>
           </div>
@@ -72,12 +81,12 @@ export function Footer() {
             © 2026 Redder Labs · Código abierto y auditable
           </p>
           <div className="flex gap-6 label text-muted-2">
-            <a className="hover:text-muted transition-colors" href="#">
+            <Link className="hover:text-muted transition-colors" href="/privacidad">
               Privacidad
-            </a>
-            <a className="hover:text-muted transition-colors" href="#">
+            </Link>
+            <Link className="hover:text-muted transition-colors" href="/terminos">
               Términos
-            </a>
+            </Link>
           </div>
         </div>
       </div>
