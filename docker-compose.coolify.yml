@@ -55,6 +55,9 @@ services:
         # BUILD-TIME: Next congela el rewrite /api→relay en el build (no en runtime). Sin Caddy
         # delante (caso Coolify), este rewrite ES el proxy, así que el destino debe hornearse aquí.
         RELAY_ORIGIN: ${RELAY_ORIGIN:-http://relay:8443}
+        # Umami (analítica de la landing) — NEXT_PUBLIC_* build-time. Vacías = sin analítica.
+        NEXT_PUBLIC_UMAMI_SRC: ${NEXT_PUBLIC_UMAMI_SRC:-}
+        NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
     restart: unless-stopped
     environment:
       # La web (server-side) reenvía /api/* al relay por la red interna. El navegador solo habla

@@ -27,6 +27,12 @@ ENV NEXT_PUBLIC_WEB_ONION_URL=$NEXT_PUBLIC_WEB_ONION_URL
 # Default = el mismo fallback de next.config → no cambia el comportamiento del nodo/dev.
 ARG RELAY_ORIGIN="http://127.0.0.1:8443"
 ENV RELAY_ORIGIN=$RELAY_ORIGIN
+# Umami (analítica SOLO de la landing) — NEXT_PUBLIC_* → se incrustan en build-time. Vacías =
+# el componente UmamiAnalytics devuelve null (sin script, cero red). Se rellenan por build-arg.
+ARG NEXT_PUBLIC_UMAMI_SRC=""
+ENV NEXT_PUBLIC_UMAMI_SRC=$NEXT_PUBLIC_UMAMI_SRC
+ARG NEXT_PUBLIC_UMAMI_WEBSITE_ID=""
+ENV NEXT_PUBLIC_UMAMI_WEBSITE_ID=$NEXT_PUBLIC_UMAMI_WEBSITE_ID
 RUN pnpm --filter @aegis/web build
 
 WORKDIR /app/apps/web
