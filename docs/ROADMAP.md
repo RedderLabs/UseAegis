@@ -96,15 +96,15 @@ Es la **fase en curso**.
 
 | Bloque | Tareas | Estado | Resta |
 |---|---|---|---|
-| `crypto-core` | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅** (en `apps/web/lib/crypto`). **Resta**: AEAD por chunks para streaming (audio/archivos) | 🟡 parcial | 0,5 sd |
+| `crypto-core` | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅**. **AEAD por chunks (streaming, audio/archivos) ✅** (`aead-stream.ts`, pdte. revisión humana) | 🟢 casi | 0,2 sd |
 | `protocol` | Formato de sobre + sealed sender **✅ implementado** (en `apps/web`). **Resta**: subirlo a `packages/protocol` (versión, serialización compartida con móvil) | 🟡 parcial | 0,3 sd |
-| `apps/relay` | Fastify + PG + Dragonfly + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Resta**: cola **BullMQ** (push en tiempo real, sustituir polling) | 🟡 parcial | 0,7 sd |
+| `apps/relay` | Fastify + PG + Dragonfly + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Almacén de media (proxy a S3/B2, SigV4 propio) ✅**. **Resta**: cola **BullMQ** (push en tiempo real, sustituir polling) | 🟡 parcial | 0,7 sd |
 | `transport` (Modo A) | Funcionalidad Modo A **operativa** en `apps/web/lib/chat.ts` (send/fetch/poll sobre `/api`). **Resta**: formalizar `send/receive/onMessage` en `packages/transport` (hoy stub) | 🟡 parcial | 0,3 sd |
-| Cliente chat (`apps/web`) | **Texto E2E ✅** (Canal, contactos, envío/recepción, persistencia, nombre de usuario). **Resta**: QR de contacto, **audio** (MediaRecorder/Opus) + descifrado en streaming, **archivos** | 🟡 parcial | 1,2 sd |
+| Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** (adjuntar/descargar cifrado en el Canal, sobre la misma tubería de media). **Resta**: **audio** (MediaRecorder/Opus, reusa la tubería de archivos → solo UI grabar/reproducir), **QR** de contacto | 🟡 parcial | 0,7 sd |
 | Backup de clave | Código de recuperación (cifrado, bajo control del usuario) ✅; endurecer a frase tipo BIP39 | 🟢 casi | 0,5 sd |
 
 **Riesgo humano:** el pipeline de audio (chunking en streaming + reproducción progresiva) es lo que más debugging manual pide; Claude aporta el código, el humano lo estabiliza.
-**Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay.** El **texto ya está** (verificado E2E); falta el **audio** para cerrar M1.
+**Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay.** El **texto** y los **archivos** ya están (verificados E2E, media sobre S3/B2); falta solo la **UI de audio** (misma tubería) para cerrar M1.
 
 ### Fase 2 — Capa de abstracción de transporte consolidada · **1 sd**
 Endurecer la interfaz `packages/transport/` ya pensada para B y C (aunque solo exista A). En parte se solapa con la Fase 1.
