@@ -13,6 +13,7 @@ import {
 } from "@/lib/contacts";
 import {
   conversationPeers,
+  downloadAttachment,
   hasIncoming,
   loadHistory,
   markRead,
@@ -20,11 +21,13 @@ import {
   mergeIncoming,
   pollInbox,
   saveHistory,
+  sendFile,
   sendText,
   unreadPeers,
   type ChatMessage,
+  type FileAttachment,
 } from "@/lib/chat";
-import { IconSend, IconCheck } from "@/components/Icons";
+import { IconSend, IconCheck, IconClip, IconDownload } from "@/components/Icons";
 
 const BASE = "/panel/seguro/dashboard";
 
@@ -37,6 +40,63 @@ function formatTime(iso: string): string {
 
 function contactLabel(c: Contact): string {
   return c.handle ? `@${c.handle}` : c.fingerprint;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Tope de subida acorde con el límite del relay (MEDIA_MAX_BYTES por defecto = 50 MiB).
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+/** Burbuja de un adjunto: nombre + tamaño + botón para descargar y descifrar bajo demanda. */
+function AttachmentBubble({ file }: { file: FileAttachment }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function open() {
+    const token = getToken();
+    if (!token || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await downloadAttachment(token, file);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoca tras un momento para no cortar la descarga en curso.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo descargar el archivo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={() => void open()}
+      disabled={busy}
+      className="flex items-center gap-3 text-left w-full min-w-0 disabled:opacity-60"
+      title="Descargar y descifrar"
+    >
+      <span className="w-9 h-9 rounded-sm bg-surface border border-line flex items-center justify-center shrink-0 text-accent">
+        <IconDownload className="w-4 h-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] text-text truncate">{file.name}</span>
+        <span className="block font-mono text-[10px] text-muted-2">
+          {busy ? "Descifrando…" : error ? error : `${formatSize(file.size)} · descargar`}
+        </span>
+      </span>
+    </button>
+  );
 }
 
 function Channel() {
@@ -58,6 +118,9 @@ function Channel() {
   const [handle, setHandle] = useState("");
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  const [attaching, setAttaching] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const threadRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<Contact | null>(null);
@@ -176,6 +239,50 @@ function Channel() {
       setSending(false);
     }
   }, [draft, selected, sending, ownPub]);
+
+  const sendAttachment = useCallback(
+    async (file: File) => {
+      const token = getToken();
+      if (!file || !selected || !token || attaching) return;
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            dir: "out",
+            body: `⚠️ «${file.name}» supera el límite de ${formatSize(MAX_ATTACHMENT_BYTES)}.`,
+            sentAt: new Date().toISOString(),
+            peerPub: selected.pub,
+          },
+        ]);
+        return;
+      }
+      setAttaching(true);
+      try {
+        const sent = await sendFile(token, ownPub, selected, file);
+        setMessages((prev) => {
+          const next = [...prev, sent];
+          saveHistory(ownPub, selected.pub, next);
+          return next;
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "No se pudo enviar el archivo.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            dir: "out",
+            body: `⚠️ ${msg}`,
+            sentAt: new Date().toISOString(),
+            peerPub: selected.pub,
+          },
+        ]);
+      } finally {
+        setAttaching(false);
+      }
+    },
+    [selected, attaching, ownPub],
+  );
 
   async function addContact() {
     const h = handle.trim().replace(/^@/, "");
@@ -324,9 +431,13 @@ function Channel() {
                       : "bg-surface-2 border-line"
                   }`}
                 >
-                  <p className="text-[14px] text-text leading-relaxed break-words whitespace-pre-wrap">
-                    {m.body}
-                  </p>
+                  {m.file ? (
+                    <AttachmentBubble file={m.file} />
+                  ) : (
+                    <p className="text-[14px] text-text leading-relaxed break-words whitespace-pre-wrap">
+                      {m.body}
+                    </p>
+                  )}
                 </div>
                 <span className="inline-flex items-center gap-1 mt-1.5 label text-accent-dim">
                   <span className="font-mono text-[10px] text-muted-2 normal-case tracking-normal">
@@ -350,6 +461,24 @@ function Channel() {
           </div>
           <div className="flex items-center gap-2 bg-surface-2 border border-line rounded-sm px-2 py-1.5 focus-within:border-accent/50 transition-colors">
             <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void sendAttachment(file);
+                e.target.value = ""; // permite reenviar el mismo archivo
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!selected || attaching}
+              className="w-9 h-9 shrink-0 rounded-sm flex items-center justify-center text-muted hover:text-accent transition-colors disabled:opacity-40"
+              title="Adjuntar archivo (cifrado de extremo a extremo)"
+            >
+              <IconClip className="w-5 h-5" />
+            </button>
+            <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -359,7 +488,13 @@ function Channel() {
                 }
               }}
               disabled={!selected}
-              placeholder={selected ? "Transmitir mensaje…" : "Elige o añade un contacto para empezar"}
+              placeholder={
+                attaching
+                  ? "Cifrando y enviando archivo…"
+                  : selected
+                    ? "Transmitir mensaje…"
+                    : "Elige o añade un contacto para empezar"
+              }
               className="flex-1 bg-transparent border-none px-1 py-2 text-[14px] text-text placeholder:text-muted-2 focus:outline-none disabled:cursor-not-allowed"
             />
             <button
