@@ -8,6 +8,7 @@ import type { RateLimitOverrides } from "./config";
 import { authRoutes } from "./auth/routes";
 import { directoryRoutes } from "./directory/routes";
 import { messagingRoutes } from "./messaging/routes";
+import { mediaRoutes } from "./media/routes";
 import { blocksRoutes } from "./blocks/routes";
 import { pool } from "./db/pool";
 
@@ -62,6 +63,12 @@ export function buildServer(options: BuildOptions = {}): FastifyInstance {
   app.register(authRoutes, { rateLimit: rl });
   app.register(directoryRoutes, { rateLimit: rl });
   app.register(messagingRoutes, { rateLimit: rl, blobTtlSeconds: config.blobTtlSeconds });
+  app.register(mediaRoutes, {
+    rateLimit: rl,
+    media: config.media,
+    maxBytes: config.mediaMaxBytes,
+    ttlSeconds: config.mediaTtlSeconds,
+  });
   app.register(blocksRoutes, { rateLimit: rl });
 
   return app;
