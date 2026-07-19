@@ -62,6 +62,17 @@ export const IconShield = make(<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V
 export const IconDownload = make(
   <path d="M12 3v12M7 11l5 5 5-5M5 21h14" />,
 );
+export const IconPlay = make(<path d="M6 4l14 8-14 8z" />, true);
+export const IconPause = make(
+  <>
+    <rect x="6" y="4" width="4" height="16" rx="1" />
+    <rect x="14" y="4" width="4" height="16" rx="1" />
+  </>,
+  true,
+);
+export const IconTrash = make(
+  <path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />,
+);
 export const IconUsers = make(
   <>
     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />

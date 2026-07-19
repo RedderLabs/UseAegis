@@ -27,7 +27,8 @@ import {
   type ChatMessage,
   type FileAttachment,
 } from "@/lib/chat";
-import { IconSend, IconCheck, IconClip, IconDownload } from "@/components/Icons";
+import { IconSend, IconCheck, IconClip, IconDownload, IconPlay } from "@/components/Icons";
+import { VoiceRecorder } from "@/components/VoiceRecorder";
 
 const BASE = "/panel/seguro/dashboard";
 
@@ -48,8 +49,71 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function isAudio(file: FileAttachment): boolean {
+  return file.mime.startsWith("audio/");
+}
+
 // Tope de subida acorde con el límite del relay (MEDIA_MAX_BYTES por defecto = 50 MiB).
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+/** Burbuja de nota de voz: descarga+descifra bajo demanda y reproduce con controles nativos. */
+function AudioBubble({ file }: { file: FileAttachment }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [url]);
+
+  async function load() {
+    const token = getToken();
+    if (!token || loading || url) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const blob = await downloadAttachment(token, file);
+      setUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo cargar la nota de voz.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (url) {
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    return <audio className="max-w-[220px]" controls autoPlay src={url} />;
+  }
+  const hint = file.durationMs ? formatDuration(file.durationMs) : formatSize(file.size);
+  return (
+    <button
+      onClick={() => void load()}
+      disabled={loading}
+      className="flex items-center gap-3 text-left w-full min-w-0 disabled:opacity-60"
+      title="Reproducir (descarga y descifra)"
+    >
+      <span className="w-9 h-9 rounded-sm bg-surface border border-line flex items-center justify-center shrink-0 text-accent">
+        <IconPlay className="w-4 h-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] text-text">Nota de voz</span>
+        <span className="block font-mono text-[10px] text-muted-2">
+          {loading ? "Descifrando…" : error ? error : `${hint} · reproducir`}
+        </span>
+      </span>
+    </button>
+  );
+}
 
 /** Burbuja de un adjunto: nombre + tamaño + botón para descargar y descifrar bajo demanda. */
 function AttachmentBubble({ file }: { file: FileAttachment }) {
@@ -241,7 +305,7 @@ function Channel() {
   }, [draft, selected, sending, ownPub]);
 
   const sendAttachment = useCallback(
-    async (file: File) => {
+    async (file: File, kind: "file" | "audio" = "file", durationMs?: number) => {
       const token = getToken();
       if (!file || !selected || !token || attaching) return;
       if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -259,7 +323,7 @@ function Channel() {
       }
       setAttaching(true);
       try {
-        const sent = await sendFile(token, ownPub, selected, file);
+        const sent = await sendFile(token, ownPub, selected, file, kind, durationMs);
         setMessages((prev) => {
           const next = [...prev, sent];
           saveHistory(ownPub, selected.pub, next);
@@ -432,7 +496,11 @@ function Channel() {
                   }`}
                 >
                   {m.file ? (
-                    <AttachmentBubble file={m.file} />
+                    isAudio(m.file) ? (
+                      <AudioBubble file={m.file} />
+                    ) : (
+                      <AttachmentBubble file={m.file} />
+                    )
                   ) : (
                     <p className="text-[14px] text-text leading-relaxed break-words whitespace-pre-wrap">
                       {m.body}
@@ -497,14 +565,21 @@ function Channel() {
               }
               className="flex-1 bg-transparent border-none px-1 py-2 text-[14px] text-text placeholder:text-muted-2 focus:outline-none disabled:cursor-not-allowed"
             />
-            <button
-              onClick={() => void send()}
-              disabled={!draft.trim() || !selected || sending}
-              className="w-10 h-10 rounded-sm flex items-center justify-center transition-all bg-accent text-bg hover:brightness-110 active:scale-95 disabled:opacity-40"
-              title="Enviar"
-            >
-              <IconSend className="w-5 h-5" />
-            </button>
+            {draft.trim() ? (
+              <button
+                onClick={() => void send()}
+                disabled={!selected || sending}
+                className="w-10 h-10 rounded-sm flex items-center justify-center transition-all bg-accent text-bg hover:brightness-110 active:scale-95 disabled:opacity-40"
+                title="Enviar"
+              >
+                <IconSend className="w-5 h-5" />
+              </button>
+            ) : (
+              <VoiceRecorder
+                disabled={!selected || attaching}
+                onRecorded={(file, durationMs) => void sendAttachment(file, "audio", durationMs)}
+              />
+            )}
           </div>
         </div>
       </section>
