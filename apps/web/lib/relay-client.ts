@@ -272,6 +272,51 @@ export function deleteMessage(token: string, id: string): Promise<void> {
   return request<void>("DELETE", `/messages/${encodeURIComponent(id)}`, undefined, token);
 }
 
+// --- Media (adjuntos cifrados: audio/archivos) ---------------------------------------
+//
+// El contenido va cifrado E2E (AEAD por chunks) ANTES de subirse; para el relay/bucket es un
+// blob binario opaco. El relay hace de proxy al bucket S3 (el cliente nunca habla con B2): así,
+// por .onion, el tráfico de adjuntos sigue yendo por la puerta y no filtra metadatos a un tercero.
+// Se mueve como `application/octet-stream` (no base64) para no inflar un 33% adjuntos grandes.
+
+/** Lee el error `{error}` de una respuesta no-2xx (o un genérico) y lo lanza como RelayError. */
+async function throwRelay(res: Response): Promise<never> {
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  throw new RelayError(data.error ?? `Error ${res.status}`, res.status, data.error);
+}
+
+/** Sube un ciphertext de media al relay (proxy a B2). Devuelve la `key` (uuid) para referenciarlo. */
+export async function uploadMedia(token: string, ciphertext: Uint8Array): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl("/media"), {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", authorization: `Bearer ${token}` },
+      body: ciphertext as unknown as BodyInit,
+    });
+  } catch {
+    throw new RelayError(relayUnreachableMessage(), 0);
+  }
+  if (!res.ok) await throwRelay(res);
+  const { key } = (await res.json()) as { key: string };
+  return key;
+}
+
+/** Descarga un ciphertext de media por su `key`. Devuelve los bytes (aún cifrados). */
+export async function downloadMedia(token: string, key: string): Promise<Uint8Array> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/media/${encodeURIComponent(key)}`), {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new RelayError(relayUnreachableMessage(), 0);
+  }
+  if (!res.ok) await throwRelay(res);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 // --- Bloqueos -------------------------------------------------------------------------
 //
 // Un bloqueo es direccional y lo IMPONE el relay: si has bloqueado a alguien, sus sobres se
