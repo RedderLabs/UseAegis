@@ -21,6 +21,12 @@ RUN pnpm install --frozen-lockfile --filter @aegis/web...
 # web clearnet mostramos la .onion de la web (y viceversa por window.location).
 ARG NEXT_PUBLIC_WEB_ONION_URL=""
 ENV NEXT_PUBLIC_WEB_ONION_URL=$NEXT_PUBLIC_WEB_ONION_URL
+# RELAY_ORIGIN debe existir en BUILD-TIME: Next.js congela los rewrites de /api en el build
+# (routes-manifest), no en runtime. En el nodo (con Caddy) el rewrite no se usa; pero en Coolify
+# (sin Caddy) ES el proxy /api→relay, así que hay que hornear el destino real (relay:8443).
+# Default = el mismo fallback de next.config → no cambia el comportamiento del nodo/dev.
+ARG RELAY_ORIGIN="http://127.0.0.1:8443"
+ENV RELAY_ORIGIN=$RELAY_ORIGIN
 RUN pnpm --filter @aegis/web build
 
 WORKDIR /app/apps/web
