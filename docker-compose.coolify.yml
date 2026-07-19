@@ -1,0 +1,63 @@
+# Despliegue de PRODUCCIÓN en Coolify — puerta CLEARNET (VM-B, useaegis.app).
+#
+# Diferencias con docker-compose.yml (dev/nodo):
+#   - NO hay `aegis-db`: el Postgres lo da Coolify como recurso aparte (mejores backups) →
+#     el relay lo alcanza por DATABASE_URL (variable de entorno en Coolify).
+#   - NO hay Caddy: el TLS + el dominio los pone Traefik de Coolify (Let's Encrypt). La web
+#     reenvía `/api` → relay por la red interna (next.config `rewrites`, vía RELAY_ORIGIN),
+#     así que el modelo same-origin se mantiene SIN reverse-proxy propio.
+#   - NO hay Tor: esta es la puerta clearnet. La .onion va en la otra VM (fase posterior).
+#
+# En Coolify: Nuevo recurso → Docker Compose → este archivo. Asigna el dominio useaegis.app al
+# servicio `web` (puerto 3000). El `relay` queda interno (sin dominio). Variables → panel de Coolify.
+#
+# ⚠️ Las S3_* de media (audio/archivos) son claves de PRUEBA hoy: ROTA a claves de prod y ponlas
+# como variables en Coolify (no en el repo).
+
+services:
+  # --- Relay (Fastify + Postgres) --------------------------------------------------------
+  # Interno: no publica dominio. La web lo alcanza por el nombre de servicio `relay:8443` en la
+  # red interna del compose. Aplica migraciones al arrancar (crea el esquema en un Postgres vacío).
+  relay:
+    build:
+      context: .
+      dockerfile: apps/relay/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Connection string INTERNO del Postgres de Coolify (cópialo del recurso Postgres).
+      DATABASE_URL: ${DATABASE_URL}
+      HOST: 0.0.0.0
+      PORT: "8443"
+      LOG_LEVEL: info
+      # TTL de sobres y de objetos de media (por defecto 30 días).
+      BLOB_TTL_SECONDS: ${BLOB_TTL_SECONDS:-2592000}
+      MEDIA_TTL_SECONDS: ${MEDIA_TTL_SECONDS:-2592000}
+      MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-52428800}
+      # Almacén de objetos S3/B2 para adjuntos cifrados (audio/archivos). Sin estas 5, /media = 503.
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    expose:
+      - "8443"
+
+  # --- Web (Next.js) ---------------------------------------------------------------------
+  # Público: asígnale el dominio useaegis.app en Coolify (puerto 3000). Reenvía /api → relay.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Vacío en clearnet-only. Cuando exista la .onion de la web, ponla aquí y redeploya
+        # (se incrusta en build-time para el enlace "abre nuestra .onion").
+        NEXT_PUBLIC_WEB_ONION_URL: ${NEXT_PUBLIC_WEB_ONION_URL:-}
+    restart: unless-stopped
+    environment:
+      # La web (server-side) reenvía /api/* al relay por la red interna. El navegador solo habla
+      # con useaegis.app → same-origin, sin CORS.
+      RELAY_ORIGIN: http://relay:8443
+    depends_on:
+      - relay
+    expose:
+      - "3000"
