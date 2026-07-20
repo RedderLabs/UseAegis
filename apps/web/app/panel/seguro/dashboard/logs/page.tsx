@@ -208,8 +208,18 @@ function Transport() {
           <p className="text-[13px] leading-relaxed text-muted">
             <span className="text-accent font-mono text-[11px] mr-1.5">[transporte]</span>
             El contenido viaja cifrado extremo a extremo (XChaCha20-Poly1305) y el relay no conoce
-            remitente ni destinatario (sealed sender). <b className="text-text">Tu IP sí es visible
-            para el relay</b> salvo que uses la puerta <code>.onion</code> bajo Tor.
+            remitente ni destinatario (sealed sender).{" "}
+            {onion ? (
+              <>
+                Tu conexión va por <b className="text-text">Tor</b>: tu IP no es visible para el
+                relay.
+              </>
+            ) : (
+              <>
+                <b className="text-text">Tu IP sí es visible para el relay</b> salvo que uses la
+                puerta <code>.onion</code> bajo Tor.
+              </>
+            )}
           </p>
         </div>
 
