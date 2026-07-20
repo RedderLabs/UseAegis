@@ -23,6 +23,17 @@ services:
       context: .
       dockerfile: apps/relay/Dockerfile
     restart: unless-stopped
+    # Contención: ningún contenedor puede agotar la RAM/CPU del host (OOM) ni forkear sin límite.
+    # Ajustables según el hierro; estos valores dejan holgura de sobra para Node/Fastify.
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    # Rotación de logs: evita que un flood llene el disco (otra vía de DoS).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       # Connection string INTERNO del Postgres de Coolify (cópialo del recurso Postgres).
       DATABASE_URL: ${DATABASE_URL}
@@ -59,6 +70,15 @@ services:
         NEXT_PUBLIC_UMAMI_SRC: ${NEXT_PUBLIC_UMAMI_SRC:-}
         NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
     restart: unless-stopped
+    # Contención (ver relay). Next en runtime es ligero, pero puede picar bajo carga → 1 GiB de tope.
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       # La web (server-side) reenvía /api/* al relay por la red interna. El navegador solo habla
       # con useaegis.app → same-origin, sin CORS.
@@ -85,6 +105,16 @@ services:
       context: ./infra/tor
       dockerfile: Dockerfile.coolify
     restart: unless-stopped
+    # Contención (ver relay). Tor es ligero; un tope bajo basta y evita que un intro-flood
+    # que agote memoria en el proceso Tor arrastre al host.
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - web
     volumes:
