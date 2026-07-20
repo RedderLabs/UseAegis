@@ -4,8 +4,9 @@ Guía para desplegar la **puerta clearnet** (web + relay) en Coolify, con **Post
 por Coolify** y **TLS/dominio por Traefik** (Let's Encrypt). Reemplaza al `aegis-db` y al Caddy del
 `docker-compose.yml` del nodo. Ver el compose en `docker-compose.coolify.yml`.
 
-> Alcance de esta guía: **solo clearnet en una VM**, para probar el flujo completo (auth, texto,
-> archivos, audio) E2E. La `.onion` (VM-A) y la BBDD compartida por LAN son un paso posterior.
+> Alcance de esta guía: **clearnet en una VM** para probar el flujo completo (auth, texto, archivos,
+> audio) E2E, **+ puerta `.onion` opcional en la misma VM** (§9). Aislar la `.onion` en una VM aparte
+> (VM-A) y la BBDD compartida por LAN siguen siendo un paso posterior ([[aegis-2vm-coolify]]).
 
 ## 0. Requisitos previos
 
@@ -77,9 +78,43 @@ El build tarda un poco (hace `pnpm install` del workspace).
 ## 8. Después (no bloquea la prueba)
 
 - **Rotar** las claves S3 a las de producción.
-- **VM-A (.onion)**: web+relay+tor reusando `infra/tor/`, apuntando su `DATABASE_URL` a este mismo
-  Postgres por la LAN (abrir 5432 solo desde la IP de VM-A). Ver [[aegis-2vm-coolify]].
+- **Puerta `.onion`**: ya soportada en la MISMA VM con el servicio `tor` del compose (§9). Aislarla
+  en VM-A aparte (web+relay+tor apuntando su `DATABASE_URL` a este Postgres por LAN, abriendo 5432
+  solo desde la IP de VM-A) queda como endurecimiento posterior. Ver [[aegis-2vm-coolify]].
 - **BullMQ** (push en tiempo real) cuando toque: perfil `queue` de Dragonfly ya preparado.
+
+## 9. Puerta `.onion` en la MISMA VM (opcional)
+
+El `docker-compose.coolify.yml` incluye un servicio **`tor`** (perfil siempre activo; bórralo si no
+lo quieres). Levanta un hidden service v3 **saliente**: se conecta a la red Tor y **no abre ningún
+puerto entrante** → cero superficie de ataque nueva (a diferencia del clearnet, no necesita 80/443).
+
+**Cómo funciona (distinto del nodo):** en Coolify no hay Caddy, así que la onion de la web apunta
+**directo a `web:3000`** — el contenedor Next sirve la web y reenvía `/api`→relay same-origin. Los
+ficheros son propios de Coolify: `infra/tor/{Dockerfile.coolify,torrc.coolify,entrypoint.coolify.sh}`
+(horneados en la imagen; solo persiste el volumen `aegis-tor-data` con las claves).
+
+**Puesta en marcha (huevo-y-gallina, 2 deploys):**
+
+1. **Deploy** con el servicio `tor` incluido. En el 1er arranque genera la dirección `.onion`.
+2. **Saca la dirección** (terminal del contenedor `tor` en Coolify, o vía SSH a la VM):
+   ```
+   docker compose exec tor cat /var/lib/tor/aegis-web/hostname
+   ```
+3. **Hornéala en el enlace**: pon ese valor en `NEXT_PUBLIC_WEB_ONION_URL` (panel de Coolify,
+   build-arg del `web`) y **REDEPLOY** — así la web muestra el botón "abre nuestra .onion". El
+   contenido E2E y el same-origin funcionan por la onion sin más cambios (el transporte sigue la
+   puerta).
+
+**Colocar vs aislar:** meter Tor en la misma VM de Coolify es lo más simple (una máquina), pero
+comparte destino con la puerta clearnet (comprometer el host afecta a ambas). El plan de 2 VMs
+([[aegis-2vm-coolify]]) aísla el blast-radius. Para un operador único es razonable colocar.
+
+**¿Reusar la dirección del nodo (`gdc65…onion`) o una nueva?** Por defecto se genera una **nueva**.
+Para **conservar** la del nodo Proxmox, copia sus claves al volumen ANTES del 1er arranque de Tor:
+`hs_ed25519_public_key`, `hs_ed25519_secret_key` y `hostname` desde
+`…/var/lib/tor/aegis-web/` del nodo → el volumen `aegis-tor-data` (ruta `/var/lib/tor/aegis-web/`),
+con dueño `tor:tor` y modo `700`. Idem `aegis-relay/` si quieres conservar también la onion directa.
 
 ## Gotchas
 
