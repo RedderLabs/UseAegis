@@ -47,6 +47,10 @@ export const metadata: Metadata = {
     "auditable messaging",
     "WhatsApp alternative",
     "Telegram alternative",
+    "use aegis app",
+    "aegis app",
+    "use aegis",
+    "useaegis",
   ],
 };
 
