@@ -14,13 +14,26 @@ chown -R tor:tor /var/lib/tor
 chmod 700 /var/lib/tor /var/lib/tor/aegis-relay /var/lib/tor/aegis-web
 
 # 2. Resolver un nombre de servicio a su IP, con reintentos por si el DNS aún no está.
+# PREFIERE IPv4 (relay/web escuchan en 0.0.0.0): la red interna de Coolify es dual-stack y
+# `getent hosts` puede devolver la IPv6 primero — meterla sin corchetes rompería el torrc
+# (`HiddenServicePort 80 fd63::b:3000` es inválido). Si SOLO hubiera IPv6, se emite entre
+# corchetes (`[fd63::b]`), la forma que Tor exige para IPv6.
 resolve_host() {
 	name="$1"
 	i=0
 	while [ "$i" -lt 30 ]; do
-		ip=$(getent hosts "$name" | awk '{ print $1; exit }')
+		# Todas las direcciones que resuelva el DNS interno (una por línea, IP en $1).
+		addrs=$(getent ahosts "$name" 2>/dev/null | awk '{ print $1 }')
+		# Preferir IPv4 (sin corchetes): es donde escuchan relay/web (0.0.0.0).
+		ip=$(echo "$addrs" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
 		if [ -n "$ip" ]; then
 			echo "$ip"
+			return 0
+		fi
+		# Solo si NO hay IPv4: usar IPv6 entre corchetes (forma que Tor exige).
+		ip6=$(echo "$addrs" | grep ':' | head -n1)
+		if [ -n "$ip6" ]; then
+			echo "[$ip6]"
 			return 0
 		fi
 		echo "aegis-tor: esperando a que resuelva $name... ($i)" >&2
