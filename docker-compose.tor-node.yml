@@ -1,0 +1,38 @@
+# Puerta .onion AISLADA en el Tiny (nodo Tor dedicado). Esta máquina corre SOLO Tor.
+#
+# La web y el relay viven en la Coolify VM, alcanzables por LAN (COOLIFY_HOST). Publica las MISMAS
+# dos onions que antes servía la Coolify VM (web + relay directo); las claves se migran desde el
+# volumen aegis-tor-data de la Coolify VM → la dirección gennbz5…onion NO cambia. Ver el runbook
+# docs/aegis-onion-tiny-migration.md para el orden de corte y el firewall (DOCKER-USER) del host origen.
+#
+# Uso en el Tiny:
+#   COOLIFY_HOST=192.168.8.102 docker compose -f docker-compose.tor-node.yml up -d --build
+#
+# Tor es SALIENTE: este servicio NO publica ningún puerto → el Tiny no necesita nada entrante salvo
+# SSH desde el LAN. Superficie de ataque mínima.
+
+services:
+  tor:
+    build:
+      context: ./infra/tor
+      dockerfile: Dockerfile.node-lan
+    restart: unless-stopped
+    environment:
+      # IP LAN de la Coolify VM (donde escuchan web:3000 y relay:8443).
+      COOLIFY_HOST: ${COOLIFY_HOST:-192.168.8.102}
+    volumes:
+      # Claves de las .onion (migradas desde la Coolify VM) → dirección estable.
+      - aegis-tor-data:/var/lib/tor
+    # Contención: Tor es ligero; un tope bajo evita que un intro-flood que agote memoria en el
+    # proceso Tor arrastre al host.
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  aegis-tor-data:

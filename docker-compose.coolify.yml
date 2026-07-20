@@ -34,6 +34,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Publicado en la IP LAN para que el NODO TOR del Tiny alcance la onion directa del relay.
+    # OJO: Docker se salta ufw → restringe este puerto a la IP del Tiny en la cadena DOCKER-USER
+    # (ver docs/aegis-onion-tiny-migration.md), NO con ufw. Si NO separas la onion, quita este `ports`.
+    ports:
+      - "${LAN_BIND_IP:-192.168.8.102}:8443:8443"
     environment:
       # Connection string INTERNO del Postgres de Coolify (cópialo del recurso Postgres).
       DATABASE_URL: ${DATABASE_URL}
@@ -87,39 +92,20 @@ services:
       - relay
     expose:
       - "3000"
+    # Publicado en la IP LAN para que el NODO TOR del Tiny alcance la onion de la web.
+    # Coolify sigue enrutando el dominio por la red interna (Traefik), esto es ADICIONAL.
+    # OJO: restringe este puerto a la IP del Tiny en DOCKER-USER, no en ufw (Docker se salta ufw).
+    ports:
+      - "${LAN_BIND_IP:-192.168.8.102}:3000:3000"
 
-  # --- Tor: puerta .onion de la WEB (opcional, misma VM) ---------------------------------
-  # Hidden service v3 saliente: se conecta a la red Tor, NO abre puerto entrante (cero superficie
-  # de ataque nueva). La onion de la web apunta a `web:3000` (Next sirve la web y reenvía /api→relay
-  # same-origin; aquí NO hay Caddy). También publica la onion DIRECTA del relay (relay:8443) para
-  # clientes nativos. Las claves viven en el volumen `aegis-tor-data` → la dirección .onion NO
-  # cambia entre despliegues. Ver docs/aegis-coolify-deploy.md §9.
+  # --- Tor: MOVIDO a un nodo dedicado (el Tiny) ------------------------------------------
+  # La puerta .onion ya NO vive aquí: se aisló en su propia máquina (docker-compose.tor-node.yml)
+  # para reducir el blast-radius y aislar la clave hs_ed25519. Esta VM ahora solo PUBLICA web:3000
+  # y relay:8443 en su IP LAN (arriba) para que el Tor del Tiny los alcance; el firewall
+  # (DOCKER-USER, no ufw) restringe esos puertos a la IP del Tiny.
   #
-  # Tras el 1er deploy, saca la dirección y hornéala en el enlace "abre nuestra .onion":
-  #   docker compose exec tor cat /var/lib/tor/aegis-web/hostname
-  #   → pon ese valor en NEXT_PUBLIC_WEB_ONION_URL (panel de Coolify) y REDEPLOY.
+  # Runbook de migración (copiar la clave gennbz5… al Tiny, orden de corte, reglas de firewall):
+  #   docs/aegis-onion-tiny-migration.md
   #
-  # Si NO quieres la puerta .onion, borra este servicio (y su volumen): web/relay siguen igual.
-  tor:
-    build:
-      context: ./infra/tor
-      dockerfile: Dockerfile.coolify
-    restart: unless-stopped
-    # Contención (ver relay). Tor es ligero; un tope bajo basta y evita que un intro-flood
-    # que agote memoria en el proceso Tor arrastre al host.
-    mem_limit: 256m
-    cpus: 0.5
-    pids_limit: 128
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    depends_on:
-      - web
-    volumes:
-      - aegis-tor-data:/var/lib/tor
-
-volumes:
-  # Persiste las claves de las .onion (hs_ed25519_secret_key) → dirección estable entre deploys.
-  aegis-tor-data:
+  # ¿Quieres la onion COLOCADA aquí en vez de aislada? Recupera el servicio `tor` y el volumen
+  # `aegis-tor-data` del historial de git (commit anterior a la migración) y quita los `ports`.

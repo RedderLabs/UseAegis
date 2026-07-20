@@ -1,0 +1,13 @@
+# Tor para la puerta .onion AISLADA en el Tiny (nodo Tor dedicado, topología LAN → Coolify VM).
+#
+# Igual base que las otras variantes (Alpine + tor, auditable), pero hornea el torrc.lan (apunta a
+# la IP LAN de la Coolify VM vía marcador __COOLIFY_HOST__) y su entrypoint (sustituye la IP por env).
+FROM alpine:3.21
+
+# curl: autocomprobar la .onion desde DENTRO (el SocksPort escucha solo en el loopback del contenedor).
+RUN apk add --no-cache tor su-exec curl
+
+COPY entrypoint.node-lan.sh /usr/local/bin/entrypoint.sh
+COPY torrc.lan /etc/tor/torrc
+
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
