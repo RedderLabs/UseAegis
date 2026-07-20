@@ -67,3 +67,29 @@ services:
       - relay
     expose:
       - "3000"
+
+  # --- Tor: puerta .onion de la WEB (opcional, misma VM) ---------------------------------
+  # Hidden service v3 saliente: se conecta a la red Tor, NO abre puerto entrante (cero superficie
+  # de ataque nueva). La onion de la web apunta a `web:3000` (Next sirve la web y reenvía /api→relay
+  # same-origin; aquí NO hay Caddy). También publica la onion DIRECTA del relay (relay:8443) para
+  # clientes nativos. Las claves viven en el volumen `aegis-tor-data` → la dirección .onion NO
+  # cambia entre despliegues. Ver docs/aegis-coolify-deploy.md §9.
+  #
+  # Tras el 1er deploy, saca la dirección y hornéala en el enlace "abre nuestra .onion":
+  #   docker compose exec tor cat /var/lib/tor/aegis-web/hostname
+  #   → pon ese valor en NEXT_PUBLIC_WEB_ONION_URL (panel de Coolify) y REDEPLOY.
+  #
+  # Si NO quieres la puerta .onion, borra este servicio (y su volumen): web/relay siguen igual.
+  tor:
+    build:
+      context: ./infra/tor
+      dockerfile: Dockerfile.coolify
+    restart: unless-stopped
+    depends_on:
+      - web
+    volumes:
+      - aegis-tor-data:/var/lib/tor
+
+volumes:
+  # Persiste las claves de las .onion (hs_ed25519_secret_key) → dirección estable entre deploys.
+  aegis-tor-data:
