@@ -6,8 +6,8 @@ const RELAY_ORIGIN = process.env.RELAY_ORIGIN ?? "http://127.0.0.1:8443";
 
 const nextConfig = {
   reactStrictMode: true,
-  // ui-kit se distribuye como TS/CJS sin build previo: Next lo transpila.
-  transpilePackages: ["@aegis/ui-kit"],
+  // ui-kit y transport se distribuyen como TS del workspace sin build previo: Next los transpila.
+  transpilePackages: ["@aegis/ui-kit", "@aegis/transport"],
   // Same-origin: el cliente llama a /api/* RELATIVO (sin CORS). En dev, Next reescribe /api/* →
   // el relay (RELAY_ORIGIN), quitando el prefijo /api igual que hace Caddy en el nodo.
   async rewrites() {

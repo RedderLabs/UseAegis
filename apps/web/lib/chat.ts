@@ -12,12 +12,22 @@
  * puerta (clearnet ↔ .onion) o de dispositivo se puede reconstruir lo recibido re-sondeando
  * desde el principio. El historial de lo ENVIADO se guarda localmente por conversación.
  */
+import {
+  createFailoverTransport,
+  createRelayTransport,
+  type CursorStore,
+  type RelayBackend,
+  type Transport,
+  type TransportMode,
+  type WireEnvelope,
+} from "@aegis/transport";
 import { openMessageBlob, sealForSelf, sealMessageFor } from "./crypto/identity-store";
 import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
 import { decryptMedia, encryptMedia, randomMediaKey } from "./crypto/aead-stream";
 import {
   deleteMessage,
   downloadMedia,
+  fetchHealth,
   fetchMessages,
   sendMessage,
   uploadMedia,
@@ -246,15 +256,25 @@ function saveCursor(ownPub: string, cursor: string): void {
   }
 }
 
-// --- Operaciones de red ---------------------------------------------------------------
+// --- Operaciones de red (a través de @aegis/transport) --------------------------------
+//
+// La cripto de sobre (sellar/abrir, self-copy) vive AQUÍ; el movimiento de bytes opacos vive en
+// `@aegis/transport`. Enviar = sellar y entregar por `Transport.send` (con failover A→B→C cuando
+// existan B/C). Recibir = el transporte sondea el buzón y entrega WireEnvelopes que aquí se abren
+// y clasifican. Así, cuando entren P2P/mesh, el cliente de chat no cambia: solo crece la lista de
+// candidatos del failover.
+
+/** Entrega un sobre opaco a un buzón. La aporta el transporte (con su failover). */
+type SendFn = (peerId: string, blob: Uint8Array) => Promise<void>;
 
 /**
- * Sella un texto para el contacto y lo deja en su buzón. Además deja una self-copy sellada en
- * el PROPIO buzón (`ownPub`) para reconstruir el lado saliente al cambiar de puerta/dispositivo.
- * Devuelve el mensaje saliente con `id` = `mid` (mismo id que llevará la self-copy → dedup).
+ * Sella un texto para el contacto y lo entrega en su buzón por `send`. Además deja una self-copy
+ * sellada en el PROPIO buzón (`ownPub`) para reconstruir el lado saliente al cambiar de
+ * puerta/dispositivo. Devuelve el mensaje saliente con `id` = `mid` (el mismo id que llevará la
+ * self-copy → dedup contra el optimista local).
  */
-export async function sendText(
-  token: string,
+async function sealAndSendText(
+  send: SendFn,
   ownPub: string,
   contact: Contact,
   text: string,
@@ -265,13 +285,13 @@ export async function sendText(
     recipientX25519Pub: fromBase64Url(contact.x25519),
     message: { kind: "text", body: text },
   });
-  await sendMessage(token, contact.pub, blob);
+  await send(contact.pub, blob);
 
   // Self-copy al propio buzón. Best-effort: si falla, el mensaje YA se entregó al destinatario;
   // solo se pierde la continuidad del lado saliente en otras puertas/dispositivos.
   try {
     const selfBlob = await sealForSelf({ kind: "text", body: encodeSelfCopy(mid, contact.pub, text) });
-    await sendMessage(token, ownPub, selfBlob);
+    await send(ownPub, selfBlob);
   } catch {
     /* la entrega principal ya ocurrió */
   }
@@ -289,10 +309,13 @@ export async function sendText(
 /**
  * Cifra un adjunto (archivo/audio) con una clave aleatoria por adjunto, lo sube al relay (que hace
  * de proxy al bucket) y sella un sobre file/audio para el contacto con el descriptor (mediaId +
- * clave AEAD, ambos E2E). Deja además una self-copy en el propio buzón (continuidad cross-puerta).
- * El contenido NUNCA sale sin cifrar; el relay/bucket solo ven ciphertext opaco.
+ * clave AEAD, ambos E2E), entregado por `send`. Deja además una self-copy en el propio buzón
+ * (continuidad cross-puerta). El contenido NUNCA sale sin cifrar; el relay/bucket solo ven
+ * ciphertext opaco. La subida del media usa `token` directo (no viaja por el transporte: es un
+ * PUT binario al relay, no un sobre de buzón).
  */
-export async function sendFile(
+async function sealAndSendFile(
+  send: SendFn,
   token: string,
   ownPub: string,
   contact: Contact,
@@ -319,12 +342,12 @@ export async function sendFile(
     recipientX25519Pub: fromBase64Url(contact.x25519),
     message: { kind, body: JSON.stringify(meta) },
   });
-  await sendMessage(token, contact.pub, blob);
+  await send(contact.pub, blob);
 
   // Self-copy al propio buzón (best-effort; el destinatario ya recibió el adjunto).
   try {
     const selfBlob = await sealForSelf({ kind, body: encodeSelfCopyFile(mid, contact.pub, meta) });
-    await sendMessage(token, ownPub, selfBlob);
+    await send(ownPub, selfBlob);
   } catch {
     /* la entrega principal ya ocurrió */
   }
@@ -353,63 +376,158 @@ export async function downloadAttachment(token: string, file: FileAttachment): P
   });
 }
 
-export interface InboxUpdate {
-  /**
-   * Mensajes nuevos de esta vuelta, ya abiertos y verificados: entrantes (`dir:"in"`) y
-   * self-copies de lo propio enviado (`dir:"out"`), listos para integrar por conversación.
-   */
-  incoming: ChatMessage[];
-  /** Nuevo cursor a persistir (el createdAt del último sobre leído), si avanzó. */
-  cursor?: string;
+/**
+ * Abre y clasifica un sobre entrante YA recibido por el transporte. Devuelve el mensaje listo
+ * para la UI, o `null` si no aplica (self-copy con cuerpo no reconocido, descriptor de adjunto
+ * ilegible, o sobre corrupto/no dirigido a nosotros → en ese caso además se purga del buzón para
+ * no reintentar en cada vuelta). El `sentAt` sale de DENTRO del sobre (no del cursor del buzón).
+ */
+async function classifyEnvelope(
+  token: string,
+  ownPub: string,
+  env: WireEnvelope,
+): Promise<ChatMessage | null> {
+  let msg: Awaited<ReturnType<typeof openMessageBlob>>;
+  try {
+    msg = await openMessageBlob(env.blob);
+  } catch {
+    // Sobre corrupto o no dirigido a nosotros: purgar para no reintentar cada vuelta.
+    void deleteMessage(token, env.id).catch(() => undefined);
+    return null;
+  }
+
+  if (msg.senderPub === ownPub) {
+    // Self-copy: mensaje que YO envié, replicado a mi buzón para continuidad saliente.
+    const self = decodeSelfCopy(msg.body);
+    if (!self) return null; // cuerpo no reconocido: ignorar (es nuestro, no purgar)
+    if (self.file) {
+      return {
+        id: self.mid, dir: "out", body: self.file.name, sentAt: msg.sentAt,
+        peerPub: self.to, file: self.file, kind: msg.kind === "audio" ? "audio" : "file",
+      };
+    }
+    if (typeof self.text === "string") {
+      return { id: self.mid, dir: "out", body: self.text, sentAt: msg.sentAt, peerPub: self.to, kind: "text" };
+    }
+    return null;
+  }
+
+  if (msg.kind === "file" || msg.kind === "audio") {
+    const meta = parseFileMeta(msg.body);
+    if (!meta) return null; // descriptor de adjunto ilegible: descartar
+    return {
+      id: env.id, dir: "in", body: meta.name, sentAt: msg.sentAt,
+      peerPub: msg.senderPub, file: meta, kind: msg.kind,
+    };
+  }
+
+  return { id: env.id, dir: "in", body: msg.body, sentAt: msg.sentAt, peerPub: msg.senderPub, kind: "text" };
+}
+
+// --- Cableado del transporte (Modo A hoy; failover A→B→C cuando existan B/C) -----------
+
+/** Adaptador `RelayBackend`: mueve sobres opacos por el buzón same-origin (/api) con `token`. */
+function makeRelayBackend(token: string): RelayBackend {
+  return {
+    async send(peerId, blob) {
+      await sendMessage(token, peerId, blob);
+    },
+    async fetch(after) {
+      const envelopes = await fetchMessages(token, after);
+      // StoredEnvelope (blob base64url + createdAt) → WireEnvelope (blob bytes + cursor).
+      return envelopes.map<WireEnvelope>((e) => ({
+        id: e.id,
+        blob: fromBase64Url(e.blob),
+        cursor: e.createdAt,
+      }));
+    },
+    async health() {
+      try {
+        return (await fetchHealth()).status === "ok";
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+/** Adaptador `CursorStore`: persiste el cursor de recepción en localStorage, por identidad. */
+function makeCursorStore(ownPub: string): CursorStore {
+  return {
+    load: () => loadCursor(ownPub),
+    save: (cursor) => saveCursor(ownPub, cursor),
+  };
 }
 
 /**
- * Sondea el propio buzón desde el cursor guardado. Abre cada sobre (los que no descifran o
- * no verifican se descartan silenciosamente y se marcan para purga). Un sobre cuyo remitente
- * somos nosotros es una self-copy → se reclasifica como mensaje SALIENTE. Avanza y guarda el
- * cursor. Devuelve los mensajes de texto nuevos (entrantes + salientes reconstruidos).
+ * Transporte de chat de alto nivel: envuelve `@aegis/transport` con la cripto de sobre y la
+ * clasificación. Enviar sella y entrega (self-copy incluida); recibir sondea el buzón y entrega
+ * los mensajes YA abiertos a los suscriptores. El resto del cliente (el Canal) no sabe por qué
+ * modo viajó nada: solo `start/stop`, `subscribe` y `sendText/sendFile`.
  */
-export async function pollInbox(token: string, ownPub: string): Promise<InboxUpdate> {
-  const cursor = loadCursor(ownPub);
-  const envelopes = await fetchMessages(token, cursor);
-  if (envelopes.length === 0) return { incoming: [] };
+export interface ChatTransport {
+  /** Modo por el que se entregó el último envío con éxito (hoy siempre "relay"). */
+  readonly activeMode: TransportMode;
+  /** Arranca la recepción (polling del buzón). Idempotente. */
+  start(): void;
+  /** Detiene la recepción y libera recursos. Idempotente. */
+  stop(): void;
+  /** Sella un texto para `contact` y lo entrega (con self-copy). Devuelve el mensaje optimista. */
+  sendText(contact: Contact, text: string): Promise<ChatMessage>;
+  /** Cifra y entrega un adjunto (archivo/audio). Devuelve el mensaje optimista. */
+  sendFile(
+    contact: Contact,
+    file: File,
+    kind?: "file" | "audio",
+    durationMs?: number,
+  ): Promise<ChatMessage>;
+  /** Suscribe a mensajes entrantes ya abiertos y clasificados. Devuelve la baja. */
+  subscribe(handler: (msg: ChatMessage) => void): () => void;
+}
 
-  const incoming: ChatMessage[] = [];
-  for (const env of envelopes) {
-    try {
-      const msg = await openMessageBlob(fromBase64Url(env.blob));
-      if (msg.senderPub === ownPub) {
-        // Self-copy: mensaje que YO envié, replicado a mi buzón para continuidad saliente.
-        const self = decodeSelfCopy(msg.body);
-        if (!self) continue; // cuerpo no reconocido: ignorar (es nuestro, no purgar)
-        if (self.file) {
-          incoming.push({
-            id: self.mid, dir: "out", body: self.file.name, sentAt: msg.sentAt,
-            peerPub: self.to, file: self.file, kind: msg.kind === "audio" ? "audio" : "file",
-          });
-        } else if (typeof self.text === "string") {
-          incoming.push({ id: self.mid, dir: "out", body: self.text, sentAt: msg.sentAt, peerPub: self.to, kind: "text" });
-        }
-      } else if (msg.kind === "file" || msg.kind === "audio") {
-        const meta = parseFileMeta(msg.body);
-        if (!meta) continue; // descriptor de adjunto ilegible: descartar
-        incoming.push({
-          id: env.id, dir: "in", body: meta.name, sentAt: msg.sentAt,
-          peerPub: msg.senderPub, file: meta, kind: msg.kind,
-        });
-      } else {
-        incoming.push({ id: env.id, dir: "in", body: msg.body, sentAt: msg.sentAt, peerPub: msg.senderPub, kind: "text" });
+/**
+ * Construye el transporte de chat para una sesión (`token`) e identidad (`ownPub`). Cablea el
+ * backend del relay y el cursor de localStorage en `createRelayTransport`, y lo envuelve en
+ * `createFailoverTransport` (hoy con un único candidato; B/C se añadirán a la lista sin tocar a
+ * los consumidores). Registra un único handler que abre y clasifica cada sobre y lo reparte.
+ */
+export function createChatTransport(token: string, ownPub: string): ChatTransport {
+  const transport: Transport = createFailoverTransport([
+    createRelayTransport({
+      backend: makeRelayBackend(token),
+      cursor: makeCursorStore(ownPub),
+    }),
+  ]);
+
+  const subscribers = new Set<(msg: ChatMessage) => void>();
+  const send: SendFn = (peerId, blob) => transport.send(peerId, blob);
+
+  transport.onMessage(async (env) => {
+    const msg = await classifyEnvelope(token, ownPub, env);
+    if (!msg) return;
+    for (const handler of subscribers) {
+      try {
+        handler(msg);
+      } catch {
+        /* un suscriptor defectuoso no debe cortar la entrega al resto */
       }
-    } catch {
-      // Sobre corrupto o no dirigido a nosotros: purgar para no reintentar cada vuelta.
-      void deleteMessage(token, env.id).catch(() => undefined);
     }
-  }
+  });
 
-  // El buzón devuelve en orden ascendente por createdAt → el último es el nuevo cursor.
-  const newCursor = envelopes[envelopes.length - 1]!.createdAt;
-  saveCursor(ownPub, newCursor);
-  return { incoming, cursor: newCursor };
+  return {
+    get activeMode() {
+      return transport.activeMode;
+    },
+    start: () => transport.start(),
+    stop: () => transport.stop(),
+    sendText: (contact, text) => sealAndSendText(send, ownPub, contact, text),
+    sendFile: (contact, file, kind, durationMs) =>
+      sealAndSendFile(send, token, ownPub, contact, file, kind, durationMs),
+    subscribe(handler) {
+      subscribers.add(handler);
+      return () => subscribers.delete(handler);
+    },
+  };
 }
 
 /**
