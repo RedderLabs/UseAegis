@@ -51,6 +51,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@aegis/transport':
+        specifier: workspace:*
+        version: link:../../packages/transport
       '@aegis/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit

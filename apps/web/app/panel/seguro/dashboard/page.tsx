@@ -13,26 +13,23 @@ import {
 } from "@/lib/contacts";
 import {
   conversationPeers,
+  createChatTransport,
   downloadAttachment,
   hasIncoming,
   loadHistory,
   markRead,
   markUnread,
   mergeIncoming,
-  pollInbox,
   saveHistory,
-  sendFile,
-  sendText,
   unreadPeers,
   type ChatMessage,
+  type ChatTransport,
   type FileAttachment,
 } from "@/lib/chat";
 import { IconSend, IconCheck, IconClip, IconDownload, IconPlay } from "@/components/Icons";
 import { VoiceRecorder } from "@/components/VoiceRecorder";
 
 const BASE = "/panel/seguro/dashboard";
-
-const POLL_MS = 4000;
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -192,6 +189,7 @@ function Channel() {
   const contactsRef = useRef<Contact[]>([]);
   contactsRef.current = contacts;
   const blockedRef = useRef<Set<string>>(new Set());
+  const transportRef = useRef<ChatTransport | null>(null);
 
   // Recalcula cuántos peers nos han escrito sin ser contacto ni estar bloqueados (solicitudes).
   const refreshPending = useCallback(() => {
@@ -231,41 +229,37 @@ function Channel() {
     }
   }, [selected, ownPub]);
 
-  // Sondeo del buzón: abre entrantes, los integra por conversación y refresca la abierta.
+  // Recepción por el transporte: abre cada entrante, lo integra por conversación y refresca la
+  // abierta. El transporte posee el bucle de sondeo (start/stop) y el cursor; aquí solo se
+  // reacciona a cada mensaje ya abierto y clasificado.
   useEffect(() => {
     const token = getToken();
     if (!token) return;
-    let alive = true;
+    const transport = createChatTransport(token, ownPub);
+    transportRef.current = transport;
 
-    async function tick() {
-      try {
-        const { incoming } = await pollInbox(token!, ownPub);
-        if (!alive || incoming.length === 0) return;
-        const touched = mergeIncoming(ownPub, incoming, (p) => blockedRef.current.has(p));
-        const open = selectedRef.current;
-        // No leído = entrante de un CONTACTO cuya conversación no está abierta. Los no-contactos
-        // se avisan por «Solicitudes» (banner), no por este badge (no se pueden abrir en el Canal).
-        const contactPubs = new Set(contactsRef.current.map((c) => c.pub));
-        for (const m of incoming) {
-          if (m.dir !== "in" || blockedRef.current.has(m.peerPub) || !contactPubs.has(m.peerPub)) continue;
-          if (m.peerPub !== open?.pub) markUnread(ownPub, m.peerPub);
-        }
-        if (open && touched.has(open.pub)) {
-          setMessages(loadHistory(ownPub, open.pub));
-          markRead(ownPub, open.pub); // lo abierto se lee al vuelo
-        }
-        setUnread(unreadPeers(ownPub));
-        refreshPending(); // un entrante de un no-contacto es una solicitud nueva
-      } catch {
-        /* relay caído o sesión expirada: la próxima vuelta reintenta */
+    const off = transport.subscribe((m) => {
+      const touched = mergeIncoming(ownPub, [m], (p) => blockedRef.current.has(p));
+      const open = selectedRef.current;
+      // No leído = entrante de un CONTACTO cuya conversación no está abierta. Los no-contactos se
+      // avisan por «Solicitudes» (banner), no por este badge (no se abren en el Canal).
+      const isContact = contactsRef.current.some((c) => c.pub === m.peerPub);
+      if (m.dir === "in" && !blockedRef.current.has(m.peerPub) && isContact && m.peerPub !== open?.pub) {
+        markUnread(ownPub, m.peerPub);
       }
-    }
+      if (open && touched.has(open.pub)) {
+        setMessages(loadHistory(ownPub, open.pub));
+        markRead(ownPub, open.pub); // lo abierto se lee al vuelo
+      }
+      setUnread(unreadPeers(ownPub));
+      refreshPending(); // un entrante de un no-contacto es una solicitud nueva
+    });
 
-    const id = window.setInterval(tick, POLL_MS);
-    void tick();
+    transport.start();
     return () => {
-      alive = false;
-      window.clearInterval(id);
+      off();
+      transport.stop();
+      transportRef.current = null;
     };
   }, [ownPub, refreshPending]);
 
@@ -275,12 +269,12 @@ function Channel() {
 
   const send = useCallback(async () => {
     const text = draft.trim();
-    const token = getToken();
-    if (!text || !selected || !token || sending) return;
+    const transport = transportRef.current;
+    if (!text || !selected || !transport || sending) return;
     setSending(true);
     setDraft("");
     try {
-      const sent = await sendText(token, ownPub, selected, text);
+      const sent = await transport.sendText(selected, text);
       setMessages((prev) => {
         const next = [...prev, sent];
         saveHistory(ownPub, selected.pub, next);
@@ -306,8 +300,8 @@ function Channel() {
 
   const sendAttachment = useCallback(
     async (file: File, kind: "file" | "audio" = "file", durationMs?: number) => {
-      const token = getToken();
-      if (!file || !selected || !token || attaching) return;
+      const transport = transportRef.current;
+      if (!file || !selected || !transport || attaching) return;
       if (file.size > MAX_ATTACHMENT_BYTES) {
         setMessages((prev) => [
           ...prev,
@@ -323,7 +317,7 @@ function Channel() {
       }
       setAttaching(true);
       try {
-        const sent = await sendFile(token, ownPub, selected, file, kind, durationMs);
+        const sent = await transport.sendFile(selected, file, kind, durationMs);
         setMessages((prev) => {
           const next = [...prev, sent];
           saveHistory(ownPub, selected.pub, next);

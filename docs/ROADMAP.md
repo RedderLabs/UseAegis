@@ -99,15 +99,29 @@ y el **AUDIO** E2E (ver arriba): **M1 alcanzado en código**. Queda solo pulido 
 | `crypto-core` | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅**. **AEAD por chunks (streaming, audio/archivos) ✅** (`aead-stream.ts`, pdte. revisión humana) | 🟢 casi | 0,2 sd |
 | `protocol` | Formato de sobre + sealed sender **✅ implementado** (en `apps/web`). **Resta**: subirlo a `packages/protocol` (versión, serialización compartida con móvil) | 🟡 parcial | 0,3 sd |
 | `apps/relay` | Fastify + PG + Dragonfly + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Almacén de media (proxy a S3/B2, SigV4 propio) ✅**. **Resta**: cola **BullMQ** (push en tiempo real, sustituir polling) | 🟡 parcial | 0,7 sd |
-| `transport` (Modo A) | Funcionalidad Modo A **operativa** en `apps/web/lib/chat.ts` (send/fetch/poll sobre `/api`). **Resta**: formalizar `send/receive/onMessage` en `packages/transport` (hoy stub) | 🟡 parcial | 0,3 sd |
+| `transport` (Modo A) | `send/onMessage/start/stop` formalizados en `packages/transport` **y ADOPTADOS** por `apps/web/lib/chat.ts` (`createChatTransport` → `createFailoverTransport([createRelayTransport])`): el Canal envía y recibe **a través** de la abstracción, sin sondeo manual. ✅ (ver Fase 2) | ✅ | — |
 | Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** + **audio E2E ✅** (grabar con MediaRecorder/Opus, notas de voz cifradas y reproducción en el Canal, sobre la misma tubería de media). **Resta**: **QR** de contacto | 🟢 casi | 0,3 sd |
 | Backup de clave | Código de recuperación (cifrado, bajo control del usuario) ✅; endurecer a frase tipo BIP39 | 🟢 casi | 0,5 sd |
 
 **Riesgo humano:** el pipeline de audio (chunking en streaming + reproducción progresiva) es lo que más debugging manual pide; Claude aporta el código, el humano lo estabiliza.
 **Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay. ✅ ALCANZADO (código).** Texto, archivos y **audio** están implementados y cifrados E2E (media sobre S3/B2). El pipeline cripto/transporte está verificado E2E; la captura de micrófono y la reproducción quedan a falta de una prueba manual en navegador real con micro. Restan solo mejoras (QR, BullMQ, backup) que no bloquean M1.
 
-### Fase 2 — Capa de abstracción de transporte consolidada · **1 sd**
-Endurecer la interfaz `packages/transport/` ya pensada para B y C (aunque solo exista A). En parte se solapa con la Fase 1.
+### Fase 2 — Capa de abstracción de transporte consolidada · ✅ **HECHO** (2026-07-20)
+La interfaz `packages/transport/` (ya pensada para B y C, aunque solo exista A) está **endurecida
+y adoptada en producción**: deja de ser andamiaje muerto. El cliente de chat (`apps/web/lib/chat.ts`)
+crea el transporte con `createChatTransport(token, ownPub)` →
+`createFailoverTransport([createRelayTransport({ backend, cursor })])`, donde:
+- **`RelayBackend`** adapta el buzón same-origin (`/api`) sobre `relay-client` (`send`/`fetch`/`health`).
+- **`CursorStore`** persiste el cursor de recepción en `localStorage` por identidad.
+- El **envío** (texto/archivos/audio, con self-copy para continuidad cross-puerta) va por
+  `Transport.send`; la **recepción** la posee el transporte (bucle de sondeo + cursor), que entrega
+  `WireEnvelope`s ya abiertos y clasificados a los suscriptores. El Canal (`dashboard/page.tsx`)
+  solo hace `start/stop` + `subscribe` (se eliminó el `setInterval` manual).
+
+Consecuencia: **añadir Modo B (libp2p) o C (mesh) = extender la lista de candidatos del failover**,
+sin tocar al cliente de chat. La cripto de sobre (sellar/abrir, sealed-sender) sigue en el cliente;
+el transporte solo mueve bytes opacos (su contrato). Verificado: `transport` tests 5/5, typecheck
+web+transport limpio, `next build` OK (el paquete se transpila en el bundle vía `transpilePackages`).
 
 ### Fase 2.5 — Endpoint `.onion` del Modo A (`ARQUITECTURA.md §4.1`) · ✅ **HECHO** (2026-07)
 Cubierta y **superada**. En vez de un solo `.onion` de relay, se desplegó: hidden service v3 del
@@ -147,7 +161,7 @@ Dockerfile determinista, hash publicado por release, instrucciones de reproducci
 | 0 · Base + capa visual del cliente | hecha | — |
 | — · Backend de acceso + transporte `.onion` (Fase 2.5 completa + parte de la 1) | hecho (~4 sd) | — |
 | 1 · MVP relay — **texto + archivos + audio E2E ✅ (M1), resta QR/BullMQ/backup** | 1 sd | 1 sd |
-| 2 · Abstracción transporte | 1 sd | 4,5 sd |
+| 2 · Abstracción transporte | ✅ hecha | 4,5 sd |
 | 2.5 · `.onion` | ✅ hecha | 4,5 sd |
 | 3 · libp2p | 4 sd | 8,5 sd |
 | 4 · Failover + UI | 1 sd | 9,5 sd |
