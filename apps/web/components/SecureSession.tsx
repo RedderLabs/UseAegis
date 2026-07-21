@@ -56,7 +56,7 @@ export function SecureSession() {
             {
               n: "3",
               t: "Importa tu identidad y entra",
-              b: "Con tu código de recuperación. Tu misma identidad = tu misma conversación.",
+              b: "Con tu frase de recuperación. Tu misma identidad = tu misma conversación.",
             },
           ].map((s) => (
             <li key={s.n} className="bg-bg border border-line rounded-md p-6">

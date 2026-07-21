@@ -24,6 +24,8 @@ import {
   type IncomingMessage,
   type OutgoingMessage,
 } from "./messaging";
+// `./recovery-phrase` arrastra el wordlist BIP39 (~12 kB): se importa BAJO DEMANDA para no
+// cargarlo en todas las páginas del dashboard (identity-store lo usa todo el panel).
 
 const DB_NAME = "aegis";
 const DB_VERSION = 1;
@@ -163,6 +165,18 @@ export async function importKeystore(recoveryB64: string, passphrase: string): P
   return createKeystore(seed, passphrase);
 }
 
+/**
+ * Importa una identidad desde su recuperación (frase BIP39 de 24 palabras O el código base64url
+ * antiguo — se autodetecta) y la protege con una passphrase. Es el camino preferido de la UI.
+ */
+export async function importFromRecovery(
+  recoveryInput: string,
+  passphrase: string,
+): Promise<IdentityInfo> {
+  const { decodeRecovery } = await import("./recovery-phrase");
+  return createKeystore(decodeRecovery(recoveryInput), passphrase);
+}
+
 /** Bloquea la sesión: borra la semilla de memoria (no toca lo persistido). */
 export function lockKeystore(): void {
   if (unlockedSeed) unlockedSeed.fill(0);
@@ -183,6 +197,13 @@ export function signWithUnlockedIdentity(message: Uint8Array): Promise<Uint8Arra
 /** Código de recuperación (semilla en base64url). Solo con el keystore desbloqueado. */
 export function exportRecovery(): string | null {
   return unlockedSeed ? toBase64Url(unlockedSeed) : null;
+}
+
+/** Frase de recuperación BIP39 (24 palabras) de la semilla. Solo con el keystore desbloqueado. */
+export async function exportRecoveryPhrase(): Promise<string | null> {
+  if (!unlockedSeed) return null;
+  const { seedToPhrase } = await import("./recovery-phrase");
+  return seedToPhrase(unlockedSeed);
 }
 
 // --- Keystore portátil (fichero USB) --------------------------------------------------
