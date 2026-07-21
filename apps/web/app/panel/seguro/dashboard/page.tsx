@@ -7,10 +7,13 @@ import { DashboardShell, useDashboardSession } from "@/components/DashboardShell
 import { getToken } from "@/lib/session";
 import { listBlocks, RelayError, resolveUsername } from "@/lib/relay-client";
 import {
+  addContactByPublicKey,
   addContactFromDirectory,
   listContacts,
   type Contact,
 } from "@/lib/contacts";
+import { AddByQr } from "@/components/ContactQr";
+import type { ContactUri } from "@/lib/contact-uri";
 import {
   conversationPeers,
   createChatTransport,
@@ -176,6 +179,7 @@ function Channel() {
 
   // Alta de contacto por handle.
   const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState<"name" | "qr">("name");
   const [handle, setHandle] = useState("");
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -342,6 +346,17 @@ function Channel() {
     [selected, attaching, ownPub],
   );
 
+  /** Refresca la lista, selecciona el contacto recién añadido y cierra el panel de alta. */
+  async function finishAdd(contact: Contact) {
+    const list = await listContacts();
+    setContacts(list);
+    contactsRef.current = list;
+    setSelected(contact);
+    setHandle("");
+    setAddOpen(false);
+    refreshPending();
+  }
+
   async function addContact() {
     const h = handle.trim().replace(/^@/, "");
     const token = getToken();
@@ -351,13 +366,7 @@ function Channel() {
     try {
       const entry = await resolveUsername(token, h);
       const contact = await addContactFromDirectory(entry);
-      const list = await listContacts();
-      setContacts(list);
-      contactsRef.current = list;
-      setSelected(contact);
-      setHandle("");
-      setAddOpen(false);
-      refreshPending();
+      await finishAdd(contact);
     } catch (err) {
       if (err instanceof RelayError && err.status === 404) {
         setAddError(`No existe ningún usuario con el nombre de usuario «${h}».`);
@@ -366,6 +375,22 @@ function Channel() {
       }
     } finally {
       setAddBusy(false);
+    }
+  }
+
+  /** Alta desde un QR: la clave viene fuera de banda; se verifica al descargar su key bundle. */
+  async function addByQr({ pub }: ContactUri) {
+    const token = getToken();
+    if (!token) throw new Error("Sesión no disponible.");
+    if (pub === ownPub) throw new Error("Ese QR es el tuyo: no puedes añadirte a ti mismo.");
+    try {
+      const contact = await addContactByPublicKey(token, pub);
+      await finishAdd(contact);
+    } catch (err) {
+      if (err instanceof RelayError && err.status === 404) {
+        throw new Error("No encontramos esa identidad. ¿El QR es correcto y esa persona ya se registró?");
+      }
+      throw err;
     }
   }
 
@@ -410,29 +435,52 @@ function Channel() {
           </div>
 
           {addOpen && (
-            <div className="mt-3 flex flex-col gap-2 bg-bg border border-line rounded-sm p-3">
-              <p className="label text-muted-2">Añadir contacto por su nombre de usuario</p>
-              <div className="flex items-center gap-2">
-                <input
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addContact()}
-                  placeholder="nombre de usuario (p. ej. alicia)"
-                  className="flex-1 bg-surface-2 border border-line rounded-sm px-3 py-2 text-[13px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent/50"
-                />
-                <button
-                  onClick={addContact}
-                  disabled={!handle.trim() || addBusy}
-                  className="label text-bg bg-accent rounded-sm px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
-                >
-                  {addBusy ? "Buscando…" : "Añadir"}
-                </button>
+            <div className="mt-3 flex flex-col gap-3 bg-bg border border-line rounded-sm p-3">
+              {/* Selector: por nombre de usuario o por QR (fuera de banda) */}
+              <div className="flex gap-1 p-0.5 bg-surface-2 border border-line rounded-sm w-fit">
+                {(["name", "qr"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setAddMode(m);
+                      setAddError(null);
+                    }}
+                    className={`label px-3 py-1 rounded-sm transition-colors ${
+                      addMode === m ? "bg-accent text-bg" : "text-muted hover:text-text"
+                    }`}
+                  >
+                    {m === "name" ? "Por nombre" : "Por QR"}
+                  </button>
+                ))}
               </div>
-              {addError && <p className="text-[12px] text-error">{addError}</p>}
-              <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
-                Descargamos su llave de cifrado y comprobamos que es de verdad suya antes de
-                guardarla. El buzón es el mismo por conexión normal y protegida (Tor).
-              </p>
+
+              {addMode === "name" ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={handle}
+                      onChange={(e) => setHandle(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addContact()}
+                      placeholder="nombre de usuario (p. ej. alicia)"
+                      className="flex-1 bg-surface-2 border border-line rounded-sm px-3 py-2 text-[13px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent/50"
+                    />
+                    <button
+                      onClick={addContact}
+                      disabled={!handle.trim() || addBusy}
+                      className="label text-bg bg-accent rounded-sm px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+                    >
+                      {addBusy ? "Buscando…" : "Añadir"}
+                    </button>
+                  </div>
+                  {addError && <p className="text-[12px] text-error">{addError}</p>}
+                  <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
+                    Descargamos su llave de cifrado y comprobamos que es de verdad suya antes de
+                    guardarla. El buzón es el mismo por conexión normal y protegida (Tor).
+                  </p>
+                </>
+              ) : (
+                <AddByQr onAdd={addByQr} disabled={addBusy} />
+              )}
             </div>
           )}
         </div>

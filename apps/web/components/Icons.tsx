@@ -80,3 +80,18 @@ export const IconUsers = make(
     <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
   </>,
 );
+
+export const IconQr = make(
+  <>
+    <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z" />
+    <path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" />
+  </>,
+);
+
+export const IconImage = make(
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="1" />
+    <circle cx="8.5" cy="9.5" r="1.5" />
+    <path d="M21 16l-5-5-6 6-3-3-4 4" />
+  </>,
+);

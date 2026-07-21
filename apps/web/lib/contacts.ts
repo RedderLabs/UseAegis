@@ -12,7 +12,7 @@
  */
 import { fingerprint16, fromBase64Url } from "./crypto/ed25519";
 import { verifyPeerPrekey } from "./crypto/messaging";
-import type { DirectoryEntry } from "./relay-client";
+import { fetchBundle, type DirectoryEntry } from "./relay-client";
 
 const DB_NAME = "aegis-contacts";
 const DB_VERSION = 1;
@@ -100,4 +100,16 @@ export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Co
   };
   await tx("readwrite", (s) => s.put(contact));
   return contact;
+}
+
+/**
+ * Añade un contacto a partir de su clave pública Ed25519 (base64url) — el caso del QR: la clave
+ * llega FUERA DE BANDA (escaneada/pegada) y aquí descargamos su key bundle del directorio y lo
+ * VERIFICAMOS antes de guardar (mismo camino anti-MITM que `addContactFromDirectory`). El relay no
+ * puede sustituir la identidad porque la clave no salió de él; y no puede colar una prekey ajena
+ * porque su firma no cuadraría con esta clave. Lanza si la identidad no existe o no publicó prekey.
+ */
+export async function addContactByPublicKey(token: string, pub: string): Promise<Contact> {
+  const entry = await fetchBundle(token, pub);
+  return addContactFromDirectory(entry);
 }

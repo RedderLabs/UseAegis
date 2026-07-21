@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
 import { getToken } from "@/lib/session";
 import { claimUsername, fetchMe, RelayError, WEB_ONION_URL } from "@/lib/relay-client";
 import { generateUsername } from "@/lib/username";
-import { IconCopy, IconDownload } from "@/components/Icons";
+import { encodeContactUri } from "@/lib/contact-uri";
+import { ContactQR } from "@/components/ContactQr";
+import { IconCopy, IconDownload, IconQr } from "@/components/Icons";
 
 function Settings() {
   const session = useDashboardSession();
@@ -89,6 +91,39 @@ function Settings() {
     } catch {
       /* noop */
     }
+  }
+
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  // Mi URI de contacto (lo que codifica el QR). La clave siempre está; el @nombre se incrusta
+  // cuando carga. Si la clave no fuese válida, no rompemos la página: cae a null → "no disponible".
+  const contactUri = useMemo(() => {
+    try {
+      return encodeContactUri({ pub: session.publicKey, handle: username });
+    } catch {
+      return null;
+    }
+  }, [session.publicKey, username]);
+
+  async function copyContactCode() {
+    if (!contactUri) return;
+    try {
+      await navigator.clipboard.writeText(contactUri);
+      setCopiedCode(true);
+      window.setTimeout(() => setCopiedCode(false), 1500);
+    } catch {
+      /* noop */
+    }
+  }
+
+  async function downloadQr() {
+    if (!contactUri) return;
+    const QRCode = (await import("qrcode")).default;
+    const dataUrl = await QRCode.toDataURL(contactUri, { margin: 1, width: 512 });
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `aegis-qr${username ? `-${username}` : ""}.png`;
+    a.click();
   }
 
   function downloadId() {
@@ -196,6 +231,49 @@ function Settings() {
                 )}
               </div>
             ))}
+        </section>
+
+        {/* Mi código QR — para que me añadan escaneándolo o subiendo una foto de él */}
+        <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
+          <p className="label text-text flex items-center gap-1.5">
+            <IconQr className="w-4 h-4 text-accent" /> Tu código QR
+          </p>
+          <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
+            Otra persona te añade escaneándolo con su móvil (o subiendo una foto). Tu llave viaja
+            dentro del código, así que no depende de que el servidor diga la verdad: al añadirte se
+            comprueba tu llave de cifrado.
+          </p>
+          <div className="mt-4 pt-4 border-t border-line flex flex-col sm:flex-row gap-5 sm:items-center">
+            {contactUri ? (
+              <ContactQR uri={contactUri} />
+            ) : (
+              <p className="font-mono text-[12px] text-muted-2">No disponible.</p>
+            )}
+            <div className="flex-1 min-w-0">
+              {!username && (
+                <p className="font-mono text-[11px] text-status-p2p mb-3 leading-relaxed">
+                  Aún no tienes @nombre: el QR ya funciona, pero elige uno arriba para que tu nombre
+                  se muestre a quien te añada.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={copyContactCode}
+                  disabled={!contactUri}
+                  className="inline-flex items-center gap-1.5 label py-2 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
+                >
+                  <IconCopy className="w-3.5 h-3.5" /> {copiedCode ? "Copiado" : "Copiar código"}
+                </button>
+                <button
+                  onClick={() => void downloadQr()}
+                  disabled={!contactUri}
+                  className="inline-flex items-center gap-1.5 label py-2 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
+                >
+                  <IconDownload className="w-3.5 h-3.5" /> Descargar QR
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Transporte / puerta */}
