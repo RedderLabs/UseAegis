@@ -17,6 +17,7 @@ import {
   createRelayTransport,
   type CursorStore,
   type RelayBackend,
+  type RelayStream,
   type Transport,
   type TransportMode,
   type WireEnvelope,
@@ -29,6 +30,7 @@ import {
   downloadMedia,
   fetchHealth,
   fetchMessages,
+  openMessageStream,
   sendMessage,
   uploadMedia,
 } from "./relay-client";
@@ -459,6 +461,13 @@ function makeCursorStore(ownPub: string): CursorStore {
   };
 }
 
+/** Adaptador `RelayStream`: abre el SSE del buzón (avisos de sobre nuevo en tiempo real). */
+function makeRelayStream(token: string): RelayStream {
+  return {
+    open: (onPoke, onConnected) => openMessageStream(token, onPoke, onConnected),
+  };
+}
+
 /**
  * Transporte de chat de alto nivel: envuelve `@aegis/transport` con la cripto de sobre y la
  * clasificación. Enviar sella y entrega (self-copy incluida); recibir sondea el buzón y entrega
@@ -496,6 +505,9 @@ export function createChatTransport(token: string, ownPub: string): ChatTranspor
     createRelayTransport({
       backend: makeRelayBackend(token),
       cursor: makeCursorStore(ownPub),
+      // Push en tiempo real por SSE; el polling se mantiene como red de seguridad (a ritmo lento
+      // mientras el stream esté vivo). Ver createRelayTransport / openMessageStream.
+      stream: makeRelayStream(token),
     }),
   ]);
 

@@ -3,7 +3,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Scheduler, Transport, WireEnvelope } from "./types";
-import { createRelayTransport, type CursorStore, type RelayBackend } from "./relay";
+import {
+  createRelayTransport,
+  type CursorStore,
+  type RelayBackend,
+  type RelayStream,
+} from "./relay";
 import { createFailoverTransport } from "./failover";
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -120,6 +125,80 @@ test("relay: onMessage devuelve una baja que corta la entrega", async () => {
   await peer.send("me", enc("dos"));
   await ms.tick();
   assert.deepEqual(seen, ["uno"], "tras la baja no debería llegar nada más");
+  me.stop();
+});
+
+/** Canal de avisos falso: el test dispara `poke()` y cambia el estado con `setConnected()`. */
+function makeFakeStream() {
+  let onPoke: (() => void) | null = null;
+  let onConnected: ((c: boolean) => void) | null = null;
+  let closed = false;
+  const stream: RelayStream = {
+    open(poke, connected) {
+      onPoke = poke;
+      onConnected = connected ?? null;
+      return () => {
+        closed = true;
+      };
+    },
+  };
+  return {
+    stream,
+    poke: () => onPoke?.(),
+    setConnected: (c: boolean) => onConnected?.(c),
+    get closed() {
+      return closed;
+    },
+  };
+}
+
+test("stream: un aviso dispara un fetch inmediato sin esperar al sondeo", async () => {
+  const net = makeRelayNet();
+  const ms = manualScheduler();
+  const fake = makeFakeStream();
+  const bob = createRelayTransport({
+    backend: net.backendFor("bob"),
+    cursor: memCursor(),
+    scheduler: ms.scheduler,
+    stream: fake.stream,
+  });
+  const received: string[] = [];
+  bob.onMessage((env) => void received.push(dec(env.blob)));
+  bob.start();
+  await flush(); // primera vuelta: vacío
+
+  const alice = net.backendFor("alice");
+  await alice.send("bob", enc("urgente"));
+  // NO disparamos el scheduler: solo el aviso del stream debe entregar el sobre.
+  fake.poke();
+  await flush();
+  assert.deepEqual(received, ["urgente"]);
+
+  bob.stop();
+  assert.ok(fake.closed, "stop() debe cerrar el stream");
+});
+
+test("stream: al conectar recupera lo dejado durante el corte", async () => {
+  const net = makeRelayNet();
+  const ms = manualScheduler();
+  const fake = makeFakeStream();
+  const me = createRelayTransport({
+    backend: net.backendFor("me"),
+    cursor: memCursor(),
+    scheduler: ms.scheduler,
+    stream: fake.stream,
+  });
+  const seen: string[] = [];
+  me.onMessage((env) => void seen.push(dec(env.blob)));
+  me.start();
+  await flush();
+
+  // Llega un sobre mientras el canal estaba caído; al (re)conectar, un fetch lo recupera.
+  await net.backendFor("peer").send("me", enc("perdido"));
+  fake.setConnected(true);
+  await flush();
+  assert.deepEqual(seen, ["perdido"]);
+
   me.stop();
 });
 

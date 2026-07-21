@@ -22,6 +22,7 @@ export {
   createRelayTransport,
   type CursorStore,
   type RelayBackend,
+  type RelayStream,
   type RelayTransportOptions,
 } from "./relay";
 export { createFailoverTransport } from "./failover";

@@ -34,26 +34,51 @@ export interface CursorStore {
   save(cursor: string): void;
 }
 
+/**
+ * Canal de AVISOS en tiempo real ("hay sobre nuevo") — la web lo cablea con una conexión SSE al
+ * relay; los tests, con un doble en memoria. Es OPCIONAL: sin él, el transporte funciona como
+ * siempre (solo polling). El aviso no trae el sobre: solo dispara un fetch inmediato por cursor.
+ */
+export interface RelayStream {
+  /**
+   * Abre el canal. `onPoke` se llama por cada aviso de sobre nuevo. `onConnected` refleja si el
+   * canal está vivo (para ajustar el ritmo del sondeo). Devuelve una función de cierre.
+   */
+  open(onPoke: () => void, onConnected?: (connected: boolean) => void): () => void;
+}
+
 export interface RelayTransportOptions {
   backend: RelayBackend;
   cursor: CursorStore;
-  /** ms entre sondeos del buzón (por defecto 4000). */
+  /** ms entre sondeos del buzón cuando NO hay stream vivo (por defecto 4000). */
   pollIntervalMs?: number;
+  /**
+   * ms entre sondeos de RED DE SEGURIDAD cuando el stream SÍ está vivo (por defecto 30000): el
+   * tiempo real lo lleva el stream, pero se sigue sondeando de vez en cuando por si un aviso se
+   * perdió (reconexión, sobre dejado mientras el canal estaba caído).
+   */
+  idlePollIntervalMs?: number;
+  /** Canal de avisos en tiempo real. Si se omite, solo hay polling. */
+  stream?: RelayStream;
   /** Programador de temporizadores (inyectable en tests). Por defecto, el del entorno. */
   scheduler?: Scheduler;
 }
 
 const DEFAULT_POLL_MS = 4000;
+const DEFAULT_IDLE_POLL_MS = 30_000;
 
 /** Crea un transporte Modo A (relay) a partir de sus dependencias inyectadas. */
 export function createRelayTransport(opts: RelayTransportOptions): Transport {
-  const { backend, cursor } = opts;
+  const { backend, cursor, stream } = opts;
   const pollMs = opts.pollIntervalMs ?? DEFAULT_POLL_MS;
+  const idlePollMs = opts.idlePollIntervalMs ?? DEFAULT_IDLE_POLL_MS;
   const scheduler = opts.scheduler ?? defaultScheduler;
 
   const handlers = new Set<MessageHandler>();
   let timer: number | null = null;
   let polling = false; // evita solapar dos vueltas si una tarda más que el intervalo
+  let closeStream: (() => void) | null = null;
+  let currentPollMs = pollMs; // el ritmo vivo: rápido sin stream, lento (red de seguridad) con él
 
   async function dispatch(env: WireEnvelope): Promise<void> {
     for (const handler of handlers) {
@@ -81,6 +106,13 @@ export function createRelayTransport(opts: RelayTransportOptions): Transport {
     }
   }
 
+  /** (Re)programa el sondeo periódico al ritmo `ms`. Si ya había timer, lo reemplaza. */
+  function schedulePolling(ms: number): void {
+    if (timer !== null) scheduler.clearInterval(timer);
+    currentPollMs = ms;
+    timer = scheduler.setInterval(poll, ms);
+  }
+
   return {
     activeMode: "relay",
 
@@ -99,14 +131,32 @@ export function createRelayTransport(opts: RelayTransportOptions): Transport {
 
     start() {
       if (timer !== null) return; // idempotente
-      timer = scheduler.setInterval(poll, pollMs);
+      schedulePolling(pollMs);
       void poll(); // primera vuelta inmediata, sin esperar al intervalo
+
+      // Si hay canal de avisos, ábrelo: cada aviso dispara un fetch inmediato, y mientras el canal
+      // esté vivo el sondeo baja a "red de seguridad" (idlePollMs). Al caerse, vuelve al ritmo rápido.
+      if (stream) {
+        closeStream = stream.open(
+          () => void poll(),
+          (connected) => {
+            const target = connected ? idlePollMs : pollMs;
+            if (target !== currentPollMs) schedulePolling(target);
+            if (connected) void poll(); // recién conectado: recupera lo perdido durante el corte
+          },
+        );
+      }
     },
 
     stop() {
+      if (closeStream) {
+        closeStream();
+        closeStream = null;
+      }
       if (timer === null) return;
       scheduler.clearInterval(timer);
       timer = null;
+      currentPollMs = pollMs;
     },
   };
 }

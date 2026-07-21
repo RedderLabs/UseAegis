@@ -51,6 +51,9 @@ function readMediaConfig(): MediaConfig | null {
 
 export const config = {
   databaseUrl: required("DATABASE_URL"),
+  // Conexión a DragonflyDB (Redis-compatible) para el pub/sub del push en tiempo real. OPCIONAL:
+  // sin ella, los avisos SSE funcionan solo en proceso (correcto con una única instancia).
+  redisUrl: process.env.REDIS_URL ?? null,
   host: process.env.HOST ?? "127.0.0.1",
   port: intFromEnv("PORT", 8443),
   logLevel: process.env.LOG_LEVEL ?? "info",

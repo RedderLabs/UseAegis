@@ -37,6 +37,10 @@ services:
     environment:
       # Connection string INTERNO del Postgres de Coolify (cópialo del recurso Postgres).
       DATABASE_URL: ${DATABASE_URL}
+      # DragonflyDB (Redis-compatible) para el pub/sub del push en tiempo real (SSE). Cópialo del
+      # recurso Dragonfly de Coolify (p. ej. redis://default:PASS@dragonfly:6379). OPCIONAL: sin él,
+      # los avisos SSE funcionan solo en proceso (correcto con una única instancia del relay).
+      REDIS_URL: ${REDIS_URL:-}
       HOST: 0.0.0.0
       PORT: "8443"
       LOG_LEVEL: info

@@ -13,7 +13,11 @@
 # Enrutado común de la app: /api/* → relay (quita el prefijo /api); todo lo demás → web Next.
 (app) {
 	handle_path /api/* {
-		reverse_proxy aegis-relay:8443
+		# flush_interval -1 = sin buffering: imprescindible para el stream SSE del buzón
+		# (GET /api/messages/stream), para que el aviso de sobre nuevo salga al instante.
+		reverse_proxy aegis-relay:8443 {
+			flush_interval -1
+		}
 	}
 	handle {
 		reverse_proxy aegis-web:3000
