@@ -129,7 +129,7 @@ function Settings() {
   function downloadId() {
     const blob = new Blob(
       [
-        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (sirve para reconocerte o compartirte).\nNO sirve para recuperar el acceso: para eso está el código de recuperación\nque descargaste al crear la identidad.`,
+        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (sirve para reconocerte o compartirte).\nNO sirve para recuperar el acceso: para eso está la frase de recuperación\n(24 palabras) que guardaste al crear la identidad.`,
       ],
       { type: "text/plain" },
     );

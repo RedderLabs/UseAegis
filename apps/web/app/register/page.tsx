@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { groupIdentity, IDENTITY_LENGTH } from "@/lib/identity";
 import {
@@ -10,6 +10,7 @@ import {
   toBase64Url,
 } from "@/lib/crypto/ed25519";
 import { createKeystore, exportKeystore } from "@/lib/crypto/identity-store";
+import { seedToPhrase } from "@/lib/crypto/recovery-phrase";
 import { generatePassword, PASSWORD_LENGTHS } from "@/lib/password-gen";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -40,6 +41,22 @@ export default function RegisterPage() {
   // Opciones del generador de contraseña fuerte (para la contraseña que cifra la bóveda).
   const [pwLen, setPwLen] = useState<number>(24);
   const [pwSymbols, setPwSymbols] = useState(true);
+  const [copiedPhrase, setCopiedPhrase] = useState(false);
+
+  // Frase de recuperación (24 palabras BIP39) de la semilla candidata. Es la MISMA identidad,
+  // solo codificada como palabras para poder anotarla sin errores.
+  const phrase = useMemo(() => (candidate ? seedToPhrase(candidate.seed) : null), [candidate]);
+
+  async function copyPhrase() {
+    if (!phrase) return;
+    try {
+      await navigator.clipboard.writeText(phrase);
+      setCopiedPhrase(true);
+      window.setTimeout(() => setCopiedPhrase(false), 1500);
+    } catch {
+      /* noop */
+    }
+  }
 
   // Genera una contraseña fuerte (CSPRNG), la rellena en ambos campos y la muestra para copiarla.
   function fillGeneratedPassword() {
@@ -125,21 +142,29 @@ export default function RegisterPage() {
     logRef.current?.scrollTo(0, logRef.current.scrollHeight);
   }, [logs]);
 
-  // Descarga el CÓDIGO DE RECUPERACIÓN (la semilla): única forma de mover la identidad
-  // a otro dispositivo en el modelo "keypair en el dispositivo".
+  // Descarga la FRASE DE RECUPERACIÓN (BIP39, 24 palabras = la semilla): única forma de mover la
+  // identidad a otro dispositivo en el modelo "keypair en el dispositivo".
   function downloadRecovery() {
     if (!candidate) return;
-    const recovery = toBase64Url(candidate.seed);
+    const phrase = seedToPhrase(candidate.seed);
+    // Palabras numeradas, en columnas, para copiar a mano sin equivocarse.
+    const numbered = phrase
+      .split(" ")
+      .map((w, i) => `${String(i + 1).padStart(2, " ")}. ${w}`)
+      .join("\n");
     const contents = [
-      "AEGIS — Código de recuperación de identidad",
+      "AEGIS — Frase de recuperación de identidad",
       "",
       `Huella pública: ${candidate.fingerprint}`,
       "",
-      "Código de recuperación (mantenlo en secreto — es tu clave privada):",
-      recovery,
+      "Frase de recuperación (24 palabras — mantenla en secreto, es tu clave privada):",
       "",
-      "Con este código puedes restaurar tu identidad en otro dispositivo.",
-      "No hay servidor con tus claves: si lo pierdes, nadie puede recuperarla por ti.",
+      phrase,
+      "",
+      numbered,
+      "",
+      "Con estas 24 palabras, EN ESTE ORDEN, puedes restaurar tu identidad en otro dispositivo.",
+      "No hay servidor con tus claves: si la pierdes, nadie puede recuperarla por ti.",
     ].join("\n");
     const blob = new Blob([contents], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -148,7 +173,7 @@ export default function RegisterPage() {
     a.download = `aegis-recuperacion-${candidate.fingerprint}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    addLog("> Exportación del código de recuperación: OK");
+    addLog("> Exportación de la frase de recuperación: OK");
   }
 
   // Exporta el KEYSTORE CIFRADO a un fichero (p. ej. para guardarlo en un USB). A diferencia
@@ -228,8 +253,8 @@ export default function RegisterPage() {
                 con tu contraseña</span> (Argon2id): sin ella, lo almacenado es ruido y nadie
                 más puede usar tu identidad. Estas 16 letras son su{" "}
                 <span className="text-text">huella pública</span>: sirven para reconocerla, no
-                para iniciar sesión tecleándolas. Descarga el código de recuperación para
-                restaurarla en otro dispositivo o guardarla en un USB externo.
+                para iniciar sesión tecleándolas. Guarda tu frase de recuperación (24 palabras)
+                para restaurarla en otro dispositivo, o exporta tus llaves a un USB.
               </p>
             </div>
 
@@ -259,7 +284,7 @@ export default function RegisterPage() {
                     <span className="text-text">
                       No hay forma de recuperarla si la olvidas
                     </span>{" "}
-                    — para eso está el código de recuperación.
+                    — para eso está la frase de recuperación.
                   </p>
                 </div>
 
@@ -343,6 +368,39 @@ export default function RegisterPage() {
                 {passError && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{passError}</p>
                 )}
+              </div>
+            )}
+
+            {/* Frase de recuperación (24 palabras) — anótala antes de confirmar */}
+            {phrase && (
+              <div className="border-t border-line pt-4 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-sans text-base font-semibold text-text">
+                    Tu frase de recuperación
+                  </h2>
+                  <button
+                    onClick={copyPhrase}
+                    className="label text-muted-2 hover:text-accent transition-colors shrink-0"
+                  >
+                    {copiedPhrase ? "Copiada ✓" : "Copiar"}
+                  </button>
+                </div>
+                <p className="text-[12px] leading-relaxed text-muted">
+                  Estas <span className="text-text">24 palabras, en este orden</span>, SON tu
+                  identidad. Anótalas en papel y guárdalas en un sitio seguro: es la única forma de
+                  restaurarla en otro dispositivo, y nadie —tampoco nosotros— puede recuperarla si
+                  las pierdes.
+                </p>
+                <ol className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 bg-bg border border-line rounded-sm p-3">
+                  {phrase.split(" ").map((word, i) => (
+                    <li key={i} className="flex items-baseline gap-2 font-mono text-[12px]">
+                      <span className="text-muted-2 tabular-nums w-5 text-right shrink-0">
+                        {i + 1}
+                      </span>
+                      <span className="text-accent select-all">{word}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
 

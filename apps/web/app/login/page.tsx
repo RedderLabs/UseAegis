@@ -11,7 +11,7 @@ import { toBase64Url } from "@/lib/crypto/ed25519";
 import {
   buildSignedPrekey,
   getKeystoreStatus,
-  importKeystore,
+  importFromRecovery,
   migrateLegacy,
   signWithUnlockedIdentity,
   unlockFromFile,
@@ -157,7 +157,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const identity = await importKeystore(importValue, passphrase);
+      const identity = await importFromRecovery(importValue, passphrase);
       await finishLogin(identity);
     } catch (err) {
       setError(describeError(err));
@@ -459,7 +459,7 @@ export default function LoginPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label htmlFor="recovery" className="label text-muted">
-                    Código de recuperación
+                    Frase de recuperación
                   </label>
                   <textarea
                     id="recovery"
@@ -467,7 +467,7 @@ export default function LoginPage() {
                     onChange={(e) => setImportValue(e.target.value)}
                     rows={3}
                     spellCheck={false}
-                    placeholder="Pega aquí tu código de recuperación"
+                    placeholder="Pega tus 24 palabras (o tu código de recuperación antiguo)"
                     className="w-full bg-bg border border-line rounded-sm px-3 py-2 font-mono text-[12px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent break-all"
                   />
                 </div>
@@ -505,7 +505,7 @@ export default function LoginPage() {
               <div className="space-y-6">
                 <p className="text-[13px] text-muted leading-relaxed">
                   No hay ninguna identidad en este dispositivo. Crea una nueva o importa la tuya
-                  con el código de recuperación.
+                  con tu frase de recuperación.
                 </p>
                 <div className="flex flex-col gap-3">
                   <Link
@@ -522,7 +522,7 @@ export default function LoginPage() {
                     }}
                     className="label text-muted hover:text-accent transition-colors"
                   >
-                    Importar con código de recuperación
+                    Importar con frase de recuperación
                   </button>
                   <button
                     type="button"

@@ -56,6 +56,7 @@ export const metadata: Metadata = {
     "aegis app",
     "use aegis",
     "useaegis",
+    "useaegis.app",
   ],
   // Directriz de indexación a nivel de sitio (el panel se excluye además en robots.ts).
   robots: {
