@@ -80,28 +80,31 @@ Primera rebanada vertical de la mensajería, **verificada end-to-end contra el r
 | **Generador de contraseña** fuerte en el registro (longitud + símbolos, CSPRNG) | ✅ |
 | Simplificación de **copy** de toda la app a lenguaje claro (algoritmos como detalle secundario) | ✅ |
 
-> **Resta de la Fase 1 (mensajería):** cola **BullMQ** (sustituir polling), **audio**
-> (MediaRecorder/Opus + AEAD por chunks) y **archivos** (mismo chunking), **QR** de contacto,
-> **frase de recuperación** tipo BIP39, y consolidar cripto/protocolo a `packages/crypto-core` +
-> `packages/protocol` (hoy en `apps/web/lib/crypto`).
+> **Resta de la Fase 1 (mensajería):** ~~cola BullMQ~~ **push en tiempo real ✅** (SSE +
+> DragonflyDB pub/sub; el polling queda como red de seguridad), **audio** ✅ y **archivos** ✅,
+> **QR** de contacto ✅, **frase de recuperación BIP39** ✅. **Resta**: consolidar cripto/protocolo a
+> `packages/crypto-core` + `packages/protocol` (hoy en `apps/web/lib/crypto`), y el push a usuarios
+> **offline** (ahí sí BullMQ + web push/VAPID) — movido a tarea futura, no bloquea M1.
 
 ---
 
 ## Fases
 
-### Fase 1 — MVP Modo A (relay): texto + audio, E2E completo · **~1 sd restante** (de 9)
-El grueso del proyecto. Ya están hechos el bloque de relay/acceso, el **TEXTO**, los **ARCHIVOS**
-y el **AUDIO** E2E (ver arriba): **M1 alcanzado en código**. Queda solo pulido no bloqueante
-(QR de contacto, push en tiempo real con BullMQ, frase de recuperación).
+### Fase 1 — MVP Modo A (relay): texto + audio, E2E completo · **✅ HECHA en código** (2026-07-21)
+El grueso del proyecto. Hechos el bloque de relay/acceso, el **TEXTO**, los **ARCHIVOS** y el
+**AUDIO** E2E, más el pulido de M1: **QR de contacto ✅**, **frase de recuperación BIP39 ✅** y
+**push en tiempo real ✅** (SSE + DragonflyDB pub/sub; el polling queda de respaldo). **M1 alcanzado
+en código.** Resta a futuro, no bloqueante: consolidar cripto a `packages/crypto-core`+`protocol`,
+push a usuarios **offline** (BullMQ + web push) y la prueba manual del micro en navegador real.
 
 | Bloque | Tareas | Estado | Resta |
 |---|---|---|---|
 | `crypto-core` | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅**. **AEAD por chunks (streaming, audio/archivos) ✅** (`aead-stream.ts`, pdte. revisión humana) | 🟢 casi | 0,2 sd |
 | `protocol` | Formato de sobre + sealed sender **✅ implementado** (en `apps/web`). **Resta**: subirlo a `packages/protocol` (versión, serialización compartida con móvil) | 🟡 parcial | 0,3 sd |
-| `apps/relay` | Fastify + PG + Dragonfly + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Almacén de media (proxy a S3/B2, SigV4 propio) ✅**. **Resta**: cola **BullMQ** (push en tiempo real, sustituir polling) | 🟡 parcial | 0,7 sd |
+| `apps/relay` | Fastify + PG + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Almacén de media (proxy a S3/B2, SigV4 propio) ✅**. **Push en tiempo real ✅** (SSE `GET /messages/stream` + pub/sub sobre DragonflyDB; polling como fallback). Cola BullMQ durable → solo para push a offline (tarea futura) | ✅ | — |
 | `transport` (Modo A) | `send/onMessage/start/stop` formalizados en `packages/transport` **y ADOPTADOS** por `apps/web/lib/chat.ts` (`createChatTransport` → `createFailoverTransport([createRelayTransport])`): el Canal envía y recibe **a través** de la abstracción, sin sondeo manual. ✅ (ver Fase 2) | ✅ | — |
-| Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** + **audio E2E ✅** (grabar con MediaRecorder/Opus, notas de voz cifradas y reproducción en el Canal, sobre la misma tubería de media). **Resta**: **QR** de contacto | 🟢 casi | 0,3 sd |
-| Backup de clave | Código de recuperación (cifrado, bajo control del usuario) ✅; endurecer a frase tipo BIP39 | 🟢 casi | 0,5 sd |
+| Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** + **audio E2E ✅** + **QR de contacto ✅** (URI `aegis://contact`, alta por imagen/pegado, verificación del bundle) + **recepción en tiempo real ✅** (SSE, polling de respaldo) | ✅ | — |
+| Backup de clave | Código de recuperación ✅ **endurecido a frase BIP39 de 24 palabras ✅** (compatible con el código base64url antiguo). Pdte. revisión humana (`PLANTILLA §5`) | ✅ | — |
 
 **Riesgo humano:** el pipeline de audio (chunking en streaming + reproducción progresiva) es lo que más debugging manual pide; Claude aporta el código, el humano lo estabiliza.
 **Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay. ✅ ALCANZADO (código).** Texto, archivos y **audio** están implementados y cifrados E2E (media sobre S3/B2). El pipeline cripto/transporte está verificado E2E; la captura de micrófono y la reproducción quedan a falta de una prueba manual en navegador real con micro. Restan solo mejoras (QR, BullMQ, backup) que no bloquean M1.
@@ -160,7 +163,7 @@ Dockerfile determinista, hash publicado por release, instrucciones de reproducci
 |---|---|---|
 | 0 · Base + capa visual del cliente | hecha | — |
 | — · Backend de acceso + transporte `.onion` (Fase 2.5 completa + parte de la 1) | hecho (~4 sd) | — |
-| 1 · MVP relay — **texto + archivos + audio E2E ✅ (M1), resta QR/BullMQ/backup** | 1 sd | 1 sd |
+| 1 · MVP relay — **texto + archivos + audio + QR + BIP39 + push tiempo real E2E ✅ (M1)** | ✅ hecha | — |
 | 2 · Abstracción transporte | ✅ hecha | 4,5 sd |
 | 2.5 · `.onion` | ✅ hecha | 4,5 sd |
 | 3 · libp2p | 4 sd | 8,5 sd |

@@ -272,6 +272,71 @@ export function deleteMessage(token: string, id: string): Promise<void> {
   return request<void>("DELETE", `/messages/${encodeURIComponent(id)}`, undefined, token);
 }
 
+/**
+ * Abre el stream SSE del buzón (`GET /messages/stream`) para recibir avisos de sobre nuevo en
+ * TIEMPO REAL, y así no depender solo del sondeo. `onPoke` se llama por cada aviso; `onConnected`
+ * refleja si el canal está vivo. Devuelve una función de cierre.
+ *
+ * Usa `fetch` con streaming (no `EventSource`) por un motivo concreto: EventSource no puede mandar
+ * la cabecera `Authorization`, y aquí el token es bearer en memoria (no cookie). Con fetch sí. El
+ * lector reconecta solo con backoff exponencial; el aviso solo es un "poke" (no trae el sobre), el
+ * consumidor reacciona pidiendo /messages por cursor. Solo cliente (usa fetch streaming del navegador).
+ */
+export function openMessageStream(
+  token: string,
+  onPoke: () => void,
+  onConnected?: (connected: boolean) => void,
+): () => void {
+  let closed = false;
+  let controller: AbortController | null = null;
+  let attempt = 0;
+
+  async function connect(): Promise<void> {
+    if (closed) return;
+    controller = new AbortController();
+    try {
+      const res = await fetch(apiUrl("/messages/stream"), {
+        headers: { authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);
+      onConnected?.(true);
+      attempt = 0;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Los frames SSE se separan por una línea en blanco. Un frame con `event: message` (o una
+        // línea `data:`) es un aviso; los comentarios de latido (`: ping`) se ignoran.
+        let sep: number;
+        while ((sep = buffer.indexOf("\n\n")) >= 0) {
+          const frame = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          if (/^(event:\s*message|data:)/m.test(frame)) onPoke();
+        }
+      }
+    } catch {
+      /* corte de red / sesión / Tor: reconectamos abajo con backoff */
+    } finally {
+      onConnected?.(false);
+      if (!closed) {
+        attempt = Math.min(attempt + 1, 6);
+        const delay = Math.min(1000 * 2 ** attempt, 30_000);
+        setTimeout(() => void connect(), delay);
+      }
+    }
+  }
+
+  void connect();
+  return () => {
+    closed = true;
+    controller?.abort();
+  };
+}
+
 // --- Media (adjuntos cifrados: audio/archivos) ---------------------------------------
 //
 // El contenido va cifrado E2E (AEAD por chunks) ANTES de subirse; para el relay/bucket es un

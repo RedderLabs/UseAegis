@@ -8,10 +8,15 @@
 //   GET    /messages?after=<ISO>                  → recupera los sobres del propio buzón (cursor)
 //   DELETE /messages/:id                          → purga un sobre del propio buzón
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
-import { decodePublicKey, fromBase64Url } from "../auth/ed25519";
+import { decodePublicKey, fromBase64Url, toBase64Url } from "../auth/ed25519";
 import { requireSession } from "../plugins/authenticate";
 import { isBlocked } from "../blocks/blocks";
 import { deleteBlob, insertBlob, listBlobsFor } from "./blobs";
+import { onNewMessage, publishNewMessage } from "./events";
+
+// Latido del SSE: un comentario cada 25 s mantiene viva la conexión a través de proxies (Caddy)
+// y de Tor, que cierran conexiones ociosas. Es un comentario SSE (`:`), el cliente lo ignora.
+const SSE_HEARTBEAT_MS = 25_000;
 
 // Tope del sobre en base64url: 64 KiB ≈ 87381 chars; margen hasta 90000. El límite duro real
 // lo impone el CHECK de la tabla (65536 bytes); aquí se rechaza pronto para no cargar de más.
@@ -65,7 +70,46 @@ export const messagingRoutes: FastifyPluginAsync<MessagingRoutesOptions> = async
 
       const result = await insertBlob(recipient, payload, opts.blobTtlSeconds);
       if (!result.ok) return reply.code(404).send({ error: result.reason });
+      // Avisa en tiempo real a la conexión SSE del destinatario (si la tiene abierta) para que
+      // haga un fetch inmediato en vez de esperar al siguiente sondeo. El aviso NO lleva el sobre.
+      publishNewMessage(toBase64Url(recipient));
       return reply.code(201).send({ ok: true });
+    },
+  );
+
+  // 1.b) Stream SSE del propio buzón: mantiene una conexión abierta y emite un evento `message`
+  // cada vez que llega un sobre nuevo para esta identidad. El cliente reacciona pidiendo /messages
+  // por cursor (misma lógica que el polling, que se conserva como red de seguridad). Same-origin,
+  // sigue la puerta (clearnet/.onion) como el resto de /api. Exento de rate-limit (es persistente).
+  app.get(
+    "/messages/stream",
+    { preHandler: requireSession, config: { rateLimit: false } },
+    async (request, reply) => {
+      const recipientB64 = toBase64Url(request.identity!.publicKey);
+      // Tomamos el control del socket: gestionamos la respuesta cruda, Fastify no la cierra.
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        // Desactiva el buffering en proxies inversos para que el evento salga al instante.
+        "x-accel-buffering": "no",
+      });
+      reply.raw.write(": conectado\n\n"); // primer byte: abre el stream en el cliente
+
+      const unsubscribe = onNewMessage(recipientB64, () => {
+        reply.raw.write("event: message\ndata: nuevo\n\n");
+      });
+      const heartbeat = setInterval(() => {
+        reply.raw.write(": ping\n\n");
+      }, SSE_HEARTBEAT_MS);
+
+      const cleanup = () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+      request.raw.on("close", cleanup);
+      request.raw.on("error", cleanup);
     },
   );
 
