@@ -6,6 +6,8 @@ const REPO = "https://github.com/RedderLabs/Aegis";
 const BLOB = `${REPO}/blob/main`;
 // Panel PÚBLICO de analítica (Umami, sin cookies): transparencia total, cualquiera ve las visitas.
 const STATS_URL = "https://stats.useaegis.app/share/sDFD9RSBa4h54r1P";
+// Puerta del servicio oculto: visible para quien navega con Tor. Reusa la env var del despliegue.
+const WEB_ONION = process.env.NEXT_PUBLIC_WEB_ONION_URL;
 
 /** Enlace externo (abre en pestaña nueva, con rel de seguridad). */
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
@@ -86,6 +88,18 @@ export function Footer() {
             <p className="mt-3 label text-muted-2">Auditoría externa: pendiente</p>
           </div>
         </div>
+        {WEB_ONION && (
+          <div className="mt-12 pt-6 border-t border-line">
+            <p className="label text-muted mb-2">Servicio oculto (Tor)</p>
+            <a
+              href={`http://${WEB_ONION}`}
+              className="font-mono text-[12px] break-all text-muted hover:text-accent transition-colors"
+              title="Abrir en Tor Browser"
+            >
+              {WEB_ONION}
+            </a>
+          </div>
+        )}
         <div className="mt-12 pt-6 border-t border-line flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="label text-muted-2">
             © 2026 Redder Labs · Código abierto y auditable
