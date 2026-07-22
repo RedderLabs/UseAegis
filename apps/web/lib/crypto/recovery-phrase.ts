@@ -86,3 +86,67 @@ export function decodeRecovery(input: string): Uint8Array {
   }
   return seed;
 }
+
+/** true si `token` (un solo campo, sin espacios) es un código de recuperación antiguo válido. */
+function isOldRecoveryCode(token: string): boolean {
+  try {
+    return fromBase64Url(token).length === SEED_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extrae la recuperación de un TEXTO arbitrario — p. ej. el fichero descargado en el registro
+ * (`aegis-recuperacion-*.txt`), que además de la frase lleva una cabecera ("Huella pública…") y
+ * una lista numerada. Devuelve la frase BIP39 canónica (24 palabras) o el código base64url
+ * antiguo, listo para `decodeRecovery`. Lanza si no encuentra ninguna recuperación válida.
+ *
+ * Es tolerante a propósito: el usuario a menudo ADJUNTA el .txt entero en vez de pegar solo las
+ * palabras, y el objetivo es que "adjuntar mi fichero de recuperación" simplemente funcione.
+ */
+export function extractRecoveryFromText(text: string): string {
+  // 1) ¿El texto entero YA es una recuperación válida? (frase pegada tal cual, o código suelto)
+  const whole = text.trim();
+  if (isValidRecoveryPhrase(whole)) return normalizePhrase(whole);
+  if (!/\s/.test(whole) && isOldRecoveryCode(whole)) return whole;
+
+  // 2) Línea a línea: el .txt lleva la frase completa en su propia línea (y, de haberlo, el
+  //    código antiguo suelto en otra).
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    const norm = normalizePhrase(line);
+    if (norm && isValidRecoveryPhrase(norm)) return norm;
+    const token = line.trim();
+    if (token && !/\s/.test(token) && isOldRecoveryCode(token)) return token;
+  }
+
+  // 3) Reconstruye desde la lista numerada ("1. exchange", "2. enemy", …) como último recurso.
+  const numbered = lines
+    .map((l) => l.match(/^\s*\d+\.\s*([a-z]+)\s*$/i)?.[1])
+    .filter((w): w is string => w !== undefined)
+    .map((w) => w.toLowerCase());
+  if (numbered.length === RECOVERY_PHRASE_WORDS) {
+    const phrase = numbered.join(" ");
+    if (isValidRecoveryPhrase(phrase)) return phrase;
+  }
+
+  throw new Error(
+    "No se encontró una frase de recuperación en el fichero. Pega tus 24 palabras o adjunta tu " +
+      "fichero de recuperación (aegis-recuperacion-*.txt).",
+  );
+}
+
+/**
+ * Decodifica CUALQUIER forma de recuperación a la semilla de 32 bytes: lo que el usuario pega
+ * (24 palabras o código antiguo) o el fichero entero adjuntado (con cabecera y lista numerada).
+ * Es el punto de entrada que usa la UI de importación.
+ */
+export function decodeAnyRecovery(input: string): Uint8Array {
+  try {
+    return decodeRecovery(input);
+  } catch {
+    // No era una recuperación "limpia": quizá sea el fichero .txt completo. Intenta extraerla.
+    return decodeRecovery(extractRecoveryFromText(input));
+  }
+}
