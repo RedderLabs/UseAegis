@@ -165,7 +165,9 @@ export default function LoginPage() {
     }
   }
 
-  // Lee el fichero de keystore elegido por el usuario (desde el USB) a memoria.
+  // Lee el fichero de keystore elegido por el usuario (desde el USB) a memoria. Si por error se
+  // adjunta el fichero de FRASE de recuperación (aegis-recuperacion-*.txt), no es un keystore:
+  // se detecta y se redirige al importador correcto con las 24 palabras ya rellenadas.
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -173,8 +175,43 @@ export default function LoginPage() {
     setFileName(file.name);
     file
       .text()
-      .then(setFileJson)
+      .then(async (text) => {
+        const looksLikeKeystore = /"format"\s*:\s*"aegis-keystore"/.test(text);
+        if (!looksLikeKeystore) {
+          try {
+            const { extractRecoveryFromText } = await import("@/lib/crypto/recovery-phrase");
+            const phrase = extractRecoveryFromText(text); // lanza si no es una frase
+            setImportValue(phrase);
+            setFileName("");
+            setFileJson("");
+            setFileOpen(false);
+            setImportOpen(true);
+            setError(
+              "Ese fichero es tu FRASE de recuperación, no un keystore. He puesto tus 24 palabras " +
+                "aquí abajo: crea una contraseña y entra.",
+            );
+            return;
+          } catch {
+            /* no es una frase de recuperación: sigue el flujo normal de keystore */
+          }
+        }
+        setFileJson(text);
+      })
       .catch(() => setError("No se pudo leer el fichero."));
+  }
+
+  // Lee el fichero de FRASE de recuperación (.txt) y extrae las 24 palabras al textarea.
+  function onRecoveryFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    file
+      .text()
+      .then(async (text) => {
+        const { extractRecoveryFromText } = await import("@/lib/crypto/recovery-phrase");
+        setImportValue(extractRecoveryFromText(text)); // lanza con mensaje claro si no hay frase
+      })
+      .catch((err) => setError((err as Error)?.message ?? "No se pudo leer el fichero."));
   }
 
   // Desbloquea desde el fichero cargado y entra. persistFile decide si se guarda en el PC.
@@ -458,16 +495,27 @@ export default function LoginPage() {
               /* --- Importar identidad desde código de recuperación + passphrase --- */
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="recovery" className="label text-muted">
-                    Frase de recuperación
-                  </label>
+                  <div className="flex items-center justify-between gap-3">
+                    <label htmlFor="recovery" className="label text-muted">
+                      Frase de recuperación
+                    </label>
+                    <label className="label text-accent shrink-0 cursor-pointer hover:brightness-110 transition">
+                      Adjuntar fichero
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        onChange={onRecoveryFilePicked}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                   <textarea
                     id="recovery"
                     value={importValue}
                     onChange={(e) => setImportValue(e.target.value)}
                     rows={3}
                     spellCheck={false}
-                    placeholder="Pega tus 24 palabras (o tu código de recuperación antiguo)"
+                    placeholder="Pega tus 24 palabras, o adjunta tu fichero aegis-recuperacion-*.txt"
                     className="w-full bg-bg border border-line rounded-sm px-3 py-2 font-mono text-[12px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent break-all"
                   />
                 </div>

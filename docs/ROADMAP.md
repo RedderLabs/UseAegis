@@ -109,6 +109,23 @@ push a usuarios **offline** (BullMQ + web push) y la prueba manual del micro en 
 **Riesgo humano:** el pipeline de audio (chunking en streaming + reproducción progresiva) es lo que más debugging manual pide; Claude aporta el código, el humano lo estabiliza.
 **Hito → M1 (MVP privado usable): dos personas verificadas intercambian texto y audio cifrados por el relay. ✅ ALCANZADO (código).** Texto, archivos y **audio** están implementados y cifrados E2E (media sobre S3/B2). El pipeline cripto/transporte está verificado E2E; la captura de micrófono y la reproducción quedan a falta de una prueba manual en navegador real con micro. Restan solo mejoras (QR, BullMQ, backup) que no bloquean M1.
 
+#### Resta de Fase 1 (no bloqueante para M1) — lista viva
+
+Estos cabos están mencionados arriba en las celdas de la tabla; se agrupan aquí para no tener que
+rastrearlos. **Ninguno bloquea M1.**
+
+| # | Qué queda | Tipo | Referencia |
+|---|---|---|---|
+| 1 | **Consolidar cripto/protocolo a `packages/crypto-core` + `packages/protocol`** (hoy en `apps/web/lib/crypto`): versionar y serializar el sobre para compartirlo con móvil | ~0,5 sd de código | filas `crypto-core` / `protocol` |
+| 2 | **Revisión humana de cripto** (`PLANTILLA §5`): `aead-stream.ts` (AEAD por chunks) y el backup BIP39 | trabajo humano, no de código | filas `crypto-core` / Backup |
+| 3 | **Push a usuarios _offline_** (BullMQ durable + web push/VAPID): el push en tiempo real por SSE ✅ ya cubre a los conectados | tarea futura | fila `apps/relay` |
+| 4 | **Prueba manual del micrófono** en navegador real (captura + reproducción): el pipeline cripto ya está verificado E2E | trabajo humano | Riesgo humano |
+
+> **Pulido de M1 ya hecho, verificado 2026-07-22:** importar la identidad **adjuntando el fichero de
+> recuperación** (`aegis-recuperacion-*.txt`), no solo pegando las 24 palabras; y si el `.txt` de
+> frase se adjunta por error en el camino de keystore USB, la UI redirige al importador correcto con
+> las palabras ya rellenadas (`recovery-phrase.ts::extractRecoveryFromText` + tests).
+
 ### Fase 2 — Capa de abstracción de transporte consolidada · ✅ **HECHO** (2026-07-20)
 La interfaz `packages/transport/` (ya pensada para B y C, aunque solo exista A) está **endurecida
 y adoptada en producción**: deja de ser andamiaje muerto. El cliente de chat (`apps/web/lib/chat.ts`)

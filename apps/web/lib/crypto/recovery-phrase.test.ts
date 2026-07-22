@@ -4,7 +4,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   RECOVERY_PHRASE_WORDS,
+  decodeAnyRecovery,
   decodeRecovery,
+  extractRecoveryFromText,
   isValidRecoveryPhrase,
   phraseToSeed,
   seedToPhrase,
@@ -65,4 +67,61 @@ test("decodeRecovery acepta el código base64url ANTIGUO (compatibilidad)", () =
 
 test("decodeRecovery rechaza base64url que no son 32 bytes", () => {
   assert.throws(() => decodeRecovery(toBase64Url(new Uint8Array(16))));
+});
+
+// --- Extracción desde el fichero .txt descargado en el registro -------------------------
+
+/** Reproduce EXACTAMENTE el fichero que genera register/page.tsx::downloadRecovery(). */
+function registerTxt(phrase: string, fingerprint = "VXISARJXMHLCHTQJ"): string {
+  const numbered = phrase
+    .split(" ")
+    .map((w, i) => `${String(i + 1).padStart(2, " ")}. ${w}`)
+    .join("\n");
+  return [
+    "AEGIS — Frase de recuperación de identidad",
+    "",
+    `Huella pública: ${fingerprint}`,
+    "",
+    "Frase de recuperación (24 palabras — mantenla en secreto, es tu clave privada):",
+    "",
+    phrase,
+    "",
+    numbered,
+    "",
+    "Con estas 24 palabras, EN ESTE ORDEN, puedes restaurar tu identidad en otro dispositivo.",
+    "No hay servidor con tus claves: si la pierdes, nadie puede recuperarla por ti.",
+  ].join("\n");
+}
+
+test("extractRecoveryFromText: rescata la frase del fichero .txt entero del registro", () => {
+  const txt = registerTxt(ZERO_PHRASE);
+  assert.equal(extractRecoveryFromText(txt), ZERO_PHRASE);
+  assert.deepEqual(decodeRecovery(extractRecoveryFromText(txt)), ZERO_SEED);
+});
+
+test("extractRecoveryFromText: reconstruye desde solo la lista numerada", () => {
+  const numbered = ZERO_PHRASE.split(" ")
+    .map((w, i) => `${String(i + 1).padStart(2, " ")}. ${w}`)
+    .join("\n");
+  assert.equal(extractRecoveryFromText(numbered), ZERO_PHRASE);
+});
+
+test("extractRecoveryFromText: acepta las 24 palabras pegadas tal cual", () => {
+  assert.equal(extractRecoveryFromText(`  ${ZERO_PHRASE}  `), ZERO_PHRASE);
+});
+
+test("extractRecoveryFromText: rescata el código base64url antiguo de un fichero", () => {
+  const seed = new Uint8Array(32).map((_, i) => (i * 29 + 5) % 256);
+  const code = toBase64Url(seed);
+  const txt = `AEGIS — Código de recuperación\n\n${code}\n`;
+  assert.equal(extractRecoveryFromText(txt), code);
+});
+
+test("extractRecoveryFromText: lanza si no hay ninguna frase válida", () => {
+  assert.throws(() => extractRecoveryFromText("esto no contiene ninguna frase de recuperacion"));
+});
+
+test("decodeAnyRecovery: funciona con palabras pegadas Y con el fichero entero", () => {
+  assert.deepEqual(decodeAnyRecovery(ZERO_PHRASE), ZERO_SEED); // pegado
+  assert.deepEqual(decodeAnyRecovery(registerTxt(ZERO_PHRASE)), ZERO_SEED); // fichero completo
 });
