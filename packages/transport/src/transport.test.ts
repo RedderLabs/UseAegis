@@ -9,6 +9,7 @@ import {
   type RelayBackend,
   type RelayStream,
 } from "./relay";
+import { createP2pTransport, type P2pNode } from "./p2p";
 import { createFailoverTransport } from "./failover";
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -240,6 +241,115 @@ test("failover: propaga el error si TODOS los transportes fallan", async () => {
   });
   const t = createFailoverTransport([down("relay"), down("p2p"), down("mesh")]);
   await assert.rejects(() => t.send("bob", enc("nadie")), /caído/);
+});
+
+// --- Modo B (P2P/libp2p) — andamiaje de la Fase 3 --------------------------------------
+
+/**
+ * Red P2P falsa en memoria: entrega directa peer→peer (sin buzón). Modela lo que hará el
+ * `P2pNode` real de libp2p, pero determinista: `send` a un peer READY llega a su `onEnvelope`;
+ * a un peer no conectado, lanza (como un dial fallido → dispara el failover).
+ */
+function makeP2pNet() {
+  const inboxes = new Map<string, ((env: WireEnvelope) => void)[]>();
+  const ready = new Set<string>();
+  let seq = 0;
+  function nodeFor(ownId: string): P2pNode {
+    return {
+      async start() {
+        ready.add(ownId);
+      },
+      async stop() {
+        ready.delete(ownId);
+      },
+      async send(peerId, blob) {
+        if (!ready.has(peerId)) throw new Error(`peer ${peerId} inalcanzable (sin ruta P2P)`);
+        seq += 1;
+        const cursor = String(seq).padStart(9, "0");
+        const env: WireEnvelope = { id: `p2p-${cursor}`, blob, cursor };
+        for (const cb of inboxes.get(peerId) ?? []) cb(env);
+      },
+      onEnvelope(cb) {
+        const list = inboxes.get(ownId) ?? [];
+        list.push(cb);
+        inboxes.set(ownId, list);
+        return () => inboxes.set(ownId, (inboxes.get(ownId) ?? []).filter((c) => c !== cb));
+      },
+      isReady() {
+        return ready.has(ownId);
+      },
+    };
+  }
+  return { nodeFor };
+}
+
+test("p2p: entrega directa peer→peer y disponibilidad ligada al nodo", async () => {
+  const net = makeP2pNet();
+  const bob = createP2pTransport({ node: net.nodeFor("bob") });
+  const alice = createP2pTransport({ node: net.nodeFor("alice") });
+
+  const received: string[] = [];
+  bob.onMessage((env) => void received.push(dec(env.blob)));
+
+  assert.equal(await bob.isAvailable(), false, "sin start(), no disponible");
+  bob.start();
+  alice.start();
+  await flush();
+  assert.equal(await bob.isAvailable(), true, "arrancado y con ruta → disponible");
+
+  await alice.send("bob", enc("hola directo"));
+  assert.deepEqual(received, ["hola directo"]);
+
+  bob.stop();
+  assert.equal(await bob.isAvailable(), false, "tras stop(), no disponible");
+});
+
+test("p2p: send a un peer inalcanzable lanza (para que el failover pruebe otro modo)", async () => {
+  const net = makeP2pNet();
+  const me = createP2pTransport({ node: net.nodeFor("me") });
+  me.start();
+  await flush();
+  await assert.rejects(() => me.send("fantasma", enc("hola")), /inalcanzable/);
+});
+
+test("p2p: start()/stop() son idempotentes", async () => {
+  const net = makeP2pNet();
+  const t = createP2pTransport({ node: net.nodeFor("me") });
+  t.start();
+  t.start(); // no debe duplicar suscripción ni arranque
+  await flush();
+  assert.equal(await t.isAvailable(), true);
+  t.stop();
+  t.stop(); // no debe reventar
+  assert.equal(await t.isAvailable(), false);
+});
+
+test("failover A→B: con el relay caído, entrega por P2P", async () => {
+  const p2p = makeP2pNet();
+  const relayDown: Transport = {
+    activeMode: "relay",
+    isAvailable: async () => false,
+    send: async () => {
+      throw new Error("relay bloqueado (censura)");
+    },
+    onMessage: () => () => {},
+    start: () => {},
+    stop: () => {},
+  };
+  const bobP2p = createP2pTransport({ node: p2p.nodeFor("bob") });
+  bobP2p.start();
+  await flush();
+
+  const alice = createFailoverTransport([relayDown, createP2pTransport({ node: p2p.nodeFor("alice") })]);
+  alice.start();
+  await flush();
+
+  const seen: string[] = [];
+  bobP2p.onMessage((env) => void seen.push(dec(env.blob)));
+
+  await alice.send("bob", enc("por la puerta B"));
+  assert.equal(alice.activeMode, "p2p", "debe recordar que entregó por P2P");
+  assert.deepEqual(seen, ["por la puerta B"]);
 });
 
 test("failover: deduplica un sobre que llega por dos vías", async () => {

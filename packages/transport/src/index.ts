@@ -25,7 +25,16 @@ export {
   type RelayStream,
   type RelayTransportOptions,
 } from "./relay";
+export {
+  createP2pTransport,
+  type P2pNode,
+  type P2pTransportOptions,
+} from "./p2p";
 export { createFailoverTransport } from "./failover";
 
-/** Modos con implementación real hoy. Los consumidores pueden anunciar capacidades con esto. */
+/**
+ * Modos con implementación de RED real hoy. El Modo B (p2p) tiene ya su adaptador al contrato
+ * (`createP2pTransport`), pero el `P2pNode` con libp2p real es el trabajo de la Fase 3: hasta que
+ * exista, `p2p` no entra en esta lista (los consumidores anuncian capacidades con ella).
+ */
 export const IMPLEMENTED_MODES = ["relay"] as const;

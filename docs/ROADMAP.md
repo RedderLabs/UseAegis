@@ -152,8 +152,31 @@ toggle). Todo desplegado en el **nodo Proxmox**. Detalle en [[aegis-node-deploy]
 y `docs/aegis-node-proxmox-setup.md`. **Resta a futuro**: reintento automático clearnet → `.onion`
 en el CLIENTE (hoy el usuario elige la puerta), y el SOCKS5 embebido (Arti) para la app nativa.
 
-### Fase 3 — Spike libp2p (Modo B) · **4 sd** · *la más difícil de comprimir*
-DHT/Kademlia (descubrimiento), circuit relay (NAT traversal), GossipSub store-and-forward, capa Noise. Investigación: Claude ayuda con el código, pero validar NAT traversal real es trabajo humano.
+### Fase 3 — Spike libp2p (Modo B) · 🟡 **EN CURSO** (arrancada 2026-07-22) · *la más difícil de comprimir*
+Modo B = puerta P2P resistente a censura, que entra por failover cuando el relay no es alcanzable
+*para ti*. Decisiones de red **D1–D4 fijadas** (ver `docs/aegis-fase3-libp2p-spike.md`) para el
+navegador (no hay TCP/QUIC crudos):
+- **D1 — transportes de navegador:** WebSockets (dial al bootstrap), WebRTC (P2P navegador↔navegador,
+  NAT traversal por ICE), circuit-relay v2 (señalización). Noise atado a la Ed25519, yamux. ✅
+- **D2 — nodo bootstrap + circuit-relay v2** en el MISMO host único (`infra/p2p-bootstrap`, perfil
+  `node` del compose, tras Caddy con `wss`). Código ✅; **deploy pendiente**.
+- **D3 — store-and-forward:** el **relay sigue de ANCLA**; **NO** se implementa GossipSub. El Modo B
+  resuelve *alcanzabilidad*, no persistencia a offline (límite honesto documentado). ✅
+- **D4 — descubrimiento SIN DHT/Kademlia:** el PeerID se **deriva** de la clave Ed25519 del contacto
+  (sin lookup) y se disca por el circuito del bootstrap conocido. ✅
+
+**Hecho:** adaptador `createP2pTransport` + contrato + **11/11 tests** (nodo falso en memoria); `P2pNode`
+real sobre js-libp2p (`apps/web/lib/p2p/node.ts`); **enganche al failover** en `chat.ts` — `p2p` entra
+como 2.º candidato **solo si `NEXT_PUBLIC_P2P_BOOTSTRAP` está definido** (sin él, chat = solo relay,
+idéntico a hoy). Nodo creado **perezosamente** (import dinámico, browser-only, nunca SSR) con la clave
+libp2p derivada de la identidad **sin que la semilla salga de `identity-store`**. Verificado: 11/11
+tests, `tsc` limpio, `next build` OK. `IMPLEMENTED_MODES` sigue `["relay"]` (honesto: no se anuncia
+`p2p` hasta validarlo en red real).
+
+**Pendiente (*aquí vive el riesgo*, trabajo humano):** desplegar el bootstrap + cablear
+`NEXT_PUBLIC_P2P_BOOTSTRAP`; **dos navegadores en LAN** → sobre E2E ida y vuelta; y **NAT real** entre
+dos redes distintas. Ningún test automático cubre libp2p real (`@libp2p/crypto` no resuelve bajo el
+runner `tsx`): se valida a mano al conectar navegadores.
 
 ### Fase 4 — Failover automático A → B + indicador de estado · **1 sd**
 Detección de fallo, conmutación, y el punto verde/ámbar/rojo del header (`DISENO.md §6`).
