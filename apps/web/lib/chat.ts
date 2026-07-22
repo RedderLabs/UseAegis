@@ -14,6 +14,7 @@
  */
 import {
   createFailoverTransport,
+  createP2pTransport,
   createRelayTransport,
   type CursorStore,
   type RelayBackend,
@@ -22,6 +23,7 @@ import {
   type TransportMode,
   type WireEnvelope,
 } from "@aegis/transport";
+import { createLazyP2pNode } from "./p2p/lazy-node";
 import { openMessageBlob, sealForSelf, sealMessageFor } from "./crypto/identity-store";
 import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
 import { decryptMedia, encryptMedia, randomMediaKey } from "./crypto/aead-stream";
@@ -469,6 +471,19 @@ function makeRelayStream(token: string): RelayStream {
 }
 
 /**
+ * Multiaddrs del/los nodo(s) bootstrap del Modo B (D2), de `NEXT_PUBLIC_P2P_BOOTSTRAP`
+ * (coma-separada). Lista vacía = sin bootstrap configurado ⇒ NO se añade el candidato P2P y el chat
+ * queda igual que hoy (solo relay). Next inlinea `NEXT_PUBLIC_*` en el bundle del navegador.
+ */
+function p2pBootstrapMultiaddrs(): string[] {
+  const raw = process.env.NEXT_PUBLIC_P2P_BOOTSTRAP ?? "";
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
  * Transporte de chat de alto nivel: envuelve `@aegis/transport` con la cripto de sobre y la
  * clasificación. Enviar sella y entrega (self-copy incluida); recibir sondea el buzón y entrega
  * los mensajes YA abiertos a los suscriptores. El resto del cliente (el Canal) no sabe por qué
@@ -501,7 +516,9 @@ export interface ChatTransport {
  * los consumidores). Registra un único handler que abre y clasifica cada sobre y lo reparte.
  */
 export function createChatTransport(token: string, ownPub: string): ChatTransport {
-  const transport: Transport = createFailoverTransport([
+  // Modo A (relay): siempre presente y PRIMER candidato del failover (el relay cubre el buzón
+  // sealed-sender y el store-and-forward para destinatarios offline — D3).
+  const candidates: Transport[] = [
     createRelayTransport({
       backend: makeRelayBackend(token),
       cursor: makeCursorStore(ownPub),
@@ -509,7 +526,19 @@ export function createChatTransport(token: string, ownPub: string): ChatTranspor
       // mientras el stream esté vivo). Ver createRelayTransport / openMessageStream.
       stream: makeRelayStream(token),
     }),
-  ]);
+  ];
+
+  // Modo B (P2P/libp2p): SEGUNDO candidato, solo si hay un nodo bootstrap configurado (D2). Sin él,
+  // un navegador no tiene punto de entrada a la red → se queda con el relay. El nodo se construye
+  // PEREZOSAMENTE al arrancar (import dinámico de libp2p, browser-only, con la clave derivada de la
+  // identidad desbloqueada): nunca en SSR. El failover prueba relay PRIMERO; P2P solo entra cuando
+  // el relay no es alcanzable (anti-censura). La cripto de sobre no cambia: mueve bytes opacos.
+  const bootstrap = p2pBootstrapMultiaddrs();
+  if (bootstrap.length > 0) {
+    candidates.push(createP2pTransport({ node: createLazyP2pNode(bootstrap) }));
+  }
+
+  const transport: Transport = createFailoverTransport(candidates);
 
   const subscribers = new Set<(msg: ChatMessage) => void>();
   const send: SendFn = (peerId, blob) => transport.send(peerId, blob);

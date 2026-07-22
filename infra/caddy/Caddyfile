@@ -42,3 +42,12 @@ https://{$RELAY_DOMAIN:relay.aegis.local} {
 	reverse_proxy aegis-relay:8443
 	tls {$RELAY_TLS:internal}
 }
+
+# Puerta del nodo BOOTSTRAP + relay de circuito P2P (Modo B / Fase 3). Termina TLS y hace de wss →
+# el bootstrap (ws en :9001). Caddy hace el upgrade WebSocket automáticamente. Los navegadores usan
+# el multiaddr:  /dns4/{$P2P_DOMAIN}/tcp/443/wss/p2p/<PeerID>  (el PeerID lo imprime el bootstrap).
+# WebRTC NO viaja por Tor: esta puerta es de CLEARNET (anti-censura del relay), no de la .onion.
+https://{$P2P_DOMAIN:p2p.aegis.local} {
+	reverse_proxy aegis-p2p-bootstrap:9001
+	tls {$P2P_TLS:internal}
+}

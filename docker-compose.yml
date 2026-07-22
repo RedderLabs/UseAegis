@@ -162,6 +162,10 @@ services:
       WEB_TLS: ${WEB_TLS:-internal}
       RELAY_DOMAIN: ${RELAY_DOMAIN:-relay.aegis.local}
       RELAY_TLS: ${RELAY_TLS:-internal}
+      # Puerta wss del bootstrap/relay-de-circuito P2P (Modo B). En prod: P2P_DOMAIN=p2p.aegis.app
+      # + P2P_TLS=admin@aegis.app → Let's Encrypt. El navegador conecta por /dns4/.../tcp/443/wss.
+      P2P_DOMAIN: ${P2P_DOMAIN:-p2p.aegis.local}
+      P2P_TLS: ${P2P_TLS:-internal}
     ports:
       - "80:80"
       - "443:443"
@@ -169,6 +173,30 @@ services:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - aegis-caddy-data:/data
       - aegis-caddy-config:/config
+
+  # --- P2P bootstrap + relay de circuito (Modo B, nodo, perfil "node") ------------------
+  # Nodo libp2p que hace de (1) BOOTSTRAP conocido y (2) RELAY DE CIRCUITO v2 = señalización del
+  # WebRTC navegador↔navegador (Fase 3, docs/aegis-fase3-libp2p-spike.md §D2). Mismo host que el
+  # resto. Solo WebSockets: el navegador conecta por WS; el tráfico entre pares va por WebRTC.
+  #   docker compose --profile node up -d --build aegis-p2p-bootstrap
+  #   docker compose --profile node logs aegis-p2p-bootstrap   # imprime PeerID + multiaddr
+  # El PeerID es estable (semilla persistida en el volumen). Copia el multiaddr que imprime a
+  # NEXT_PUBLIC_P2P_BOOTSTRAP y reconstruye aegis-web. En producción va detrás de Caddy con wss.
+  aegis-p2p-bootstrap:
+    build:
+      context: ./infra/p2p-bootstrap
+    container_name: aegis-p2p-bootstrap
+    profiles: ["node"]
+    restart: unless-stopped
+    environment:
+      WS_PORT: "9001"
+      # P2P_BOOTSTRAP_SEED: <32 bytes en hex> para fijar el PeerID entre despliegues/hosts. Si se
+      # omite, se genera y se persiste en el volumen (estable mientras el volumen exista).
+    ports:
+      # WS del relay de circuito. En prod NO se publica: Caddy termina wss delante (loopback/interno).
+      - "9001:9001"
+    volumes:
+      - aegis-p2p-bootstrap-data:/data
 
   # --- Umami: analítica SOLO de la landing (opcional, opt-in) ---------------------------
   # Bajo el perfil `umami`, así NO arranca con el flujo normal del relay (infra:up solo nombra
@@ -231,5 +259,7 @@ volumes:
     name: aegis-caddy-data
   aegis-caddy-config:
     name: aegis-caddy-config
+  aegis-p2p-bootstrap-data:
+    name: aegis-p2p-bootstrap-data
   aegis-umami-db-data:
     name: aegis-umami-db-data
