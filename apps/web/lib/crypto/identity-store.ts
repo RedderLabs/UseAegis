@@ -173,8 +173,10 @@ export async function importFromRecovery(
   recoveryInput: string,
   passphrase: string,
 ): Promise<IdentityInfo> {
-  const { decodeRecovery } = await import("./recovery-phrase");
-  return createKeystore(decodeRecovery(recoveryInput), passphrase);
+  // `decodeAnyRecovery` acepta tanto las 24 palabras pegadas como el fichero .txt completo
+  // adjuntado (cabecera + lista numerada): así "adjuntar mi recuperación" simplemente funciona.
+  const { decodeAnyRecovery } = await import("./recovery-phrase");
+  return createKeystore(decodeAnyRecovery(recoveryInput), passphrase);
 }
 
 /** Bloquea la sesión: borra la semilla de memoria (no toca lo persistido). */
