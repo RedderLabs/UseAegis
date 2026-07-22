@@ -1,13 +1,13 @@
 # Infraestructura local de desarrollo de Aegis.
 #
-# Levanta PostgreSQL (Auth / AuthSession del relay) y DragonflyDB (base para la cola de blobs
-# sealed-sender con BullMQ, ver docs/ARQUITECTURA.md §4). Dragonfly es drop-in compatible con
-# el protocolo Redis (habla RESP en :6379), así que BullMQ/ioredis se conectan con la misma
-# REDIS_URL (redis://...) sin tocar código. BullMQ se conectará cuando entre la cola; por ahora
-# Dragonfly queda listo y verificable.
+# Levanta PostgreSQL (Auth / AuthSession del relay). DragonflyDB (base de la futura cola BullMQ,
+# ver docs/ARQUITECTURA.md §4) es ahora OPT-IN (perfil "queue"): el relay aún NO usa Redis (el
+# buzón es por polling sobre Postgres), así que no se arranca por defecto — se ahorran ~300-500 MB
+# (importa en VPS pequeños). Cuando entre BullMQ se re-activa con `--profile queue` y se descomenta
+# REDIS_URL en aegis-relay. Dragonfly es drop-in compatible con Redis (RESP en :6379).
 #
 # Uso:
-#   docker compose up -d --wait aegis-db aegis-redis   # arranca y espera a "healthy"
+#   docker compose up -d --wait aegis-db                # solo Postgres (dev/tests)
 #   docker compose down                                # para los contenedores (conserva volúmenes)
 #   docker compose down -v                             # ...y borra los datos
 #
@@ -35,9 +35,14 @@ services:
       retries: 15
       start_period: 5s
 
+  # OPT-IN (perfil "queue"): el relay NO usa Redis/Dragonfly todavía (el buzón es por polling
+  # sobre Postgres). Dragonfly es la base de la futura cola BullMQ (push en tiempo real). Hasta
+  # entonces NO se arranca por defecto — así se ahorran ~300-500 MB (clave en VPS pequeños). Para
+  # levantarlo cuando entre la cola: `docker compose --profile node --profile queue up -d`.
   aegis-dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
     container_name: aegis-dragonfly
+    profiles: ["queue"]
     restart: unless-stopped
     # OJO memlock: Dragonfly recomienda `ulimits: memlock: -1`, pero fijar memlock a
     # "ilimitado" falla en LXC NO privilegiados (Proxmox): runc → "error setting rlimit
@@ -72,13 +77,11 @@ services:
     depends_on:
       aegis-db:
         condition: service_healthy
-      aegis-dragonfly:
-        condition: service_healthy
     environment:
       # Conexión por NOMBRE de servicio + puerto interno (no 127.0.0.1:15432, que sería el
       # propio contenedor). Reusa las credenciales del .env raíz (POSTGRES_*).
       DATABASE_URL: postgres://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis_dev_pw}@aegis-db:5432/${POSTGRES_DB:-aegis_relay}
-      REDIS_URL: redis://aegis-dragonfly:6379
+      # REDIS_URL: redis://aegis-dragonfly:6379   # se re-activa cuando entre BullMQ (perfil "queue")
       HOST: 0.0.0.0
       PORT: "8443"
       LOG_LEVEL: info
@@ -87,6 +90,85 @@ services:
       # Loopback del host, solo para probar con curl. En clearnet real irá detrás de Caddy (sin
       # este puerto público); Tor tampoco lo necesita (alcanza aegis-relay:8443 por la red interna).
       - "127.0.0.1:8443:8443"
+
+  # --- Web (Next.js) en Docker (nodo, perfil "node") ------------------------------------
+  # Sirve la app web compilada; la alcanzan Caddy (clearnet) y Tor (.onion) por la red interna
+  # (aegis-web:3000). El cliente habla con el relay como /api RELATIVO (same-origin) → Caddy enruta
+  # /api al relay. Las NEXT_PUBLIC_* se INCRUSTAN en build-time, por eso van como build args.
+  aegis-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # URL de la .onion de la WEB, para el enlace "abre nuestra .onion" desde la puerta clearnet.
+        # Se obtiene tras el 1er arranque de Tor (cat .../aegis-web/hostname) → ponla en el .env y
+        # reconstruye: docker compose --profile node up -d --build aegis-web.
+        NEXT_PUBLIC_WEB_ONION_URL: ${NEXT_PUBLIC_WEB_ONION_URL:-}
+    container_name: aegis-web
+    profiles: ["node"]
+    restart: unless-stopped
+    environment:
+      # Red de seguridad: en el nodo Caddy intercepta /api antes que Next, pero si algún /api
+      # llegara a Next, el rewrite lo manda al relay por la red interna (no a 127.0.0.1:8443).
+      RELAY_ORIGIN: http://aegis-relay:8443
+    depends_on:
+      - aegis-relay
+
+  # --- Tor: hidden services .onion (nodo, perfil "node") --------------------------------
+  # DOS hidden services v3 (imagen mínima Alpine + tor, infra/tor):
+  #   1) aegis-relay → API del relay directa (aegis-relay:8443), para clientes nativos/directos.
+  #   2) aegis-web   → puerta .onion de la WEB → aegis-caddy:80 (Caddy sirve web + /api→relay).
+  # Se persisten en el volumen aegis-tor-data → las .onion NO cambian entre reinicios. Direcciones:
+  #   docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-relay/hostname
+  #   docker compose --profile node exec aegis-tor cat /var/lib/tor/aegis-web/hostname
+  aegis-tor:
+    build:
+      context: ./infra/tor
+    container_name: aegis-tor
+    profiles: ["node"]
+    restart: unless-stopped
+    # Depende de Caddy (la .onion de la web apunta a Caddy) y, transitivamente, del relay y la web.
+    # El entrypoint resuelve aegis-relay y aegis-caddy a IP (Tor no acepta nombres en HiddenServicePort).
+    depends_on:
+      - aegis-caddy
+    volumes:
+      - ./infra/tor/torrc:/etc/tor/torrc:ro
+      - aegis-tor-data:/var/lib/tor
+    # SIN publish del SOCKS: el SocksPort ahora escucha solo en el loopback DEL contenedor
+    # (elimina el warning "open proxy" de Tor y el acceso desde otros contenedores del bridge).
+    # El hidden service alcanza aegis-relay:8443 por la red interna sin necesitar puertos. La
+    # autocomprobación de la .onion se hace desde dentro (la imagen trae curl):
+    #   docker compose --profile node exec aegis-tor \
+    #     curl --socks5-hostname 127.0.0.1:9050 http://<tu-onion>/health
+
+  # --- Caddy: reverse proxy de las dos puertas (nodo, perfil "node") --------------------
+  # Sirve la WEB y enruta /api al RELAY bajo el MISMO origen (same-origin, sin CORS), por clearnet
+  # (TLS) y por la .onion (HTTP en :80; Tor cifra). Config en infra/caddy/Caddyfile, parametrizada:
+  #   WEB_DOMAIN/WEB_TLS      puerta clearnet de la WEB (def: aegis.local / internal autofirmado)
+  #   RELAY_DOMAIN/RELAY_TLS  acceso directo al relay, solo debug (def: relay.aegis.local / internal)
+  #   Producción: WEB_DOMAIN=aegis.app + WEB_TLS=tu-email → Let's Encrypt (DNS A → IP pública, 80/443).
+  aegis-caddy:
+    image: caddy:2-alpine
+    container_name: aegis-caddy
+    profiles: ["node"]
+    restart: unless-stopped
+    depends_on:
+      - aegis-relay
+      - aegis-web
+    environment:
+      # Caddy sustituye {$WEB_DOMAIN}/{$WEB_TLS}/{$RELAY_DOMAIN}/{$RELAY_TLS} en el Caddyfile.
+      # Se leen del `.env` del nodo; si no están, quedan los defaults de pruebas locales.
+      WEB_DOMAIN: ${WEB_DOMAIN:-aegis.local}
+      WEB_TLS: ${WEB_TLS:-internal}
+      RELAY_DOMAIN: ${RELAY_DOMAIN:-relay.aegis.local}
+      RELAY_TLS: ${RELAY_TLS:-internal}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - aegis-caddy-data:/data
+      - aegis-caddy-config:/config
 
   # --- Umami: analítica SOLO de la landing (opcional, opt-in) ---------------------------
   # Bajo el perfil `umami`, así NO arranca con el flujo normal del relay (infra:up solo nombra
@@ -143,5 +225,11 @@ volumes:
     name: aegis-db-data
   aegis-dragonfly-data:
     name: aegis-dragonfly-data
+  aegis-tor-data:
+    name: aegis-tor-data
+  aegis-caddy-data:
+    name: aegis-caddy-data
+  aegis-caddy-config:
+    name: aegis-caddy-config
   aegis-umami-db-data:
     name: aegis-umami-db-data

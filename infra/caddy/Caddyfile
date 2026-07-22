@@ -1,0 +1,44 @@
+# Caddy — reverse proxy del nodo. Sirve la WEB y enruta /api al RELAY bajo el MISMO origen
+# (same-origin → sin CORS), por las DOS puertas: clearnet (TLS) y .onion (HTTP plano; Tor cifra).
+#
+# Parametrizado por env (compose → .env del nodo):
+#   WEB_DOMAIN / WEB_TLS      dominio+TLS de la puerta CLEARNET de la web (def: aegis.local / internal)
+#   RELAY_DOMAIN / RELAY_TLS  dominio+TLS del acceso DIRECTO al relay, solo debug (def: relay.aegis.local / internal)
+#
+# PRUEBAS (defaults): aegis.local + tls internal (autofirmado). Añade `aegis.local` al /etc/hosts
+# del cliente apuntando a la IP del LXC.
+# PRODUCCIÓN: WEB_DOMAIN=aegis.app + WEB_TLS=admin@aegis.app → Let's Encrypt automático (DNS A → IP
+# pública + 80/443 abiertos).
+
+# Enrutado común de la app: /api/* → relay (quita el prefijo /api); todo lo demás → web Next.
+(app) {
+	handle_path /api/* {
+		# flush_interval -1 = sin buffering: imprescindible para el stream SSE del buzón
+		# (GET /api/messages/stream), para que el aviso de sobre nuevo salga al instante.
+		reverse_proxy aegis-relay:8443 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy aegis-web:3000
+	}
+}
+
+# Puerta CLEARNET de la web (solo HTTPS). El scheme https:// explícito evita el redirect :80,
+# que dejamos libre para la .onion.
+https://{$WEB_DOMAIN:aegis.local} {
+	import app
+	tls {$WEB_TLS:internal}
+}
+
+# Puerta .onion de la web: el hidden service de Tor reenvía a Caddy en :80 (HTTP plano; el cifrado
+# por capas de Tor ya protege el circuito). Este bloque atiende el Host .onion que llega por el 80.
+http://:80 {
+	import app
+}
+
+# Acceso DIRECTO al relay por clearnet (SOLO debug; la app usa /api same-origin). Autofirmado.
+https://{$RELAY_DOMAIN:relay.aegis.local} {
+	reverse_proxy aegis-relay:8443
+	tls {$RELAY_TLS:internal}
+}

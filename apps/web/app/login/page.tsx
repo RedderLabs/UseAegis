@@ -11,7 +11,7 @@ import { toBase64Url } from "@/lib/crypto/ed25519";
 import {
   buildSignedPrekey,
   getKeystoreStatus,
-  importKeystore,
+  importFromRecovery,
   migrateLegacy,
   signWithUnlockedIdentity,
   unlockFromFile,
@@ -19,17 +19,27 @@ import {
   type IdentityInfo,
   type KeystoreStatus,
 } from "@/lib/crypto/identity-store";
-import { authenticate, fetchMe, publishPrekey, RelayError } from "@/lib/relay-client";
+import {
+  authenticate,
+  fetchMe,
+  isOnionSession,
+  publishPrekey,
+  RelayError,
+  WEB_ONION_URL,
+} from "@/lib/relay-client";
 
 const MIN_PASSPHRASE = 8;
 
 function describeError(err: unknown): string {
   if (err instanceof RelayError) {
     if (err.status === 0) {
-      return "No se pudo contactar con el relay. ¿Está levantado? (pnpm --filter @aegis/relay dev)";
+      // El propio RelayError ya trae el texto accionable según la puerta (clearnet vs .onion):
+      // en .onion menciona el Navegador Tor / Brave con Tor y el posible bloqueador; en clearnet,
+      // relay caído o bloqueador. Respetarlo en vez de pisarlo con un mensaje genérico de clearnet.
+      return err.message;
     }
-    if (err.code === "signature_verification_failed") return "Firma rechazada por el relay.";
-    return `El relay respondió con un error (${err.status}).`;
+    if (err.code === "signature_verification_failed") return "Firma rechazada por el servidor.";
+    return `El servidor respondió con un error (${err.status}).`;
   }
   return (err as Error)?.message ?? "Error desconocido.";
 }
@@ -37,9 +47,11 @@ function describeError(err: unknown): string {
 export default function LoginPage() {
   const router = useRouter();
   const [status, setStatus] = useState<KeystoreStatus | null>(null);
-  const [secure, setSecure] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Puerta actual (.onion vs clearnet), derivada del origen. Se fija en un effect para no
+  // provocar mismatch de hidratación (en SSR window no existe → arranca en clearnet).
+  const [onion, setOnion] = useState(false);
 
   // Campos del formulario (según el estado del keystore).
   const [passphrase, setPassphrase] = useState("");
@@ -61,20 +73,19 @@ export default function LoginPage() {
       .catch(() => setStatus({ state: "empty" }));
   }, []);
 
-  // El favicon refleja el estado: verde = sesión segura, ámbar = poco segura.
+  // La PUERTA por la que se sirve la web (.onion vs clearnet) determina el modo y el favicon:
+  // verde en .onion (protegida), ámbar en clearnet. No hay toggle del usuario.
   useEffect(() => {
-    setFaviconSecure(secure);
-  }, [secure]);
-  useEffect(() => {
-    return () => setFaviconSecure(true);
+    const isOnion = isOnionSession();
+    setOnion(isOnion);
+    setFaviconSecure(isOnion);
   }, []);
 
   /** Autentica con la semilla ya desbloqueada, abre sesión y publica la prekey si falta. */
   async function finishLogin(identity: IdentityInfo) {
-    const session = await authenticate(identity.publicKeyB64, signWithUnlockedIdentity, secure);
+    const session = await authenticate(identity.publicKeyB64, signWithUnlockedIdentity);
     startSession({
       id: identity.fingerprint,
-      secure,
       token: session.token,
       publicKey: session.identity.publicKey,
       expiresAt: session.expiresAt,
@@ -82,22 +93,17 @@ export default function LoginPage() {
     // Publica el material de acuerdo de clave (prekey X25519 firmada) si aún no hay uno.
     // Best-effort: si falla, se puede publicar luego desde el panel — no bloquea el acceso.
     try {
-      const me = await fetchMe(session.token, secure);
+      const me = await fetchMe(session.token);
       if (!me.hasPrekey) {
         const pk = await buildSignedPrekey();
-        await publishPrekey(
-          session.token,
-          {
-            x25519PublicKey: toBase64Url(pk.x25519PublicKey),
-            signature: toBase64Url(pk.signature),
-          },
-          secure,
-        );
+        await publishPrekey(session.token, {
+          x25519PublicKey: toBase64Url(pk.x25519PublicKey),
+          signature: toBase64Url(pk.signature),
+        });
       }
     } catch {
       /* el material de contacto se puede publicar más tarde */
     }
-    setFaviconSecure(secure);
     router.push("/panel");
   }
 
@@ -119,11 +125,11 @@ export default function LoginPage() {
   async function onMigrate() {
     if (busy) return;
     if (passphrase.length < MIN_PASSPHRASE) {
-      setError(`La passphrase debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
       return;
     }
     if (passphrase !== confirmPass) {
-      setError("Las passphrases no coinciden.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
     setBusy(true);
@@ -141,17 +147,17 @@ export default function LoginPage() {
   async function onImport() {
     if (busy) return;
     if (passphrase.length < MIN_PASSPHRASE) {
-      setError(`La passphrase debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
       return;
     }
     if (passphrase !== confirmPass) {
-      setError("Las passphrases no coinciden.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const identity = await importKeystore(importValue, passphrase);
+      const identity = await importFromRecovery(importValue, passphrase);
       await finishLogin(identity);
     } catch (err) {
       setError(describeError(err));
@@ -185,30 +191,36 @@ export default function LoginPage() {
     }
   }
 
-  const secureToggle = (
-    <button
-      type="button"
-      onClick={() => setSecure((s) => !s)}
-      className="w-full flex items-center justify-between pt-1"
-    >
-      <span className="flex flex-col text-left">
-        <span className="label text-text">Sesión segura</span>
-        <span className="font-mono text-[10px] text-muted-2">Borra la caché local al salir</span>
-      </span>
+  // Indicador de la PUERTA actual (no un control): el transporte lo decide el origen por el que
+  // entras. En clearnet, si conocemos la .onion, invitamos a usarla ante censura/anonimato.
+  const gatewayInfo = onion ? (
+    <div className="pt-1 flex items-start gap-2 rounded-sm border border-accent/30 bg-accent/5 px-3 py-2">
       <span
-        className={`relative w-11 h-6 rounded-full border transition-colors ${
-          secure ? "bg-accent/20 border-accent/40" : "bg-surface-2 border-line"
-        }`}
-      >
-        <span
-          className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
-          style={{
-            backgroundColor: secure ? "#c3f400" : "#8e9379",
-            transform: secure ? "translateX(20px)" : "none",
-          }}
-        />
-      </span>
-    </button>
+        className="mt-[3px] w-1.5 h-1.5 rounded-full shrink-0"
+        style={{ backgroundColor: "#c3f400", boxShadow: "0 0 8px #c3f400" }}
+      />
+      <p className="font-mono text-[10px] leading-relaxed text-muted-2">
+        <span className="text-accent">Conexión protegida (Tor)</span> — el tráfico va por Tor y tu
+        IP no es visible para el servidor.
+      </p>
+    </div>
+  ) : (
+    <div className="pt-1 flex items-start gap-2 rounded-sm border border-line px-3 py-2">
+      <span
+        className="mt-[3px] w-1.5 h-1.5 rounded-full shrink-0"
+        style={{ backgroundColor: "#fbbf24" }}
+      />
+      <p className="font-mono text-[10px] leading-relaxed text-muted-2">
+        <span className="text-text">Conexión normal</span> — tu IP es visible para el servidor.
+        {WEB_ONION_URL && (
+          <>
+            {" "}
+            Si hay censura o quieres anonimato, abre nuestra{" "}
+            <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
+          </>
+        )}
+      </p>
+    </div>
   );
 
   const passphraseInput = (label: string, autoFocus = false) => (
@@ -236,7 +248,7 @@ export default function LoginPage() {
         onKeyDown={(e) => {
           if (e.key === "Enter" && status?.state === "locked") onUnlock();
         }}
-        placeholder="Tu passphrase"
+        placeholder="Tu contraseña"
         className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
     </div>
@@ -245,7 +257,7 @@ export default function LoginPage() {
   const confirmInput = (
     <div className="space-y-2">
       <label htmlFor="confirm" className="label text-muted">
-        Repite la passphrase
+        Repite la contraseña
       </label>
       <input
         id="confirm"
@@ -258,7 +270,7 @@ export default function LoginPage() {
       />
       {confirmPass.length > 0 && confirmPass !== passphrase && (
         <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
-          Las passphrases no coinciden todavía.
+          Las contraseñas no coinciden todavía.
         </p>
       )}
     </div>
@@ -284,7 +296,7 @@ export default function LoginPage() {
             <Link href="/" className="font-mono font-semibold tracking-[0.14em] text-lg text-text">
               AEGIS
             </Link>
-            <p className="label text-muted-2 mt-1">Inicializar sesión</p>
+            <p className="label text-muted-2 mt-1">Iniciar sesión</p>
           </div>
 
           <div className="bg-surface/70 backdrop-blur-xl border border-line rounded-md p-6">
@@ -294,7 +306,7 @@ export default function LoginPage() {
               /* --- Entrar desde fichero de keystore (USB) --- */
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <span className="label text-muted">Keystore desde fichero (USB)</span>
+                  <span className="label text-muted">Tus llaves desde fichero (USB)</span>
                   <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
                     Elige tu fichero <span className="text-text">.aegis-key.json</span>. En modo
                     portátil la identidad solo vive en memoria durante esta sesión: al cerrar no
@@ -315,7 +327,7 @@ export default function LoginPage() {
                   />
                 </label>
 
-                {passphraseInput("Passphrase")}
+                {passphraseInput("Contraseña")}
 
                 <button
                   type="button"
@@ -325,7 +337,7 @@ export default function LoginPage() {
                   <span className="flex flex-col text-left">
                     <span className="label text-text">Recordar en este equipo</span>
                     <span className="font-mono text-[10px] text-muted-2">
-                      {persistFile ? "Se guardará el keystore aquí" : "Modo portátil: no se guarda nada"}
+                      {persistFile ? "Se guardarán tus llaves aquí" : "Modo portátil: no se guarda nada"}
                     </span>
                   </span>
                   <span
@@ -343,7 +355,7 @@ export default function LoginPage() {
                   </span>
                 </button>
 
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -387,13 +399,13 @@ export default function LoginPage() {
                     </span>
                   </div>
                   <p className="font-mono text-[11px] text-muted-2">
-                    La clave privada está cifrada. Introduce tu passphrase para desbloquearla en
+                    Tu identidad está cifrada. Introduce tu contraseña para desbloquearla en
                     esta sesión — nadie más puede usar esta identidad sin ella.
                   </p>
                 </div>
 
-                {passphraseInput("Passphrase", true)}
-                {secureToggle}
+                {passphraseInput("Contraseña", true)}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -420,14 +432,14 @@ export default function LoginPage() {
                   </div>
                   <p className="text-[13px] text-muted leading-relaxed">
                     Esta identidad estaba guardada <span className="text-text">sin protección</span>:
-                    cualquiera con acceso al equipo podía usarla. Protégela ahora con una passphrase
+                    cualquiera con acceso al equipo podía usarla. Protégela ahora con una contraseña
                     para cifrarla. A partir de entonces se pedirá al entrar.
                   </p>
                 </div>
 
-                {passphraseInput("Nueva passphrase", true)}
+                {passphraseInput("Nueva contraseña", true)}
                 {confirmInput}
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -447,7 +459,7 @@ export default function LoginPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label htmlFor="recovery" className="label text-muted">
-                    Código de recuperación
+                    Frase de recuperación
                   </label>
                   <textarea
                     id="recovery"
@@ -455,13 +467,13 @@ export default function LoginPage() {
                     onChange={(e) => setImportValue(e.target.value)}
                     rows={3}
                     spellCheck={false}
-                    placeholder="Pega aquí tu código de recuperación"
+                    placeholder="Pega tus 24 palabras (o tu código de recuperación antiguo)"
                     className="w-full bg-bg border border-line rounded-sm px-3 py-2 font-mono text-[12px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent break-all"
                   />
                 </div>
-                {passphraseInput("Passphrase para proteger esta identidad")}
+                {passphraseInput("Contraseña para proteger esta identidad")}
                 {confirmInput}
-                {secureToggle}
+                {gatewayInfo}
 
                 {error && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">{error}</p>
@@ -493,7 +505,7 @@ export default function LoginPage() {
               <div className="space-y-6">
                 <p className="text-[13px] text-muted leading-relaxed">
                   No hay ninguna identidad en este dispositivo. Crea una nueva o importa la tuya
-                  con el código de recuperación.
+                  con tu frase de recuperación.
                 </p>
                 <div className="flex flex-col gap-3">
                   <Link
@@ -510,7 +522,7 @@ export default function LoginPage() {
                     }}
                     className="label text-muted hover:text-accent transition-colors"
                   >
-                    Importar con código de recuperación
+                    Importar con frase de recuperación
                   </button>
                   <button
                     type="button"

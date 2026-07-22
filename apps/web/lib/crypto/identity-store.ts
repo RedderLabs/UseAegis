@@ -18,6 +18,14 @@
 import { fingerprint16, fromBase64Url, publicKeyFromSeed, signWithSeed, toBase64Url } from "./ed25519";
 import { openSeed, sealSeed, type VaultBlob } from "./vault";
 import { buildSignedPrekey as buildPrekey, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
+import {
+  openEnvelope,
+  sealEnvelope,
+  type IncomingMessage,
+  type OutgoingMessage,
+} from "./messaging";
+// `./recovery-phrase` arrastra el wordlist BIP39 (~12 kB): se importa BAJO DEMANDA para no
+// cargarlo en todas las páginas del dashboard (identity-store lo usa todo el panel).
 
 const DB_NAME = "aegis";
 const DB_VERSION = 1;
@@ -157,6 +165,18 @@ export async function importKeystore(recoveryB64: string, passphrase: string): P
   return createKeystore(seed, passphrase);
 }
 
+/**
+ * Importa una identidad desde su recuperación (frase BIP39 de 24 palabras O el código base64url
+ * antiguo — se autodetecta) y la protege con una passphrase. Es el camino preferido de la UI.
+ */
+export async function importFromRecovery(
+  recoveryInput: string,
+  passphrase: string,
+): Promise<IdentityInfo> {
+  const { decodeRecovery } = await import("./recovery-phrase");
+  return createKeystore(decodeRecovery(recoveryInput), passphrase);
+}
+
 /** Bloquea la sesión: borra la semilla de memoria (no toca lo persistido). */
 export function lockKeystore(): void {
   if (unlockedSeed) unlockedSeed.fill(0);
@@ -177,6 +197,13 @@ export function signWithUnlockedIdentity(message: Uint8Array): Promise<Uint8Arra
 /** Código de recuperación (semilla en base64url). Solo con el keystore desbloqueado. */
 export function exportRecovery(): string | null {
   return unlockedSeed ? toBase64Url(unlockedSeed) : null;
+}
+
+/** Frase de recuperación BIP39 (24 palabras) de la semilla. Solo con el keystore desbloqueado. */
+export async function exportRecoveryPhrase(): Promise<string | null> {
+  if (!unlockedSeed) return null;
+  const { seedToPhrase } = await import("./recovery-phrase");
+  return seedToPhrase(unlockedSeed);
 }
 
 // --- Keystore portátil (fichero USB) --------------------------------------------------
@@ -277,4 +304,38 @@ export function buildSignedPrekey(): Promise<{ x25519PublicKey: Uint8Array; sign
 /** Secreto compartido (ECDH) con la prekey X25519 de un peer. El relay nunca lo ve. */
 export function sharedSecretWithPeer(peerX25519PublicKey: Uint8Array): Promise<Uint8Array> {
   return sharedSecretWith(requireSeed(), peerX25519PublicKey);
+}
+
+// --- Mensajería sealed-sender (requieren keystore desbloqueado) -----------------------
+//
+// Se envuelven aquí para que la semilla NUNCA salga de este módulo: el sobre se sella/abre
+// con la semilla en memoria y solo cruzan la frontera bytes ya cifrados o ya verificados.
+
+/** Sella un mensaje para un peer con la identidad desbloqueada. Devuelve el sobre opaco. */
+export function sealMessageFor(params: {
+  recipientEd25519Pub: Uint8Array; // identidad del destinatario (ata la firma)
+  recipientX25519Pub: Uint8Array; // prekey X25519 del destinatario (ya VERIFICADA)
+  message: OutgoingMessage;
+}): Promise<Uint8Array> {
+  return sealEnvelope({ senderSeed: requireSeed(), ...params });
+}
+
+/**
+ * Sella un mensaje dirigido a UNO MISMO (self-copy). Se usa para replicar lo ENVIADO al
+ * propio buzón y poder reconstruir el lado saliente al cambiar de puerta o de dispositivo.
+ * Como solo el titular de la semilla puede firmar como él mismo, un sobre abierto cuyo
+ * `senderPub` coincide con la propia identidad es, de forma infalsificable, una self-copy.
+ */
+export async function sealForSelf(message: OutgoingMessage): Promise<Uint8Array> {
+  const seed = requireSeed();
+  const recipientEd25519Pub = await publicKeyFromSeed(seed);
+  const recipientX25519Pub = await x25519PublicFromSeed(seed);
+  return sealEnvelope({ senderSeed: seed, recipientEd25519Pub, recipientX25519Pub, message });
+}
+
+/** Abre un sobre recibido con la identidad desbloqueada. Verifica la firma del remitente. */
+export async function openMessageBlob(blob: Uint8Array): Promise<IncomingMessage> {
+  const seed = requireSeed();
+  const recipientEd25519Pub = await publicKeyFromSeed(seed);
+  return openEnvelope({ recipientSeed: seed, recipientEd25519Pub, blob });
 }

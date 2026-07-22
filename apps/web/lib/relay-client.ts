@@ -1,74 +1,116 @@
 /**
  * Cliente HTTP del relay para el handshake de autenticación (Auth / AuthSession).
  *
- * Reproduce el flujo de `apps/relay`: pide un challenge para la clave pública, firma
- * el mensaje con la semilla del dispositivo y canjea la firma por un token de sesión.
- * No depende de IndexedDB (la firma se inyecta), así que es testeable en Node.
+ * El cliente habla con el relay como `/api` RELATIVO, bajo el MISMO origen que la web
+ * (same-origin, sin CORS). En el nodo, Caddy sirve la web y enruta /api al relay por la
+ * puerta por la que entraste (clearnet o .onion): el TRANSPORTE SIGUE LA PUERTA, sin que el
+ * usuario elija nada. En dev (`next dev`), next.config reescribe /api/* → el relay local.
+ *
+ * No depende de IndexedDB (la firma se inyecta), así que es testeable en Node: define
+ * NEXT_PUBLIC_API_BASE con una URL absoluta para apuntar a un relay real en los tests.
  */
 import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
 
-/** Normaliza una URL de env: garantiza esquema y quita la barra final. */
-function normalizeUrl(raw: string, fallbackScheme: string): string {
-  const trimmed = raw.trim().replace(/\/$/, "");
-  if (!trimmed) return "";
-  // La .onion suele configurarse sin esquema (xxxx.onion) — le añadimos http://.
-  return /^https?:\/\//.test(trimmed) ? trimmed : `${fallbackScheme}${trimmed}`;
+// Base de la API. Relativa por defecto (mismo origen); override absoluto para tests en Node.
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "/api").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
 }
 
-// Dos puertas al MISMO relay (mismo Fastify/Postgres, ver docs/aegis-node-proxmox-setup.md §6):
-// clearnet por HTTPS y hidden service .onion por HTTP (el cifrado por capas de Tor basta).
-const CLEARNET_URL = normalizeUrl(
-  process.env.NEXT_PUBLIC_RELAY_URL ?? "http://127.0.0.1:8443",
-  "https://",
-);
-const ONION_URL = normalizeUrl(
-  process.env.NEXT_PUBLIC_RELAY_ONION_URL ?? "",
-  "http://",
-);
-
-/**
- * Endpoint del relay según el modo de la sesión.
- *
- * `secure` (sesión protegida) → hidden service .onion; normal → clearnet.
- * Ojo: el navegador NO embebe Tor; apuntar el fetch a la .onion solo enruta de
- * verdad bajo Tor Browser o un proxy Tor del sistema. Si no hay .onion configurada
- * caemos a clearnet para no romper el login.
- */
-export function relayBaseUrl(secure: boolean): string {
-  return secure && ONION_URL ? ONION_URL : CLEARNET_URL;
-}
-
-/**
- * Mensaje accionable cuando `fetch` al relay lanza (no responde). Las causas típicas en
- * desarrollo: (1) apuntar a la .onion desde un navegador normal, que no resuelve .onion sin
- * Tor, y (2) un bloqueador de anuncios/privacidad cortando la petición (net::ERR_BLOCKED_BY_CLIENT).
- */
-function relayUnreachableMessage(baseUrl: string): string {
-  return baseUrl.includes(".onion")
-    ? "No se pudo contactar con el relay .onion. La sesión protegida necesita Tor Browser o un proxy Tor; en desarrollo desactiva la sesión protegida para usar clearnet. Un bloqueador de anuncios/privacidad también puede estar cortando la petición."
-    : "No se pudo contactar con el relay. Comprueba que está levantado y que ningún bloqueador del navegador corta la petición.";
-}
+/** Dirección .onion de la WEB (para invitar a cambiar de puerta desde clearnet), o "" si no se conoce. */
+export const WEB_ONION_URL = (process.env.NEXT_PUBLIC_WEB_ONION_URL ?? "").trim().replace(/\/$/, "");
 
 export type RelayGatewayKind = "onion" | "clearnet";
 
 export interface RelayGateway {
-  /** URL base efectiva a la que van las peticiones. */
-  url: string;
-  /** Tipo de puerta según la URL efectiva (no según lo pedido). */
+  /** Tipo de puerta por la que se sirve la app AHORA (según window.location). */
   kind: RelayGatewayKind;
-  /** true si se pidió sesión segura pero no hay .onion configurada → caemos a clearnet. */
-  fellBackToClearnet: boolean;
+  /** Host de la puerta (window.location.host), o "" en SSR. */
+  host: string;
 }
 
-/** Describe a qué puerta del relay se está apuntando de verdad para un `secure` dado. */
-export function relayGateway(secure: boolean): RelayGateway {
-  const url = relayBaseUrl(secure);
-  const host = url.replace(/^https?:\/\//, "");
+/** Puerta (transporte) por la que se está sirviendo la app ahora mismo. Client-side. */
+export function currentGateway(): RelayGateway {
+  const host = typeof window !== "undefined" ? window.location.host : "";
+  return { kind: /\.onion(?::\d+)?$/i.test(host) ? "onion" : "clearnet", host };
+}
+
+/** true si la web se sirve por la puerta .onion (transporte Tor). */
+export function isOnionSession(): boolean {
+  return currentGateway().kind === "onion";
+}
+
+/**
+ * Aviso contextual sobre la puerta actual, para mostrar en login/ajustes. En clearnet invita a
+ * usar la .onion (si se conoce) para anonimato o ante censura; en .onion confirma el modo protegido.
+ */
+export function gatewayNotice(): { onion: boolean; text: string } {
+  if (isOnionSession()) {
+    return {
+      onion: true,
+      text: "Estás en la conexión protegida (Tor): el tráfico va por Tor y tu IP no es visible para el servidor.",
+    };
+  }
   return {
-    url,
-    kind: /\.onion(?::\d+)?$/i.test(host) ? "onion" : "clearnet",
-    fellBackToClearnet: secure && !ONION_URL,
+    onion: false,
+    text: WEB_ONION_URL
+      ? "Estás en la conexión normal. Si hay censura o quieres anonimato, abre nuestra .onion en el Navegador Tor."
+      : "Estás en la conexión normal. Tu IP es visible para el servidor.",
   };
+}
+
+export class RelayError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "RelayError";
+  }
+}
+
+/** Mensaje accionable cuando `fetch` al relay lanza (no responde), según la puerta actual. */
+function relayUnreachableMessage(): string {
+  return isOnionSession()
+    ? "No se pudo contactar con el servidor por Tor. El circuito .onion puede tardar unos segundos en abrir; reintenta. Un bloqueador del navegador también puede estar cortando la petición."
+    : "No se pudo contactar con el servidor. Comprueba tu conexión y que ningún bloqueador del navegador corta la petición.";
+}
+
+async function request<T>(
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+  token?: string,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), {
+      method,
+      headers: {
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new RelayError(relayUnreachableMessage(), 0);
+  }
+  if (res.status === 204) return undefined as T;
+  const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new RelayError(
+      (data as { error?: string }).error ?? `Error ${res.status}`,
+      res.status,
+      (data as { error?: string }).error,
+    );
+  }
+  return data as T;
+}
+
+function post<T>(path: string, body: unknown, token?: string): Promise<T> {
+  return request<T>("POST", path, body, token);
 }
 
 export interface HealthResult {
@@ -77,18 +119,18 @@ export interface HealthResult {
 }
 
 /**
- * Sondea `/health` del relay por la puerta que corresponda a `secure`.
- * Lanza `RelayError` con status 0 si no se puede contactar (relay caído, o .onion
- * inalcanzable porque el navegador no enruta por Tor — el caller distingue por gateway).
+ * Sondea `/health` del relay por la puerta actual (same-origin /api).
+ * Lanza `RelayError` con status 0 si no se puede contactar (relay caído, o circuito .onion
+ * aún no abierto — el caller distingue por `currentGateway().kind`).
  */
-export async function fetchHealth(secure = false): Promise<HealthResult> {
+export async function fetchHealth(): Promise<HealthResult> {
   let res: Response;
   try {
-    res = await fetch(`${relayBaseUrl(secure)}/health`, { method: "GET" });
+    res = await fetch(apiUrl("/health"), { method: "GET" });
   } catch {
-    throw new RelayError(relayUnreachableMessage(relayBaseUrl(secure)), 0);
+    throw new RelayError(relayUnreachableMessage(), 0);
   }
-  if (!res.ok) throw new RelayError(`El relay respondió ${res.status}.`, res.status);
+  if (!res.ok) throw new RelayError(`El servidor respondió ${res.status}.`, res.status);
   return res.json() as Promise<HealthResult>;
 }
 
@@ -105,71 +147,16 @@ export interface VerifiedSession {
   identity: { publicKey: string; fingerprint: string };
 }
 
-export class RelayError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-    this.name = "RelayError";
-  }
-}
-
-async function request<T>(
-  baseUrl: string,
-  method: "GET" | "POST" | "PUT",
-  path: string,
-  body?: unknown,
-  token?: string,
-): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: {
-        ...(body !== undefined ? { "content-type": "application/json" } : {}),
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new RelayError(relayUnreachableMessage(baseUrl), 0);
-  }
-  if (res.status === 204) return undefined as T;
-  const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new RelayError(
-      (data as { error?: string }).error ?? `Error ${res.status}`,
-      res.status,
-      (data as { error?: string }).error,
-    );
-  }
-  return data as T;
-}
-
-function post<T>(baseUrl: string, path: string, body: unknown, token?: string): Promise<T> {
-  return request<T>(baseUrl, "POST", path, body, token);
-}
-
 /** Firma que produce una firma Ed25519 (64 bytes) sobre un mensaje. */
 export type Signer = (message: Uint8Array) => Promise<Uint8Array>;
 
-/**
- * Ejecuta el handshake completo y devuelve la sesión (token) emitida por el relay.
- * `secure` elige la puerta: true → .onion (sesión protegida), false → clearnet.
- */
-export async function authenticate(
-  publicKeyB64: string,
-  sign: Signer,
-  secure = false,
-): Promise<VerifiedSession> {
-  const baseUrl = relayBaseUrl(secure);
-  const challenge = await post<ChallengeResponse>(baseUrl, "/auth/challenge", {
+/** Ejecuta el handshake completo y devuelve la sesión (token) emitida por el relay. */
+export async function authenticate(publicKeyB64: string, sign: Signer): Promise<VerifiedSession> {
+  const challenge = await post<ChallengeResponse>("/auth/challenge", {
     publicKey: publicKeyB64,
   });
   const signature = await sign(fromBase64Url(challenge.message));
-  return post<VerifiedSession>(baseUrl, "/auth/verify", {
+  return post<VerifiedSession>("/auth/verify", {
     challengeId: challenge.challengeId,
     signature: toBase64Url(signature),
   });
@@ -183,12 +170,12 @@ export interface MeResponse {
   hasPrekey: boolean;
 }
 
-export function fetchMe(token: string, secure = false): Promise<MeResponse> {
-  return request<MeResponse>(relayBaseUrl(secure), "GET", "/auth/me", undefined, token);
+export function fetchMe(token: string): Promise<MeResponse> {
+  return request<MeResponse>("GET", "/auth/me", undefined, token);
 }
 
-export function logout(token: string, secure = false): Promise<void> {
-  return post<void>(relayBaseUrl(secure), "/auth/logout", {}, token);
+export function logout(token: string): Promise<void> {
+  return post<void>("/auth/logout", {}, token);
 }
 
 // --- Directorio de usuarios y prekeys X25519 -----------------------------------------
@@ -209,39 +196,216 @@ export interface DirectoryEntry {
 }
 
 /** Reclama o cambia el handle público con el que otros te encuentran. */
-export function claimUsername(
-  token: string,
-  username: string,
-  secure = false,
-): Promise<{ username: string }> {
-  return request(relayBaseUrl(secure), "PUT", "/directory/username", { username }, token);
+export function claimUsername(token: string, username: string): Promise<{ username: string }> {
+  return request("PUT", "/directory/username", { username }, token);
 }
 
 /** Publica (o rota) la prekey X25519 firmada de esta identidad. */
 export function publishPrekey(
   token: string,
   prekey: { x25519PublicKey: string; signature: string },
-  secure = false,
 ): Promise<{ ok: true }> {
-  return request(relayBaseUrl(secure), "PUT", "/directory/prekey", prekey, token);
+  return request("PUT", "/directory/prekey", prekey, token);
 }
 
 /** Busca a un usuario por su handle → identidad + key bundle. */
-export function resolveUsername(
-  token: string,
-  username: string,
-  secure = false,
-): Promise<DirectoryEntry> {
-  const url = `/directory/resolve/${encodeURIComponent(username)}`;
-  return request(relayBaseUrl(secure), "GET", url, undefined, token);
+export function resolveUsername(token: string, username: string): Promise<DirectoryEntry> {
+  return request("GET", `/directory/resolve/${encodeURIComponent(username)}`, undefined, token);
 }
 
 /** Descarga el key bundle de una identidad por su clave pública (p. ej. tras un QR). */
-export function fetchBundle(
+export function fetchBundle(token: string, publicKeyB64: string): Promise<DirectoryEntry> {
+  return request("GET", `/directory/bundle/${encodeURIComponent(publicKeyB64)}`, undefined, token);
+}
+
+// --- Buzón de mensajes (sealed sender, Modo A) ---------------------------------------
+//
+// La web habla siempre por `/api` same-origin: el TRANSPORTE SIGUE LA PUERTA (clearnet o
+// .onion) sin que el usuario elija. El sobre `blob` es OPACO para el relay (contenido +
+// identidad del remitente cifrados dentro, ver lib/crypto/messaging.ts): aquí solo se mueve
+// base64url. El buzón se identifica por la clave pública Ed25519 del destinatario.
+
+/** Sobre almacenado tal como lo devuelve el buzón del propio destinatario. */
+export interface StoredEnvelope {
+  id: string; // uuid del sobre en el buzón (para DELETE/ack)
+  blob: string; // base64url del sobre opaco
+  createdAt: string; // ISO-8601 (cursor incremental)
+}
+
+/**
+ * Deja un sobre en el buzón de `recipientPubB64` (Ed25519, base64url). El remitente va
+ * autenticado por la sesión (anti-spam) pero NO se almacena junto al sobre (sealed sender):
+ * su identidad viaja cifrada dentro de `blob`.
+ */
+export function sendMessage(
   token: string,
-  publicKeyB64: string,
-  secure = false,
-): Promise<DirectoryEntry> {
-  const url = `/directory/bundle/${encodeURIComponent(publicKeyB64)}`;
-  return request(relayBaseUrl(secure), "GET", url, undefined, token);
+  recipientPubB64: string,
+  blob: Uint8Array,
+): Promise<{ ok: true }> {
+  return request(
+    "POST",
+    `/messages/${encodeURIComponent(recipientPubB64)}`,
+    { blob: toBase64Url(blob) },
+    token,
+  );
+}
+
+/**
+ * Recupera los sobres del propio buzón. `after` = cursor incremental (ISO): solo devuelve
+ * los sobres con `createdAt > after`; omítelo para leer desde el principio (dentro del TTL).
+ * NO borra al leer: los sobres se retienen bajo TTL para poder retomar la conversación al
+ * cambiar de puerta (clearnet ↔ .onion) o de dispositivo.
+ */
+export async function fetchMessages(token: string, after?: string): Promise<StoredEnvelope[]> {
+  const qs = after ? `?after=${encodeURIComponent(after)}` : "";
+  const { messages } = await request<{ messages: StoredEnvelope[] }>(
+    "GET",
+    `/messages${qs}`,
+    undefined,
+    token,
+  );
+  return messages;
+}
+
+/** Purga un sobre del propio buzón por su id (ack/borrado explícito por el destinatario). */
+export function deleteMessage(token: string, id: string): Promise<void> {
+  return request<void>("DELETE", `/messages/${encodeURIComponent(id)}`, undefined, token);
+}
+
+/**
+ * Abre el stream SSE del buzón (`GET /messages/stream`) para recibir avisos de sobre nuevo en
+ * TIEMPO REAL, y así no depender solo del sondeo. `onPoke` se llama por cada aviso; `onConnected`
+ * refleja si el canal está vivo. Devuelve una función de cierre.
+ *
+ * Usa `fetch` con streaming (no `EventSource`) por un motivo concreto: EventSource no puede mandar
+ * la cabecera `Authorization`, y aquí el token es bearer en memoria (no cookie). Con fetch sí. El
+ * lector reconecta solo con backoff exponencial; el aviso solo es un "poke" (no trae el sobre), el
+ * consumidor reacciona pidiendo /messages por cursor. Solo cliente (usa fetch streaming del navegador).
+ */
+export function openMessageStream(
+  token: string,
+  onPoke: () => void,
+  onConnected?: (connected: boolean) => void,
+): () => void {
+  let closed = false;
+  let controller: AbortController | null = null;
+  let attempt = 0;
+
+  async function connect(): Promise<void> {
+    if (closed) return;
+    controller = new AbortController();
+    try {
+      const res = await fetch(apiUrl("/messages/stream"), {
+        headers: { authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);
+      onConnected?.(true);
+      attempt = 0;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Los frames SSE se separan por una línea en blanco. Un frame con `event: message` (o una
+        // línea `data:`) es un aviso; los comentarios de latido (`: ping`) se ignoran.
+        let sep: number;
+        while ((sep = buffer.indexOf("\n\n")) >= 0) {
+          const frame = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          if (/^(event:\s*message|data:)/m.test(frame)) onPoke();
+        }
+      }
+    } catch {
+      /* corte de red / sesión / Tor: reconectamos abajo con backoff */
+    } finally {
+      onConnected?.(false);
+      if (!closed) {
+        attempt = Math.min(attempt + 1, 6);
+        const delay = Math.min(1000 * 2 ** attempt, 30_000);
+        setTimeout(() => void connect(), delay);
+      }
+    }
+  }
+
+  void connect();
+  return () => {
+    closed = true;
+    controller?.abort();
+  };
+}
+
+// --- Media (adjuntos cifrados: audio/archivos) ---------------------------------------
+//
+// El contenido va cifrado E2E (AEAD por chunks) ANTES de subirse; para el relay/bucket es un
+// blob binario opaco. El relay hace de proxy al bucket S3 (el cliente nunca habla con B2): así,
+// por .onion, el tráfico de adjuntos sigue yendo por la puerta y no filtra metadatos a un tercero.
+// Se mueve como `application/octet-stream` (no base64) para no inflar un 33% adjuntos grandes.
+
+/** Lee el error `{error}` de una respuesta no-2xx (o un genérico) y lo lanza como RelayError. */
+async function throwRelay(res: Response): Promise<never> {
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  throw new RelayError(data.error ?? `Error ${res.status}`, res.status, data.error);
+}
+
+/** Sube un ciphertext de media al relay (proxy a B2). Devuelve la `key` (uuid) para referenciarlo. */
+export async function uploadMedia(token: string, ciphertext: Uint8Array): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl("/media"), {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream", authorization: `Bearer ${token}` },
+      body: ciphertext as unknown as BodyInit,
+    });
+  } catch {
+    throw new RelayError(relayUnreachableMessage(), 0);
+  }
+  if (!res.ok) await throwRelay(res);
+  const { key } = (await res.json()) as { key: string };
+  return key;
+}
+
+/** Descarga un ciphertext de media por su `key`. Devuelve los bytes (aún cifrados). */
+export async function downloadMedia(token: string, key: string): Promise<Uint8Array> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/media/${encodeURIComponent(key)}`), {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new RelayError(relayUnreachableMessage(), 0);
+  }
+  if (!res.ok) await throwRelay(res);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+// --- Bloqueos -------------------------------------------------------------------------
+//
+// Un bloqueo es direccional y lo IMPONE el relay: si has bloqueado a alguien, sus sobres se
+// descartan en el envío (silenciosamente, sin revelarle el bloqueo). El bloqueo va por
+// identidad → vale igual por clearnet y por .onion.
+
+/** Una entrada de la lista de bloqueados. */
+export interface BlockedEntry {
+  publicKey: string; // Ed25519 (base64url) del bloqueado
+  createdAt: string; // ISO-8601
+}
+
+/** Bloquea a una identidad por su clave pública Ed25519 (base64url). */
+export function blockUser(token: string, publicKeyB64: string): Promise<{ ok: true }> {
+  return request("PUT", `/blocks/${encodeURIComponent(publicKeyB64)}`, undefined, token);
+}
+
+/** Desbloquea a una identidad. Idempotente. */
+export function unblockUser(token: string, publicKeyB64: string): Promise<{ ok: true }> {
+  return request("DELETE", `/blocks/${encodeURIComponent(publicKeyB64)}`, undefined, token);
+}
+
+/** Lista de bloqueados de la propia identidad, del más reciente al más antiguo. */
+export async function listBlocks(token: string): Promise<BlockedEntry[]> {
+  const { blocks } = await request<{ blocks: BlockedEntry[] }>("GET", "/blocks", undefined, token);
+  return blocks;
 }
