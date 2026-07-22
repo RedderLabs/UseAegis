@@ -162,6 +162,10 @@ services:
       WEB_TLS: ${WEB_TLS:-internal}
       RELAY_DOMAIN: ${RELAY_DOMAIN:-relay.aegis.local}
       RELAY_TLS: ${RELAY_TLS:-internal}
+      # Puerta wss del bootstrap/relay-de-circuito P2P (Modo B). En prod: P2P_DOMAIN=p2p.aegis.app
+      # + P2P_TLS=admin@aegis.app → Let's Encrypt. El navegador conecta por /dns4/.../tcp/443/wss.
+      P2P_DOMAIN: ${P2P_DOMAIN:-p2p.aegis.local}
+      P2P_TLS: ${P2P_TLS:-internal}
     ports:
       - "80:80"
       - "443:443"

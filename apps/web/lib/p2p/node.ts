@@ -26,6 +26,7 @@ import { identify } from "@libp2p/identify";
 import { bootstrap } from "@libp2p/bootstrap";
 import { generateKeyPairFromSeed } from "@libp2p/crypto/keys";
 import { peerIdFromString } from "@libp2p/peer-id";
+import { multiaddr } from "@multiformats/multiaddr";
 import type { Stream } from "@libp2p/interface";
 import { concat as concatBytes } from "uint8arrays/concat";
 import type { P2pNode, WireEnvelope } from "@aegis/transport";
@@ -123,8 +124,21 @@ export async function createLibp2pNode(
 
     async send(peerId, blob) {
       if (!node) throw new Error("Nodo P2P no arrancado.");
-      // Lanza si no hay ruta al peer (sin conexión, NAT sin traversal): el failover probará el relay.
-      const stream = await node.dialProtocol(peerIdFromString(peerId), AEGIS_MSG_PROTOCOL);
+      const target = peerIdFromString(peerId);
+      // D4: sin DHT. Primero intenta por PeerID (reusa una conexión ya abierta o direcciones
+      // conocidas); si no hay ruta, disca a través del CIRCUITO de cada bootstrap conocido:
+      //   /<bootstrap>/p2p-circuit/webrtc/p2p/<target>  → relayado + upgrade a WebRTC directo.
+      let stream: Stream;
+      try {
+        stream = await node.dialProtocol(target, AEGIS_MSG_PROTOCOL);
+      } catch (directErr) {
+        const relayed = opts.bootstrapMultiaddrs.map((b) =>
+          multiaddr(b).encapsulate(`/p2p-circuit/webrtc/p2p/${peerId}`),
+        );
+        // Sin bootstrap no hay forma de alcanzar al peer: propaga para que el failover use el relay.
+        if (relayed.length === 0) throw directErr;
+        stream = await node.dialProtocol(relayed, AEGIS_MSG_PROTOCOL);
+      }
       stream.send(blob); // un stream = un sobre
       await stream.close(); // cierra (y descarga) tras enviar el blob
     },
