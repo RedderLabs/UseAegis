@@ -97,11 +97,39 @@ buzón del relay ya da de forma fiable siempre que el relay sea alcanzable por *
 `@libp2p/pubsub-peer-discovery` (instaladas al explorar D1, ya no se usan). El descubrimiento va por
 `bootstrap` (D2), no por pubsub.
 
-### D4 — Descubrimiento (DHT Kademlia)
-En navegador el peer suele ser **cliente** del DHT; los nodos server (tu bootstrap) sostienen la
-tabla.
-- **Recomendación:** DHT con tu nodo como server + registro directo por PeerID (derivado de Ed25519,
-  `ARQUITECTURA.md §2.5`). Medir tiempos de resolución reales.
+### D4 — Descubrimiento (DHT Kademlia) · ✅ **DECIDIDO** (2026-07-22)
+**Decisión: sin Kademlia en el spike ni el MVP.** El descubrimiento se resuelve en dos mitades:
+
+1. **PeerID → gratis, sin lookup.** El PeerID de libp2p se DERIVA de la clave pública Ed25519 del
+   contacto, que ya tienes (contactos / directorio de prekeys). `apps/web/lib/p2p/peer-id.ts::`
+   `libp2pPeerIdFromEd25519(pubkey)` lo calcula. **Verificado en runtime**: coincide byte a byte con
+   el PeerID que anuncia el nodo del destinatario (misma semilla).
+2. **PeerID → ruta, por circuito conocido.** Sin DHT, `P2pNode.send()` disca a través del CIRCUITO
+   de cada bootstrap conocido: `/<bootstrap>/p2p-circuit/webrtc/p2p/<target>` (relayado + upgrade a
+   WebRTC directo). Basta con conocer el bootstrap (config) y el PeerID (derivado).
+
+**Por qué aplazar Kademlia:** solo hace falta cuando hay MUCHOS relays y el descubrimiento debe ser
+descentralizado. Para el spike (peers sobre un bootstrap conocido) y el MVP, añade complejidad de
+cliente-DHT en navegador sin beneficio. Entra en una fase de escala posterior.
+
+## 3.5. Despliegue en Coolify (el bootstrap detrás de Caddy)
+
+Coolify despliega el `docker-compose.yml` (perfil `node`) en el host único (ver [[aegis-onion-coolify]]).
+El servicio `aegis-p2p-bootstrap` entra con el resto. Puntos clave:
+
+- **WSS obligatorio para navegadores.** Una página https no puede abrir `ws://` inseguro → el
+  navegador necesita `wss`. Caddy ya es el reverse proxy: se añadió un bloque `P2P_DOMAIN` que
+  termina TLS y hace `wss → aegis-p2p-bootstrap:9001` (upgrade WebSocket automático).
+- **Producción:** en el `.env` de Coolify, `P2P_DOMAIN=p2p.aegis.app` + `P2P_TLS=admin@aegis.app`
+  (Let's Encrypt), y un registro **DNS A** `p2p.aegis.app → IP pública`. El multiaddr para el cliente
+  es `/dns4/p2p.aegis.app/tcp/443/wss/p2p/<PeerID>` → va en `NEXT_PUBLIC_P2P_BOOTSTRAP`.
+- **PeerID estable:** lo imprime `docker compose --profile node logs aegis-p2p-bootstrap` al
+  arrancar (semilla persistida en el volumen `aegis-p2p-bootstrap-data`; o fíjalo con
+  `P2P_BOOTSTRAP_SEED`). Cópialo una vez al multiaddr y reconstruye `aegis-web`.
+- **WebRTC NO viaja por Tor:** el Modo B es una puerta **clearnet** (anti-censura del relay), no una
+  `.onion`. Sobre la puerta `.onion`, el transporte sigue siendo el relay same-origin.
+- **Gotcha de firewall** (heredado): si endureces con ufw default-deny, deja pasar el 443 y el
+  self-SSH de Coolify (172.16/12 y 10/8), o los deploys se rompen (ver [[aegis-antidos-hardening]]).
 
 ## 4. Riesgo (por qué "la más difícil de comprimir")
 
@@ -113,7 +141,7 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
 
 ## 5. Plan de sub-pasos
 
-1. 🟡 **Decisiones de diseño** (este doc) — D1, D2 y D3 ✅; falta fijar D4 (DHT).
+1. ✅ **Decisiones de diseño** (este doc) — D1, D2, D3 y D4 fijadas.
 2. ✅ **`createP2pTransport()`** contra el contrato + tests (hecho 2026-07-22).
 3. ✅ **Nodo bootstrap / circuit-relay v2** en el compose (`infra/p2p-bootstrap`, perfil `node`).
    Falta el **deploy** en el host + cablear su multiaddr (`NEXT_PUBLIC_P2P_BOOTSTRAP`).
