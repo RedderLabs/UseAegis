@@ -24,12 +24,13 @@ import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { identify } from "@libp2p/identify";
 import { bootstrap } from "@libp2p/bootstrap";
-import { generateKeyPairFromSeed } from "@libp2p/crypto/keys";
 import { peerIdFromString } from "@libp2p/peer-id";
 import { multiaddr } from "@multiformats/multiaddr";
-import type { Stream } from "@libp2p/interface";
+import type { PrivateKey, Stream } from "@libp2p/interface";
 import { concat as concatBytes } from "uint8arrays/concat";
 import type { P2pNode, WireEnvelope } from "@aegis/transport";
+import { libp2pPeerIdFromEd25519 } from "./peer-id";
+import { fromBase64Url } from "../crypto/ed25519";
 
 /**
  * Protocolo de aplicación: UN sobre opaco por stream. El emisor abre un stream, manda el blob y lo
@@ -55,16 +56,15 @@ async function blobId(blob: Uint8Array): Promise<string> {
 }
 
 /**
- * Construye un `P2pNode` libp2p a partir de la semilla Ed25519 de la identidad. No arranca la red
- * hasta que el transporte llama a `start()`.
+ * Construye un `P2pNode` libp2p a partir de la CLAVE PRIVADA libp2p ya derivada de la identidad
+ * (la deriva `identity-store::unlockedLibp2pPrivateKey`, para que la semilla Ed25519 NO salga de ese
+ * módulo). El PeerID resultante = la MISMA identidad Ed25519 (ARQUITECTURA.md §2.5). No arranca la
+ * red hasta que el transporte llama a `start()`.
  */
 export async function createLibp2pNode(
-  seed: Uint8Array,
+  privateKey: PrivateKey,
   opts: Libp2pNodeOptions,
 ): Promise<P2pNode> {
-  // PeerID = misma identidad Ed25519 (semilla de 32 bytes → par de claves libp2p).
-  const privateKey = await generateKeyPairFromSeed("Ed25519", seed);
-
   let node: Libp2p | null = null;
   let recvSeq = 0; // orden local de recepción (P2P no tiene cursor global del servidor)
   const listeners = new Set<(env: WireEnvelope) => void>();
@@ -122,8 +122,11 @@ export async function createLibp2pNode(
       await n.stop();
     },
 
-    async send(peerId, blob) {
+    async send(recipientPub, blob) {
       if (!node) throw new Error("Nodo P2P no arrancado.");
+      // El contrato de transporte usa la MISMA moneda que el relay: la clave Ed25519 (base64url)
+      // del destinatario. El PeerID de libp2p se DERIVA de ella (D4) — sin DHT, sin lookup.
+      const peerId = libp2pPeerIdFromEd25519(fromBase64Url(recipientPub));
       const target = peerIdFromString(peerId);
       // D4: sin DHT. Primero intenta por PeerID (reusa una conexión ya abierta o direcciones
       // conocidas); si no hay ruta, disca a través del CIRCUITO de cada bootstrap conocido:

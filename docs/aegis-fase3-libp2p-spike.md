@@ -149,5 +149,12 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
 5. ⬜ **Conexión directa P2P** dos navegadores en LAN → sobre E2E ida y vuelta.
 6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo*.
 7. ✅ **Store-and-forward → veredicto** (D3): relay de ancla, sin GossipSub. Lo realiza el failover.
-8. ⬜ **Enganche al failover** en `apps/web/lib/chat.ts`: añadir `p2p` a la lista de candidatos.
+8. ✅ **Enganche al failover** en `apps/web/lib/chat.ts` (2026-07-22). `createChatTransport` añade
+   `p2p` como SEGUNDO candidato del failover **solo si `NEXT_PUBLIC_P2P_BOOTSTRAP` está definido**
+   (sin él, el chat queda idéntico: solo relay). El nodo libp2p se crea **perezosamente** al
+   arrancar (`lib/p2p/lazy-node.ts`): import dinámico de `lib/p2p/node.ts` (browser-only, nunca SSR)
+   con la clave libp2p que deriva `identity-store::unlockedLibp2pPrivateKey` — la semilla Ed25519 NO
+   sale de `identity-store`. `node.send()` acepta la clave Ed25519 (base64url, misma moneda que el
+   relay) y DERIVA el PeerID (D4). `next build` verde + 11/11 tests. `IMPLEMENTED_MODES` sigue
+   `["relay"]`: no se anuncia `p2p` como modo real hasta validarlo en red (pasos 5/6).
 9. ⬜ **Cierre**: doc + memoria + PR.
