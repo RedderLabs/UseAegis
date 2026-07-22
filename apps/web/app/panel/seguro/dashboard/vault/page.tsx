@@ -8,7 +8,7 @@ const HEALTH = [
   { label: "Cifrado de contenido", value: "XChaCha20-Poly1305" },
   { label: "Acuerdo de claves", value: "X25519 (ECDH por sesión)" },
   { label: "Identidad / firma", value: "Ed25519" },
-  { label: "Remitente frente al relay", value: "Sealed sender" },
+  { label: "Remitente frente al servidor", value: "Sealed sender" },
 ];
 
 const KEYS = [
@@ -50,8 +50,8 @@ function Vault() {
             <div className="flex items-center gap-2 mt-2">
               <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
               <p className="font-mono text-[12px] text-muted">
-                Metadata retenida en el servidor:{" "}
-                <span className="text-accent">mínima</span>
+                Datos que guarda el servidor:{" "}
+                <span className="text-accent">mínimos</span>
               </p>
             </div>
           </div>
@@ -82,8 +82,8 @@ function Vault() {
               ))}
             </div>
             <p className="font-mono text-[11px] text-muted-2 mt-4 leading-relaxed">
-              Todo con primitivos de libsodium. Sin implementaciones criptográficas
-              propias. El cifrado es idéntico viaje por donde viaje el mensaje.
+              Usamos criptografía estándar y auditada (libsodium). No inventamos
+              cifrado propio. El cifrado es el mismo vaya por donde vaya el mensaje.
             </p>
           </div>
 
@@ -131,8 +131,8 @@ function Vault() {
               ))}
             </div>
             <p className="font-mono text-[11px] text-muted-2 mt-4 leading-relaxed">
-              No hay RSA, ni módulos de hardware asumidos, ni claves de servidor.
-              Solo curvas modernas sobre tu dispositivo.
+              Ningún servidor guarda tus claves: viven solo en tu dispositivo. Sin
+              RSA ni hardware especial, solo criptografía moderna (curvas elípticas).
             </p>
           </div>
         </div>

@@ -1,0 +1,129 @@
+# Despliegue de PRODUCCIÓN en Coolify — puerta CLEARNET (VM-B, useaegis.app).
+#
+# Diferencias con docker-compose.yml (dev/nodo):
+#   - NO hay `aegis-db`: el Postgres lo da Coolify como recurso aparte (mejores backups) →
+#     el relay lo alcanza por DATABASE_URL (variable de entorno en Coolify).
+#   - NO hay Caddy: el TLS + el dominio los pone Traefik de Coolify (Let's Encrypt). La web
+#     reenvía `/api` → relay por la red interna (next.config `rewrites`, vía RELAY_ORIGIN),
+#     así que el modelo same-origin se mantiene SIN reverse-proxy propio.
+#   - NO hay Tor: esta es la puerta clearnet. La .onion va en la otra VM (fase posterior).
+#
+# En Coolify: Nuevo recurso → Docker Compose → este archivo. Asigna el dominio useaegis.app al
+# servicio `web` (puerto 3000). El `relay` queda interno (sin dominio). Variables → panel de Coolify.
+#
+# ⚠️ Las S3_* de media (audio/archivos) son claves de PRUEBA hoy: ROTA a claves de prod y ponlas
+# como variables en Coolify (no en el repo).
+
+services:
+  # --- Relay (Fastify + Postgres) --------------------------------------------------------
+  # Interno: no publica dominio. La web lo alcanza por el nombre de servicio `relay:8443` en la
+  # red interna del compose. Aplica migraciones al arrancar (crea el esquema en un Postgres vacío).
+  relay:
+    build:
+      context: .
+      dockerfile: apps/relay/Dockerfile
+    restart: unless-stopped
+    # Contención: ningún contenedor puede agotar la RAM/CPU del host (OOM) ni forkear sin límite.
+    # Ajustables según el hierro; estos valores dejan holgura de sobra para Node/Fastify.
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    # Rotación de logs: evita que un flood llene el disco (otra vía de DoS).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      # Connection string INTERNO del Postgres de Coolify (cópialo del recurso Postgres).
+      DATABASE_URL: ${DATABASE_URL}
+      # DragonflyDB (Redis-compatible) para el pub/sub del push en tiempo real (SSE). Cópialo del
+      # recurso Dragonfly de Coolify (p. ej. redis://default:PASS@dragonfly:6379). OPCIONAL: sin él,
+      # los avisos SSE funcionan solo en proceso (correcto con una única instancia del relay).
+      REDIS_URL: ${REDIS_URL:-}
+      HOST: 0.0.0.0
+      PORT: "8443"
+      LOG_LEVEL: info
+      # TTL de sobres y de objetos de media (por defecto 30 días).
+      BLOB_TTL_SECONDS: ${BLOB_TTL_SECONDS:-2592000}
+      MEDIA_TTL_SECONDS: ${MEDIA_TTL_SECONDS:-2592000}
+      MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-52428800}
+      # Almacén de objetos S3/B2 para adjuntos cifrados (audio/archivos). Sin estas 5, /media = 503.
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    expose:
+      - "8443"
+
+  # --- Web (Next.js) ---------------------------------------------------------------------
+  # Público: asígnale el dominio useaegis.app en Coolify (puerto 3000). Reenvía /api → relay.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Vacío en clearnet-only. Cuando exista la .onion de la web, ponla aquí y redeploya
+        # (se incrusta en build-time para el enlace "abre nuestra .onion").
+        NEXT_PUBLIC_WEB_ONION_URL: ${NEXT_PUBLIC_WEB_ONION_URL:-}
+        # BUILD-TIME: Next congela el rewrite /api→relay en el build (no en runtime). Sin Caddy
+        # delante (caso Coolify), este rewrite ES el proxy, así que el destino debe hornearse aquí.
+        RELAY_ORIGIN: ${RELAY_ORIGIN:-http://relay:8443}
+        # Umami (analítica de la landing) — NEXT_PUBLIC_* build-time. Vacías = sin analítica.
+        NEXT_PUBLIC_UMAMI_SRC: ${NEXT_PUBLIC_UMAMI_SRC:-}
+        NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
+    restart: unless-stopped
+    # Contención (ver relay). Next en runtime es ligero, pero puede picar bajo carga → 1 GiB de tope.
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      # La web (server-side) reenvía /api/* al relay por la red interna. El navegador solo habla
+      # con useaegis.app → same-origin, sin CORS.
+      RELAY_ORIGIN: http://relay:8443
+    depends_on:
+      - relay
+    expose:
+      - "3000"
+
+  # --- Tor: puerta .onion de la WEB (opcional, misma VM) ---------------------------------
+  # Hidden service v3 saliente: se conecta a la red Tor, NO abre puerto entrante (cero superficie
+  # de ataque nueva). La onion de la web apunta a `web:3000` (Next sirve la web y reenvía /api→relay
+  # same-origin; aquí NO hay Caddy). También publica la onion DIRECTA del relay (relay:8443) para
+  # clientes nativos. Las claves viven en el volumen `aegis-tor-data` → la dirección .onion NO
+  # cambia entre despliegues. Ver docs/aegis-coolify-deploy.md §9.
+  #
+  # Tras el 1er deploy, saca la dirección y hornéala en el enlace "abre nuestra .onion":
+  #   docker compose exec tor cat /var/lib/tor/aegis-web/hostname
+  #   → pon ese valor en NEXT_PUBLIC_WEB_ONION_URL (panel de Coolify) y REDEPLOY.
+  #
+  # Si NO quieres la puerta .onion, borra este servicio (y su volumen): web/relay siguen igual.
+  tor:
+    build:
+      context: ./infra/tor
+      dockerfile: Dockerfile.coolify
+    restart: unless-stopped
+    # Contención (ver relay). Tor es ligero; un tope bajo basta y evita que un intro-flood
+    # que agote memoria en el proceso Tor arrastre al host.
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - web
+    volumes:
+      - aegis-tor-data:/var/lib/tor
+
+volumes:
+  # Persiste las claves de las .onion (hs_ed25519_secret_key) → dirección estable entre deploys.
+  aegis-tor-data:

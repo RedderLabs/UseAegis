@@ -3,6 +3,7 @@ import { buildServer } from "./server";
 import { config } from "./config";
 import { closePool } from "./db/pool";
 import { startMaintenance } from "./auth/maintenance";
+import { closeMailboxEvents, initMailboxEvents } from "./messaging/events";
 
 async function main(): Promise<void> {
   const app = buildServer();
@@ -15,6 +16,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Pub/sub del push en tiempo real (Dragonfly). Tolerante: si no hay REDIS_URL, sigue en proceso.
+  await initMailboxEvents(app.log);
+
   // Barrido periódico de challenges/sesiones vencidas.
   const maintenance = startMaintenance(app.log, config.maintenanceIntervalSeconds);
 
@@ -24,6 +28,7 @@ async function main(): Promise<void> {
     try {
       maintenance.stop();
       await app.close();
+      await closeMailboxEvents();
       await closePool();
       process.exit(0);
     } catch (err) {

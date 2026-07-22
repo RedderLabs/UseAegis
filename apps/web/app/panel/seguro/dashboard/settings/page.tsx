@@ -1,41 +1,85 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
-import { startSession, getToken } from "@/lib/session";
-import { setFaviconSecure } from "@/lib/favicon";
-import { fetchMe } from "@/lib/relay-client";
-import { IconCopy, IconDownload } from "@/components/Icons";
+import { getToken } from "@/lib/session";
+import { claimUsername, fetchMe, RelayError, WEB_ONION_URL } from "@/lib/relay-client";
+import { generateUsername } from "@/lib/username";
+import { encodeContactUri } from "@/lib/contact-uri";
+import { ContactQR } from "@/components/ContactQr";
+import { IconCopy, IconDownload, IconQr } from "@/components/Icons";
 
 function Settings() {
   const session = useDashboardSession();
   const grouped = groupIdentity(session.id);
-  const [secure, setSecure] = useState(session.secure);
   const [copied, setCopied] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [secureError, setSecureError] = useState<string | null>(null);
+  // La puerta (transporte) la fija el origen por el que se abrió la app; `session.secure` la
+  // guarda al iniciar sesión (true = .onion). Ya NO es un toggle: aquí solo se muestra.
+  const onion = session.secure;
 
-  // Es el MISMO switch de sesión protegida (.onion) que en login. Al cambiarlo hacemos una
-  // comprobación REAL contra el relay por la puerta destino (clearnet/.onion): si esa puerta no
-  // enruta (p. ej. .onion sin Tor, o un bloqueador cortando la petición) NO fijamos el estado y
-  // mostramos el error, en vez de dejar el flag ON en silencio.
-  async function toggleSecure() {
-    if (checking) return;
-    const next = !secure;
-    setChecking(true);
-    setSecureError(null);
+  // Nombre de usuario público (handle): con él te encuentran para añadirte como contacto.
+  // NO se teclea a mano — se GENERA (palabra + número, legible) y el usuario re-genera hasta que
+  // le guste. Así el campo no tiene texto libre (cero superficie de inyección) y siempre es válido.
+  const [username, setUsername] = useState<string | null>(null);
+  const [usernameLoaded, setUsernameLoaded] = useState(false);
+  const [candidate, setCandidate] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameSaved, setNameSaved] = useState(false);
+
+  // Lee el nombre actual del servidor y propone un primer candidato (solo en cliente: usa crypto).
+  useEffect(() => {
+    setCandidate(generateUsername());
+    const token = getToken();
+    if (!token) {
+      setUsernameLoaded(true);
+      return;
+    }
+    fetchMe(token)
+      .then((me) => setUsername(me.username))
+      .catch(() => {
+        /* el servidor puede estar caído; se puede reintentar al guardar */
+      })
+      .finally(() => setUsernameLoaded(true));
+  }, []);
+
+  function regenerate() {
+    setNameError(null);
+    setNameSaved(false);
+    setCandidate(generateUsername());
+  }
+
+  async function claimCandidate() {
+    const token = getToken();
+    if (!token || savingName || !candidate) return;
+    setSavingName(true);
+    setNameError(null);
+    setNameSaved(false);
     try {
-      await fetchMe(getToken() ?? "", next);
-      setSecure(next);
-      startSession({ ...session, secure: next });
-      setFaviconSecure(next);
+      // Reintenta con nombres nuevos por si el sorteo choca con alguno ya existente.
+      let attempt = candidate;
+      for (let i = 0; i < 6; i++) {
+        try {
+          const res = await claimUsername(token, attempt);
+          setUsername(res.username);
+          setCandidate(generateUsername());
+          setNameSaved(true);
+          window.setTimeout(() => setNameSaved(false), 2500);
+          return;
+        } catch (err) {
+          if (err instanceof RelayError && err.code === "username_taken") {
+            attempt = generateUsername(); // otro nombre y a reintentar
+            continue;
+          }
+          throw err;
+        }
+      }
+      setNameError("No conseguimos reservar un nombre libre. Prueba «Regenerar» y de nuevo.");
     } catch (err) {
-      setSecureError(
-        (err as Error)?.message ?? "No se pudo verificar la sesión por esa puerta.",
-      );
+      setNameError(err instanceof Error ? err.message : "No se pudo guardar el nombre.");
     } finally {
-      setChecking(false);
+      setSavingName(false);
     }
   }
 
@@ -49,10 +93,43 @@ function Settings() {
     }
   }
 
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  // Mi URI de contacto (lo que codifica el QR). La clave siempre está; el @nombre se incrusta
+  // cuando carga. Si la clave no fuese válida, no rompemos la página: cae a null → "no disponible".
+  const contactUri = useMemo(() => {
+    try {
+      return encodeContactUri({ pub: session.publicKey, handle: username });
+    } catch {
+      return null;
+    }
+  }, [session.publicKey, username]);
+
+  async function copyContactCode() {
+    if (!contactUri) return;
+    try {
+      await navigator.clipboard.writeText(contactUri);
+      setCopiedCode(true);
+      window.setTimeout(() => setCopiedCode(false), 1500);
+    } catch {
+      /* noop */
+    }
+  }
+
+  async function downloadQr() {
+    if (!contactUri) return;
+    const QRCode = (await import("qrcode")).default;
+    const dataUrl = await QRCode.toDataURL(contactUri, { margin: 1, width: 512 });
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `aegis-qr${username ? `-${username}` : ""}.png`;
+    a.click();
+  }
+
   function downloadId() {
     const blob = new Blob(
       [
-        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (para reconocerla o compartirla).\nNO sirve para recuperar el acceso: para eso está el código de recuperación\nque descargaste al crear la identidad.`,
+        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (sirve para reconocerte o compartirte).\nNO sirve para recuperar el acceso: para eso está la frase de recuperación\n(24 palabras) que guardaste al crear la identidad.`,
       ],
       { type: "text/plain" },
     );
@@ -72,63 +149,161 @@ function Settings() {
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Sesión segura */}
-        <section className="bg-surface border border-line rounded-sm p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="label text-text">Sesión protegida (.onion)</p>
-              <p className="font-mono text-[11px] text-muted-2 mt-1">
-                Enruta el relay por el hidden service .onion. Requiere Tor; en un navegador
-                normal no funciona.
+        {/* Nombre de usuario público (handle) — se elige UNA vez y es definitivo */}
+        <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
+          <p className="label text-text">Tu nombre de usuario</p>
+          <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
+            Es el nombre público con el que te añaden como contacto. Lo generamos por ti (una
+            palabra + un número) para que sea único.{" "}
+            <span className="text-muted">
+              Se elige una sola vez y queda fijo: no se puede cambiar después.
+            </span>
+          </p>
+
+          <div className="mt-4 pt-4 border-t border-line">
+            <p className="label text-muted-2 mb-1">Ahora mismo</p>
+            {!usernameLoaded ? (
+              <p className="font-mono text-[13px] text-muted-2">Comprobando…</p>
+            ) : username ? (
+              <div className="flex items-center gap-3">
+                <p className="font-mono text-[15px] text-accent">@{username}</p>
+                <button
+                  onClick={() => void navigator.clipboard?.writeText(`@${username}`).catch(() => {})}
+                  className="inline-flex items-center gap-1 label text-muted-2 hover:text-text transition-colors"
+                >
+                  <IconCopy className="w-3.5 h-3.5" /> Copiar
+                </button>
+              </div>
+            ) : (
+              <p className="font-mono text-[13px] text-muted">
+                Todavía no tienes nombre. Elige uno para que puedan añadirte.
               </p>
-            </div>
-            <button
-              type="button"
-              onClick={toggleSecure}
-              role="switch"
-              aria-checked={secure}
-              aria-busy={checking}
-              disabled={checking}
-              className={`relative w-11 h-6 rounded-full border transition-colors shrink-0 disabled:opacity-50 ${
-                secure
-                  ? "bg-accent/20 border-accent/40"
-                  : "bg-surface-2 border-line"
-              }`}
-            >
-              <span
-                className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full transition-all"
-                style={{
-                  backgroundColor: secure ? "#c3f400" : "#8e9379",
-                  transform: secure ? "translateX(20px)" : "none",
-                }}
-              />
-            </button>
+            )}
           </div>
+
+          {/* Una vez fijado, el nombre es definitivo: se oculta la reclamación. */}
+          {usernameLoaded &&
+            (username ? (
+              <div className="mt-4 flex items-start gap-2 bg-bg border border-line rounded-sm p-3">
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
+                  Tu nombre de usuario es <span className="text-accent">definitivo</span>. Comparte
+                  tu <span className="text-text">@{username}</span> completo para que te añadan como
+                  contacto.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <p className="label text-muted-2 mb-1.5">Tu nombre propuesto</p>
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                  <div className="flex-1 flex items-center bg-bg border border-line rounded-sm px-3 py-2.5">
+                    <span className="font-mono text-[15px] text-accent select-all">
+                      @{candidate ?? "…"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={regenerate}
+                      disabled={savingName}
+                      className="shrink-0 label py-2.5 px-4 border border-line text-muted hover:text-text hover:border-accent-dim rounded-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      Regenerar
+                    </button>
+                    <button
+                      onClick={claimCandidate}
+                      disabled={savingName || !candidate}
+                      className="shrink-0 label py-2.5 px-5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      {savingName ? "Guardando…" : "Usar este"}
+                    </button>
+                  </div>
+                </div>
+                <p className="font-mono text-[11px] text-status-p2p mt-2">
+                  Elige con calma: una vez lo confirmes con «Usar este», no podrás cambiarlo.
+                </p>
+                {nameError && (
+                  <p className="font-mono text-[11px] text-status-p2p mt-2">{nameError}</p>
+                )}
+                {nameSaved && (
+                  <p className="font-mono text-[11px] text-accent mt-2">
+                    Guardado ✓ · comparte tu @nombre completo para que te añadan.
+                  </p>
+                )}
+              </div>
+            ))}
+        </section>
+
+        {/* Mi código QR — para que me añadan escaneándolo o subiendo una foto de él */}
+        <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
+          <p className="label text-text flex items-center gap-1.5">
+            <IconQr className="w-4 h-4 text-accent" /> Tu código QR
+          </p>
+          <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
+            Otra persona te añade escaneándolo con su móvil (o subiendo una foto). Tu llave viaja
+            dentro del código, así que no depende de que el servidor diga la verdad: al añadirte se
+            comprueba tu llave de cifrado.
+          </p>
+          <div className="mt-4 pt-4 border-t border-line flex flex-col sm:flex-row gap-5 sm:items-center">
+            {contactUri ? (
+              <ContactQR uri={contactUri} />
+            ) : (
+              <p className="font-mono text-[12px] text-muted-2">No disponible.</p>
+            )}
+            <div className="flex-1 min-w-0">
+              {!username && (
+                <p className="font-mono text-[11px] text-status-p2p mb-3 leading-relaxed">
+                  Aún no tienes @nombre: el QR ya funciona, pero elige uno arriba para que tu nombre
+                  se muestre a quien te añada.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={copyContactCode}
+                  disabled={!contactUri}
+                  className="inline-flex items-center gap-1.5 label py-2 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
+                >
+                  <IconCopy className="w-3.5 h-3.5" /> {copiedCode ? "Copiado" : "Copiar código"}
+                </button>
+                <button
+                  onClick={() => void downloadQr()}
+                  disabled={!contactUri}
+                  className="inline-flex items-center gap-1.5 label py-2 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
+                >
+                  <IconDownload className="w-3.5 h-3.5" /> Descargar QR
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Transporte / puerta */}
+        <section className="bg-surface border border-line rounded-sm p-5">
+          <p className="label text-text">Conexión</p>
+          <p className="font-mono text-[11px] text-muted-2 mt-1">
+            La decide la dirección por la que abriste la app: no hay nada que activar. Para el modo
+            protegido, abre la <code className="text-text">.onion</code> en el Navegador Tor.
+          </p>
           <div className="mt-4 pt-4 border-t border-line flex items-center gap-2">
             <span
               className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: secure ? "#c3f400" : "#fbbf24" }}
+              style={{ backgroundColor: onion ? "#c3f400" : "#fbbf24" }}
             />
-            <span
-              className="label"
-              style={{ color: secure ? "#c3f400" : "#fbbf24" }}
-            >
-              {secure ? "Sesión protegida" : "Sesión sin proteger"}
-            </span>
-            <span className="font-mono text-[10px] text-muted-2">
-              — se refleja en el icono y en el estado de la sesión
+            <span className="label" style={{ color: onion ? "#c3f400" : "#fbbf24" }}>
+              {onion ? "Conexión protegida (Tor)" : "Conexión normal"}
             </span>
           </div>
-          {checking && (
-            <p className="font-mono text-[11px] text-muted mt-2">
-              Comprobando la sesión por esa puerta…
-            </p>
-          )}
-          {secureError && (
-            <p className="font-mono text-[11px] text-status-p2p leading-relaxed mt-2">
-              {secureError}
-            </p>
-          )}
+          <p className="font-mono text-[11px] text-muted-2 mt-3 leading-relaxed">
+            {onion
+              ? "Tu conexión va por Tor; tu IP no es visible para el servidor."
+              : "Tu IP es visible para el servidor."}
+            {!onion && WEB_ONION_URL && (
+              <>
+                {" "}
+                Para más anonimato o si hay censura, abre nuestra{" "}
+                <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
+              </>
+            )}
+          </p>
         </section>
 
         {/* Identidad */}

@@ -4,23 +4,27 @@
  * la identidad. El par de claves vive en IndexedDB (lib/crypto/identity-store.ts); aquí
  * solo persiste el token de sesión y datos de presentación.
  *
- * `id` sigue siendo la huella de 16 letras (derivada de la clave pública) y `secure` el
- * toggle de sesión segura — ambos los leen los gates de /panel y el favicon.
+ * `id` sigue siendo la huella de 16 letras (derivada de la clave pública). `secure` ya NO es un
+ * toggle del usuario: se DERIVA de la puerta por la que se sirve la web (.onion → protegida,
+ * clearnet → normal), ver [[relay-client]] `isOnionSession`. Lo leen los gates de /panel y el favicon.
  */
+import { isOnionSession } from "./relay-client";
 
 const SESSION_KEY = "aegis.session";
 
 export interface Session {
   id: string; // huella de 16 letras (A–Z) derivada de la clave pública
-  secure: boolean; // toggle "sesión segura" del login
+  secure: boolean; // DERIVADO: true si la app se sirve por la puerta .onion
   token: string; // bearer token emitido por el relay
   publicKey: string; // clave pública en base64url
   expiresAt: string; // ISO-8601
 }
 
-export function startSession(session: Session): void {
+/** Abre la sesión. `secure` se fija según la puerta actual (no lo pasa el caller). */
+export function startSession(session: Omit<Session, "secure">): void {
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    const full: Session = { ...session, secure: isOnionSession() };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(full));
   } catch {
     /* almacenamiento no disponible */
   }

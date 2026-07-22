@@ -1,0 +1,45 @@
+# Tor hidden services (.onion) de Aegis en el NODO TOR DEDICADO (Tiny), sobre LAN.
+#
+# Topología: esta máquina corre SOLO Tor. La web y el relay viven en OTRA máquina (la Coolify VM),
+# alcanzable por LAN. Tor exige IP literal en HiddenServicePort (no resuelve DNS): el entrypoint
+# sustituye el marcador __COOLIFY_HOST__ por la IP LAN de la Coolify VM (env COOLIFY_HOST) al
+# arrancar y reescribe una copia del torrc. El torrc del repo queda legible con el marcador.
+#
+# Los puertos 3000 (web) y 8443 (relay) los publica la Coolify VM en su IP LAN, y su firewall
+# (cadena DOCKER-USER, porque Docker se salta ufw) los restringe a la IP de ESTE Tiny.
+#
+# Sobre .onion va HTTP plano: el cifrado por capas de Tor protege el circuito (y el contenido va
+# E2E aparte). El tramo LAN Tiny→Coolify va en claro por la red local de confianza; si se quisiera
+# cifrar también ese salto, se sustituye por un túnel WireGuard (ver docs/aegis-onion-tiny-migration.md).
+
+Log notice stderr
+DataDirectory /var/lib/tor
+
+# --- 1) Onion DIRECTA del relay (API) — para clientes nativos/directos ---
+HiddenServiceDir /var/lib/tor/aegis-relay
+HiddenServiceVersion 3
+HiddenServicePort 80 __COOLIFY_HOST__:8443
+# Defensa anti-DoS (per-service): IntroDoS (rate-limit en intro points), PoW (proof-of-work bajo
+# presión; no-op inofensivo si la build de Tor no lo trae) y MaxStreams (mata circuitos abusivos).
+HiddenServiceEnableIntroDoSDefense 1
+HiddenServiceEnableIntroDoSRatePerSec 25
+HiddenServiceEnableIntroDoSBurstPerSec 200
+HiddenServicePoWDefensesEnabled 1
+HiddenServiceMaxStreams 32
+HiddenServiceMaxStreamsCloseCircuit 1
+
+# --- 2) Onion de la WEB (navegadores) → web:3000 (Next: web + /api→relay same-origin) ---
+HiddenServiceDir /var/lib/tor/aegis-web
+HiddenServiceVersion 3
+HiddenServicePort 80 __COOLIFY_HOST__:3000
+HiddenServiceEnableIntroDoSDefense 1
+HiddenServiceEnableIntroDoSRatePerSec 25
+HiddenServiceEnableIntroDoSBurstPerSec 200
+HiddenServicePoWDefensesEnabled 1
+HiddenServiceMaxStreams 64
+HiddenServiceMaxStreamsCloseCircuit 1
+
+# SOCKS SOLO en el loopback DEL contenedor: sin warning "open proxy", sin exposición al bridge.
+# Para autocomprobar las .onion desde dentro (la imagen trae curl):
+#   docker compose exec tor curl --socks5-hostname 127.0.0.1:9050 http://<onion>/api/health
+SocksPort 127.0.0.1:9050

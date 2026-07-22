@@ -2,6 +2,7 @@ import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
 import { Protects } from "@/components/Protects";
 import { Transports } from "@/components/Transports";
+import { SecureSession } from "@/components/SecureSession";
 import { Handshake } from "@/components/Handshake";
 import { Limits } from "@/components/Limits";
 import { CTA } from "@/components/CTA";
@@ -20,6 +21,7 @@ export default function Home() {
         </div>
         <Protects />
         <Transports />
+        <SecureSession />
         <Handshake />
         <Limits />
         <CTA />

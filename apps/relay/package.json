@@ -4,7 +4,7 @@
   "private": true,
   "description": "Relay del Modo A (Fastify + PostgreSQL): Auth Ed25519 challenge-response y sesiones.",
   "scripts": {
-    "infra:up": "docker compose -f ../../docker-compose.yml up -d --wait aegis-db aegis-dragonfly",
+    "infra:up": "docker compose -f ../../docker-compose.yml up -d --wait aegis-db",
     "infra:down": "docker compose -f ../../docker-compose.yml down",
     "infra:reset": "docker compose -f ../../docker-compose.yml down -v && pnpm infra:up && pnpm migrate",
     "migrate": "dotenv -e .env -- node-pg-migrate up",
@@ -16,12 +16,13 @@
     "build": "tsc",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm infra:up && pnpm migrate && dotenv -e .env -v LOG_LEVEL=silent -- tsx --test src/auth/auth.test.ts src/directory/directory.test.ts"
+    "test": "pnpm infra:up && pnpm migrate && dotenv -e .env -v LOG_LEVEL=silent -- tsx --test src/auth/auth.test.ts src/directory/directory.test.ts src/messaging/messaging.test.ts src/blocks/blocks.test.ts src/media/media.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@fastify/rate-limit": "^10.2.1",
     "fastify": "^5.2.0",
+    "ioredis": "^5.11.1",
     "pg": "^8.13.1"
   },
   "devDependencies": {

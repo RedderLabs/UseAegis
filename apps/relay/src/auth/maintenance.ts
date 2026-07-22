@@ -4,11 +4,19 @@
 import type { FastifyBaseLogger } from "fastify";
 import { deleteExpiredChallenges } from "./challenges";
 import { deleteDeadSessions } from "./sessions";
+import { deleteExpiredBlobs } from "../messaging/blobs";
+import { config } from "../config";
+import { deleteExpiredMediaObjects } from "../media/store";
+import { purgeMediaFromBucket } from "../media/routes";
+
+// Cuántos objetos de media caducados barre por tick (acotado: cada borrado es una llamada al
+// bucket; se drena en varios ticks si hay acumulación).
+const MEDIA_SWEEP_LIMIT = 100;
 
 export interface Maintenance {
   stop: () => void;
   /** Ejecuta un barrido inmediato (usado también por los tests). */
-  runOnce: () => Promise<{ challenges: number; sessions: number }>;
+  runOnce: () => Promise<{ challenges: number; sessions: number; blobs: number; media: number }>;
 }
 
 export function startMaintenance(
@@ -18,10 +26,23 @@ export function startMaintenance(
   async function runOnce() {
     const challenges = await deleteExpiredChallenges();
     const sessions = await deleteDeadSessions();
-    if (challenges > 0 || sessions > 0) {
-      logger.info({ challenges, sessions }, "mantenimiento: filas vencidas borradas");
+    const blobs = await deleteExpiredBlobs();
+    // Media: borra primero las filas vencidas (devuelve sus keys) y luego purga el bucket. Si el
+    // almacén no está configurado, no hay filas de media que barrer (nadie pudo subir).
+    let media = 0;
+    if (config.media) {
+      const expiredKeys = await deleteExpiredMediaObjects(MEDIA_SWEEP_LIMIT);
+      media = expiredKeys.length;
+      if (expiredKeys.length > 0) {
+        await purgeMediaFromBucket(config.media, expiredKeys, (err, key) =>
+          logger.error({ err, key }, "no se pudo purgar el objeto de media del bucket"),
+        );
+      }
     }
-    return { challenges, sessions };
+    if (challenges > 0 || sessions > 0 || blobs > 0 || media > 0) {
+      logger.info({ challenges, sessions, blobs, media }, "mantenimiento: filas vencidas borradas");
+    }
+    return { challenges, sessions, blobs, media };
   }
 
   const timer = setInterval(() => {

@@ -1,118 +1,523 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
-import { groupIdentity } from "@/lib/identity";
-import { IconSend, IconMic, IconClip, IconCheck } from "@/components/Icons";
+import { getToken } from "@/lib/session";
+import { listBlocks, RelayError, resolveUsername } from "@/lib/relay-client";
+import {
+  addContactByPublicKey,
+  addContactFromDirectory,
+  listContacts,
+  type Contact,
+} from "@/lib/contacts";
+import { AddByQr } from "@/components/ContactQr";
+import type { ContactUri } from "@/lib/contact-uri";
+import {
+  conversationPeers,
+  createChatTransport,
+  downloadAttachment,
+  hasIncoming,
+  loadHistory,
+  markRead,
+  markUnread,
+  mergeIncoming,
+  saveHistory,
+  unreadPeers,
+  type ChatMessage,
+  type ChatTransport,
+  type FileAttachment,
+} from "@/lib/chat";
+import { IconSend, IconCheck, IconClip, IconDownload, IconPlay } from "@/components/Icons";
+import { VoiceRecorder } from "@/components/VoiceRecorder";
 
-type Msg = { id: number; text: string; delivered: boolean; ts: number };
+const BASE = "/panel/seguro/dashboard";
 
-function Waveform({ bars = 22 }: { bars?: number }) {
-  const heights = [40, 70, 30, 90, 55, 65, 35, 80, 45, 60, 30, 75, 50, 40];
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function contactLabel(c: Contact): string {
+  return c.handle ? `@${c.handle}` : c.fingerprint;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function isAudio(file: FileAttachment): boolean {
+  return file.mime.startsWith("audio/");
+}
+
+// Tope de subida acorde con el límite del relay (MEDIA_MAX_BYTES por defecto = 50 MiB).
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+/** Burbuja de nota de voz: descarga+descifra bajo demanda y reproduce con controles nativos. */
+function AudioBubble({ file }: { file: FileAttachment }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [url]);
+
+  async function load() {
+    const token = getToken();
+    if (!token || loading || url) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const blob = await downloadAttachment(token, file);
+      setUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo cargar la nota de voz.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (url) {
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    return <audio className="max-w-[220px]" controls autoPlay src={url} />;
+  }
+  const hint = file.durationMs ? formatDuration(file.durationMs) : formatSize(file.size);
   return (
-    <div className="flex items-end gap-[3px] h-6">
-      {Array.from({ length: bars }).map((_, i) => (
-        <span
-          key={i}
-          className="w-[3px] rounded-full bg-accent-dim"
-          style={{ height: `${heights[i % heights.length]}%` }}
-        />
-      ))}
-    </div>
+    <button
+      onClick={() => void load()}
+      disabled={loading}
+      className="flex items-center gap-3 text-left w-full min-w-0 disabled:opacity-60"
+      title="Reproducir (descarga y descifra)"
+    >
+      <span className="w-9 h-9 rounded-sm bg-surface border border-line flex items-center justify-center shrink-0 text-accent">
+        <IconPlay className="w-4 h-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] text-text">Nota de voz</span>
+        <span className="block font-mono text-[10px] text-muted-2">
+          {loading ? "Descifrando…" : error ? error : `${hint} · reproducir`}
+        </span>
+      </span>
+    </button>
   );
 }
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes(),
-  ).padStart(2, "0")}`;
+/** Burbuja de un adjunto: nombre + tamaño + botón para descargar y descifrar bajo demanda. */
+function AttachmentBubble({ file }: { file: FileAttachment }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function open() {
+    const token = getToken();
+    if (!token || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await downloadAttachment(token, file);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoca tras un momento para no cortar la descarga en curso.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo descargar el archivo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={() => void open()}
+      disabled={busy}
+      className="flex items-center gap-3 text-left w-full min-w-0 disabled:opacity-60"
+      title="Descargar y descifrar"
+    >
+      <span className="w-9 h-9 rounded-sm bg-surface border border-line flex items-center justify-center shrink-0 text-accent">
+        <IconDownload className="w-4 h-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] text-text truncate">{file.name}</span>
+        <span className="block font-mono text-[10px] text-muted-2">
+          {busy ? "Descifrando…" : error ? error : `${formatSize(file.size)} · descargar`}
+        </span>
+      </span>
+    </button>
+  );
 }
 
 function Channel() {
   const session = useDashboardSession();
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const ownPub = session.publicKey;
+  const searchParams = useSearchParams();
+  const peerParam = searchParams.get("peer");
+
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selected, setSelected] = useState<Contact | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState(0); // solicitudes de contacto sin resolver
+  const [unread, setUnread] = useState<Set<string>>(new Set()); // conversaciones con no leídos
+
+  // Alta de contacto por handle.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState<"name" | "qr">("name");
+  const [handle, setHandle] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const [attaching, setAttaching] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const threadRef = useRef<HTMLDivElement>(null);
+  const selectedRef = useRef<Contact | null>(null);
+  selectedRef.current = selected;
+  const contactsRef = useRef<Contact[]>([]);
+  contactsRef.current = contacts;
+  const blockedRef = useRef<Set<string>>(new Set());
+  const transportRef = useRef<ChatTransport | null>(null);
 
-  const storageKey = `aegis.chat.${session.id}`;
-  const grouped = groupIdentity(session.id);
+  // Recalcula cuántos peers nos han escrito sin ser contacto ni estar bloqueados (solicitudes).
+  const refreshPending = useCallback(() => {
+    const contactPubs = new Set(contactsRef.current.map((c) => c.pub));
+    const count = conversationPeers(ownPub).filter(
+      (p) => hasIncoming(ownPub, p) && !contactPubs.has(p) && !blockedRef.current.has(p),
+    ).length;
+    setPending(count);
+  }, [ownPub]);
 
+  // Carga inicial: libreta + lista de bloqueados; selecciona contacto (?peer= o el primero).
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) setMessages(JSON.parse(raw) as Msg[]);
-    } catch {
-      /* noop */
-    }
-  }, [storageKey]);
+    let alive = true;
+    const token = getToken();
+    Promise.all([
+      listContacts(),
+      token ? listBlocks(token).catch(() => []) : Promise.resolve([]),
+    ]).then(([list, blocks]) => {
+      if (!alive) return;
+      blockedRef.current = new Set(blocks.map((b) => b.publicKey));
+      setContacts(list);
+      setSelected((cur) => cur ?? list.find((c) => c.pub === peerParam) ?? list[0] ?? null);
+      contactsRef.current = list;
+      refreshPending();
+    });
+    return () => {
+      alive = false;
+    };
+  }, [peerParam, refreshPending]);
 
+  // Al cambiar de contacto, carga su historial local y lo marca como leído.
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(messages));
-    } catch {
-      /* noop */
+    setMessages(selected ? loadHistory(ownPub, selected.pub) : []);
+    if (selected) {
+      markRead(ownPub, selected.pub);
+      setUnread(unreadPeers(ownPub));
     }
-  }, [messages, storageKey]);
+  }, [selected, ownPub]);
+
+  // Recepción por el transporte: abre cada entrante, lo integra por conversación y refresca la
+  // abierta. El transporte posee el bucle de sondeo (start/stop) y el cursor; aquí solo se
+  // reacciona a cada mensaje ya abierto y clasificado.
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    const transport = createChatTransport(token, ownPub);
+    transportRef.current = transport;
+
+    const off = transport.subscribe((m) => {
+      const touched = mergeIncoming(ownPub, [m], (p) => blockedRef.current.has(p));
+      const open = selectedRef.current;
+      // No leído = entrante de un CONTACTO cuya conversación no está abierta. Los no-contactos se
+      // avisan por «Solicitudes» (banner), no por este badge (no se abren en el Canal).
+      const isContact = contactsRef.current.some((c) => c.pub === m.peerPub);
+      if (m.dir === "in" && !blockedRef.current.has(m.peerPub) && isContact && m.peerPub !== open?.pub) {
+        markUnread(ownPub, m.peerPub);
+      }
+      if (open && touched.has(open.pub)) {
+        setMessages(loadHistory(ownPub, open.pub));
+        markRead(ownPub, open.pub); // lo abierto se lee al vuelo
+      }
+      setUnread(unreadPeers(ownPub));
+      refreshPending(); // un entrante de un no-contacto es una solicitud nueva
+    });
+
+    transport.start();
+    return () => {
+      off();
+      transport.stop();
+      transportRef.current = null;
+    };
+  }, [ownPub, refreshPending]);
 
   useEffect(() => {
     threadRef.current?.scrollTo(0, threadRef.current.scrollHeight);
   }, [messages]);
 
-  function send() {
+  const send = useCallback(async () => {
     const text = draft.trim();
-    if (!text) return;
-    const id = Date.now();
-    setMessages((m) => [...m, { id, text, delivered: false, ts: id }]);
+    const transport = transportRef.current;
+    if (!text || !selected || !transport || sending) return;
+    setSending(true);
     setDraft("");
-    window.setTimeout(
-      () =>
-        setMessages((m) =>
-          m.map((msg) => (msg.id === id ? { ...msg, delivered: true } : msg)),
-        ),
-      600,
-    );
+    try {
+      const sent = await transport.sendText(selected, text);
+      setMessages((prev) => {
+        const next = [...prev, sent];
+        saveHistory(ownPub, selected.pub, next);
+        return next;
+      });
+    } catch (err) {
+      // Muestra la causa real (RelayError o cualquier Error, p. ej. "Identidad bloqueada").
+      const msg = err instanceof Error ? err.message : "No se pudo enviar el mensaje.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          dir: "out",
+          body: `${text}  ⚠️ ${msg}`,
+          sentAt: new Date().toISOString(),
+          peerPub: selected.pub,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  }, [draft, selected, sending, ownPub]);
+
+  const sendAttachment = useCallback(
+    async (file: File, kind: "file" | "audio" = "file", durationMs?: number) => {
+      const transport = transportRef.current;
+      if (!file || !selected || !transport || attaching) return;
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            dir: "out",
+            body: `⚠️ «${file.name}» supera el límite de ${formatSize(MAX_ATTACHMENT_BYTES)}.`,
+            sentAt: new Date().toISOString(),
+            peerPub: selected.pub,
+          },
+        ]);
+        return;
+      }
+      setAttaching(true);
+      try {
+        const sent = await transport.sendFile(selected, file, kind, durationMs);
+        setMessages((prev) => {
+          const next = [...prev, sent];
+          saveHistory(ownPub, selected.pub, next);
+          return next;
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "No se pudo enviar el archivo.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            dir: "out",
+            body: `⚠️ ${msg}`,
+            sentAt: new Date().toISOString(),
+            peerPub: selected.pub,
+          },
+        ]);
+      } finally {
+        setAttaching(false);
+      }
+    },
+    [selected, attaching, ownPub],
+  );
+
+  /** Refresca la lista, selecciona el contacto recién añadido y cierra el panel de alta. */
+  async function finishAdd(contact: Contact) {
+    const list = await listContacts();
+    setContacts(list);
+    contactsRef.current = list;
+    setSelected(contact);
+    setHandle("");
+    setAddOpen(false);
+    refreshPending();
+  }
+
+  async function addContact() {
+    const h = handle.trim().replace(/^@/, "");
+    const token = getToken();
+    if (!h || !token || addBusy) return;
+    setAddBusy(true);
+    setAddError(null);
+    try {
+      const entry = await resolveUsername(token, h);
+      const contact = await addContactFromDirectory(entry);
+      await finishAdd(contact);
+    } catch (err) {
+      if (err instanceof RelayError && err.status === 404) {
+        setAddError(`No existe ningún usuario con el nombre de usuario «${h}».`);
+      } else {
+        setAddError(err instanceof Error ? err.message : "No se pudo añadir el contacto.");
+      }
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
+  /** Alta desde un QR: la clave viene fuera de banda; se verifica al descargar su key bundle. */
+  async function addByQr({ pub }: ContactUri) {
+    const token = getToken();
+    if (!token) throw new Error("Sesión no disponible.");
+    if (pub === ownPub) throw new Error("Ese QR es el tuyo: no puedes añadirte a ti mismo.");
+    try {
+      const contact = await addContactByPublicKey(token, pub);
+      await finishAdd(contact);
+    } catch (err) {
+      if (err instanceof RelayError && err.status === 404) {
+        throw new Error("No encontramos esa identidad. ¿El QR es correcto y esa persona ya se registró?");
+      }
+      throw err;
+    }
   }
 
   return (
     <div className="flex flex-1 min-h-0">
-      {/* Área de conversación */}
       <section className="flex-1 flex flex-col min-w-0">
-        {/* Header del canal */}
-        <div className="shrink-0 border-b border-line bg-surface/50 backdrop-blur-sm px-4 md:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* Header: desplegable de contactos + alta */}
+        <div className="shrink-0 border-b border-line bg-surface/50 backdrop-blur-sm px-4 md:px-6 py-3">
+          <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-sm bg-surface-2 border border-line flex items-center justify-center font-mono text-accent text-sm shrink-0">
-              {session.id.slice(0, 2)}
+              {selected ? contactLabel(selected).slice(selected.handle ? 1 : 0, selected.handle ? 3 : 2).toUpperCase() : "—"}
             </div>
-            <div className="min-w-0">
-              <h1 className="font-mono text-[13px] text-text leading-tight truncate">
-                {grouped}
-              </h1>
-              <span className="inline-flex items-center gap-1.5 label text-accent">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                Canal cifrado
-              </span>
+            <div className="min-w-0 flex-1">
+              <label className="label text-muted-2 block mb-0.5">Conversación con</label>
+              <select
+                value={selected?.pub ?? ""}
+                onChange={(e) => setSelected(contacts.find((c) => c.pub === e.target.value) ?? null)}
+                disabled={contacts.length === 0}
+                className="w-full max-w-xs bg-surface-2 border border-line rounded-sm px-2 py-1.5 font-mono text-[13px] text-text focus:outline-none focus:border-accent/50 disabled:text-muted-2"
+              >
+                {contacts.length === 0 ? (
+                  <option value="">Sin contactos todavía</option>
+                ) : (
+                  contacts.map((c) => (
+                    <option key={c.pub} value={c.pub}>
+                      {unread.has(c.pub) ? "● " : ""}
+                      {contactLabel(c)}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
+            <button
+              onClick={() => {
+                setAddOpen((v) => !v);
+                setAddError(null);
+              }}
+              className="shrink-0 label text-accent border border-accent/30 rounded-sm px-3 py-2 hover:bg-accent/5 transition-colors"
+            >
+              + Añadir
+            </button>
           </div>
-          <span className="hidden sm:inline-flex items-center gap-1.5 label text-accent border border-accent/20 rounded-full px-3 py-1.5 shrink-0">
-            E2E verificado
-          </span>
+
+          {addOpen && (
+            <div className="mt-3 flex flex-col gap-3 bg-bg border border-line rounded-sm p-3">
+              {/* Selector: por nombre de usuario o por QR (fuera de banda) */}
+              <div className="flex gap-1 p-0.5 bg-surface-2 border border-line rounded-sm w-fit">
+                {(["name", "qr"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setAddMode(m);
+                      setAddError(null);
+                    }}
+                    className={`label px-3 py-1 rounded-sm transition-colors ${
+                      addMode === m ? "bg-accent text-bg" : "text-muted hover:text-text"
+                    }`}
+                  >
+                    {m === "name" ? "Por nombre" : "Por QR"}
+                  </button>
+                ))}
+              </div>
+
+              {addMode === "name" ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={handle}
+                      onChange={(e) => setHandle(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addContact()}
+                      placeholder="nombre de usuario (p. ej. alicia)"
+                      className="flex-1 bg-surface-2 border border-line rounded-sm px-3 py-2 text-[13px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent/50"
+                    />
+                    <button
+                      onClick={addContact}
+                      disabled={!handle.trim() || addBusy}
+                      className="label text-bg bg-accent rounded-sm px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+                    >
+                      {addBusy ? "Buscando…" : "Añadir"}
+                    </button>
+                  </div>
+                  {addError && <p className="text-[12px] text-error">{addError}</p>}
+                  <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
+                    Descargamos su llave de cifrado y comprobamos que es de verdad suya antes de
+                    guardarla. El buzón es el mismo por conexión normal y protegida (Tor).
+                  </p>
+                </>
+              ) : (
+                <AddByQr onAdd={addByQr} disabled={addBusy} />
+              )}
+            </div>
+          )}
         </div>
 
+        {/* Aviso de solicitudes de contacto (gente que te ha escrito sin ser contacto) */}
+        {pending > 0 && (
+          <Link
+            href={`${BASE}/contactos`}
+            className="shrink-0 flex items-center justify-between gap-3 bg-accent/10 border-b border-accent/30 px-4 md:px-6 py-2.5 hover:bg-accent/15 transition-colors"
+          >
+            <span className="label text-accent">
+              Tienes {pending} {pending === 1 ? "solicitud" : "solicitudes"} de contacto
+            </span>
+            <span className="label text-accent">Ver →</span>
+          </Link>
+        )}
+
         {/* Mensajes */}
-        <div
-          ref={threadRef}
-          className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-4"
-        >
+        <div ref={threadRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-4">
           <div className="flex justify-center">
             <span className="label text-muted-2 bg-surface-2 border border-line rounded-sm px-3 py-1.5 text-center">
-              Canal cifrado extremo a extremo · XChaCha20-Poly1305
+              Solo tú y tu contacto podéis leerlo · cifrado de extremo a extremo · XChaCha20-Poly1305
             </span>
           </div>
 
-          {messages.length === 0 ? (
+          {!selected ? (
             <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
-              <p className="text-[14px] text-muted">Sin mensajes todavía.</p>
+              <p className="text-[14px] text-muted">No tienes contactos todavía.</p>
+              <p className="font-mono text-[11px] text-muted-2">
+                Pulsa «+ Añadir» e introduce el nombre de usuario de otra persona para empezar.
+              </p>
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+              <p className="text-[14px] text-muted">
+                Sin mensajes con {contactLabel(selected)} todavía.
+              </p>
               <p className="font-mono text-[11px] text-muted-2">
                 Escribe abajo para enviar el primero.
               </p>
@@ -121,19 +526,35 @@ function Channel() {
             messages.map((m) => (
               <div
                 key={m.id}
-                className="flex flex-col items-end self-end max-w-[80%] ml-auto"
+                className={`flex flex-col max-w-[80%] ${
+                  m.dir === "out" ? "items-end self-end ml-auto" : "items-start self-start mr-auto"
+                }`}
               >
-                <div className="bg-bubble-out border border-accent/40 rounded-sm px-4 py-3">
-                  <p className="text-[14px] text-text leading-relaxed break-words">
-                    {m.text}
-                  </p>
+                <div
+                  className={`rounded-sm px-4 py-3 border ${
+                    m.dir === "out"
+                      ? "bg-bubble-out border-accent/40"
+                      : "bg-surface-2 border-line"
+                  }`}
+                >
+                  {m.file ? (
+                    isAudio(m.file) ? (
+                      <AudioBubble file={m.file} />
+                    ) : (
+                      <AttachmentBubble file={m.file} />
+                    )
+                  ) : (
+                    <p className="text-[14px] text-text leading-relaxed break-words whitespace-pre-wrap">
+                      {m.body}
+                    </p>
+                  )}
                 </div>
                 <span className="inline-flex items-center gap-1 mt-1.5 label text-accent-dim">
                   <span className="font-mono text-[10px] text-muted-2 normal-case tracking-normal">
-                    {formatTime(m.ts)}
+                    {formatTime(m.sentAt)}
                   </span>
-                  <IconCheck className="w-3 h-3" />
-                  {m.delivered ? "Entregado" : "Enviando…"}
+                  {m.dir === "out" && <IconCheck className="w-3 h-3" />}
+                  {m.dir === "out" ? "Enviado" : "Recibido"}
                 </span>
               </div>
             ))
@@ -145,15 +566,27 @@ function Channel() {
           <div className="flex items-center justify-between mb-2">
             <span className="inline-flex items-center gap-1.5 label text-muted-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent-dim" />
-              Cifrado en el dispositivo · XChaCha20-Poly1305
+              Se cifra en tu dispositivo · XChaCha20-Poly1305
             </span>
           </div>
           <div className="flex items-center gap-2 bg-surface-2 border border-line rounded-sm px-2 py-1.5 focus-within:border-accent/50 transition-colors">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void sendAttachment(file);
+                e.target.value = ""; // permite reenviar el mismo archivo
+              }}
+            />
             <button
-              className="p-2 text-muted hover:text-accent transition-colors"
-              title="Adjuntar (cifrado)"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!selected || attaching}
+              className="w-9 h-9 shrink-0 rounded-sm flex items-center justify-center text-muted hover:text-accent transition-colors disabled:opacity-40"
+              title="Adjuntar archivo (cifrado de extremo a extremo)"
             >
-              <IconClip />
+              <IconClip className="w-5 h-5" />
             </button>
             <input
               value={draft}
@@ -161,76 +594,62 @@ function Channel() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  send();
+                  void send();
                 }
               }}
-              placeholder="Transmitir mensaje…"
-              className="flex-1 bg-transparent border-none px-1 py-2 text-[14px] text-text placeholder:text-muted-2 focus:outline-none"
+              disabled={!selected}
+              placeholder={
+                attaching
+                  ? "Cifrando y enviando archivo…"
+                  : selected
+                    ? "Transmitir mensaje…"
+                    : "Elige o añade un contacto para empezar"
+              }
+              className="flex-1 bg-transparent border-none px-1 py-2 text-[14px] text-text placeholder:text-muted-2 focus:outline-none disabled:cursor-not-allowed"
             />
-            <button
-              onClick={send}
-              disabled={!draft.trim()}
-              className="w-10 h-10 rounded-sm flex items-center justify-center transition-all bg-accent text-bg hover:brightness-110 active:scale-95 disabled:opacity-40"
-              title={draft.trim() ? "Enviar" : "Nota de voz (próximamente)"}
-            >
-              {draft.trim() ? (
+            {draft.trim() ? (
+              <button
+                onClick={() => void send()}
+                disabled={!selected || sending}
+                className="w-10 h-10 rounded-sm flex items-center justify-center transition-all bg-accent text-bg hover:brightness-110 active:scale-95 disabled:opacity-40"
+                title="Enviar"
+              >
                 <IconSend className="w-5 h-5" />
-              ) : (
-                <IconMic className="w-5 h-5" />
-              )}
-            </button>
+              </button>
+            ) : (
+              <VoiceRecorder
+                disabled={!selected || attaching}
+                onRecorded={(file, durationMs) => void sendAttachment(file, "audio", durationMs)}
+              />
+            )}
           </div>
         </div>
       </section>
 
       {/* Panel derecho — metadata honesta */}
       <aside className="hidden xl:flex flex-col w-72 shrink-0 border-l border-line bg-surface/60 backdrop-blur-sm p-5 overflow-y-auto">
-        <h2 className="label text-muted border-b border-line pb-2 mb-4">
-          Estado de la sesión
-        </h2>
+        <h2 className="label text-muted border-b border-line pb-2 mb-4">Estado de la sesión</h2>
         <div className="space-y-3">
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">Transporte</p>
+            <p className="label text-muted-2 mb-1">Conexión</p>
             <div className="flex items-center justify-between">
-              <span className="font-mono text-[13px] text-accent">Relay</span>
-              <span
-                className="w-2 h-2 rounded-full bg-accent"
-                style={{ boxShadow: "0 0 8px #c3f400" }}
-              />
+              <span className="font-mono text-[13px] text-accent">
+                {session.secure ? "Protegida (Tor)" : "Normal"}
+              </span>
+              <span className="w-2 h-2 rounded-full bg-accent" style={{ boxShadow: "0 0 8px #c3f400" }} />
             </div>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
             <p className="label text-muted-2 mb-1">Cifrado de contenido</p>
-            <span className="font-mono text-[12px] text-text">
-              XChaCha20-Poly1305
-            </span>
+            <span className="font-mono text-[12px] text-text">XChaCha20-Poly1305</span>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
             <p className="label text-muted-2 mb-1">Remitente</p>
-            <span className="font-mono text-[12px] text-accent">
-              Sealed sender
-            </span>
+            <span className="font-mono text-[12px] text-accent">Remitente oculto</span>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">IP frente al relay</p>
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[12px] text-status-p2p">
-                Visible
-              </span>
-              <span className="w-2 h-2 rounded-full bg-status-p2p" />
-            </div>
-            <p className="font-mono text-[10px] text-muted-2 mt-2 leading-relaxed">
-              Tor no integrado por defecto. Ver modelo de amenaza.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <h2 className="label text-muted border-b border-line pb-2 mb-4">
-            Pulso de señal
-          </h2>
-          <div className="bg-bg border border-line rounded-sm p-4 flex items-center justify-center">
-            <Waveform bars={22} />
+            <p className="label text-muted-2 mb-1">Contactos verificados</p>
+            <span className="font-mono text-[13px] text-text">{contacts.length}</span>
           </div>
         </div>
       </aside>
@@ -241,7 +660,9 @@ function Channel() {
 export default function DashboardPage() {
   return (
     <DashboardShell>
-      <Channel />
+      <Suspense fallback={null}>
+        <Channel />
+      </Suspense>
     </DashboardShell>
   );
 }

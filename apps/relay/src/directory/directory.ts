@@ -6,8 +6,32 @@
 import { pool } from "../db/pool";
 import { toBase64Url } from "../auth/ed25519";
 
-/** Handle válido: 3–20 chars, minúsculas/dígitos/guion bajo. Igual que el CHECK de la BBDD. */
-export const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+/**
+ * Handle válido: 3–20 chars, DEBE empezar por letra (así no puede ser solo dígitos, que se
+ * confundirían con el número aleatorio) y solo minúsculas/dígitos/guion bajo. Es un SUBCONJUNTO
+ * del CHECK de la BBDD (`^[a-z0-9_]{3,20}$`), por lo que todo lo que acepta esto pasa el CHECK.
+ * Al ser una lista blanca de caracteres, es imposible colar HTML/SQL/espacios: no hay superficie
+ * de inyección por el nombre.
+ */
+export const USERNAME_RE = /^[a-z][a-z0-9_]{2,19}$/;
+
+/**
+ * Nombres RESERVADOS: no se pueden reclamar. No es defensa contra inyección (de eso se encarga
+ * USERNAME_RE), sino contra la SUPLANTACIÓN: evita que alguien se haga pasar por el equipo o por
+ * un rol de sistema (soporte, admin…). Comparación exacta sobre el nombre ya normalizado.
+ */
+export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
+  "admin", "administrator", "administrador", "root", "system", "sys", "sistema",
+  "support", "soporte", "help", "ayuda", "aegis", "official", "oficial", "staff",
+  "team", "equipo", "mod", "moderator", "moderador", "security", "seguridad",
+  "info", "contact", "contacto", "abuse", "noreply", "bot", "service", "servicio",
+  "owner", "null", "undefined", "anonymous", "anonimo", "anon",
+]);
+
+/** true si el handle está reservado (no reclamable). Recibe el nombre ya normalizado. */
+export function isReservedUsername(username: string): boolean {
+  return RESERVED_USERNAMES.has(username);
+}
 
 /** Normaliza lo que teclea el usuario a la forma canónica (minúsculas, sin espacios). */
 export function normalizeUsername(raw: string): string {
@@ -57,21 +81,27 @@ const SELECT_COLS =
 
 export type SetUsernameResult =
   | { ok: true; username: string }
-  | { ok: false; reason: "username_taken" };
+  | { ok: false; reason: "username_taken" | "username_locked" };
 
 /**
- * Reclama o cambia el handle de una identidad. El handle es único case-insensitive; si
- * otra identidad ya lo tiene, devuelve `username_taken` (violación de índice único 23505).
+ * Reclama el handle de una identidad. El nombre se elige UNA SOLA VEZ y es INMUTABLE: el
+ * UPDATE solo prende si el handle actual es NULL. Si la identidad ya tiene uno, no se toca
+ * nada y se devuelve `username_locked` (la autoridad es el relay, no la UI). Si otra identidad
+ * ya tiene ese handle, es `username_taken` (violación de índice único 23505).
  */
 export async function setUsername(
   publicKey: Buffer,
   username: string,
 ): Promise<SetUsernameResult> {
   try {
-    await pool.query(
-      `UPDATE identities SET username = $2 WHERE public_key = $1`,
+    const { rowCount } = await pool.query(
+      `UPDATE identities SET username = $2 WHERE public_key = $1 AND username IS NULL`,
       [publicKey, username],
     );
+    // 0 filas afectadas con una sesión válida (la identidad existe) ⟹ ya tenía nombre: inmutable.
+    if (rowCount === 0) {
+      return { ok: false, reason: "username_locked" };
+    }
     return { ok: true, username };
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
