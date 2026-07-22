@@ -15,6 +15,7 @@
  *
  * Solo se ejecuta en navegador (IndexedDB).
  */
+import type { PrivateKey } from "@libp2p/interface";
 import { fingerprint16, fromBase64Url, publicKeyFromSeed, signWithSeed, toBase64Url } from "./ed25519";
 import { openSeed, sealSeed, type VaultBlob } from "./vault";
 import { buildSignedPrekey as buildPrekey, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
@@ -194,6 +195,19 @@ export async function clearKeystore(): Promise<void> {
 /** Firma un mensaje con la semilla desbloqueada. Lanza si el keystore está bloqueado. */
 export function signWithUnlockedIdentity(message: Uint8Array): Promise<Uint8Array> {
   return signWithSeed(requireSeed(), message);
+}
+
+/**
+ * Clave privada libp2p (Ed25519) de la identidad desbloqueada, para el nodo P2P del Modo B
+ * (Fase 3). Se DERIVA de la MISMA semilla (ARQUITECTURA.md §2.5: no hay una segunda identidad para
+ * P2P) SIN que la semilla salga de este módulo — igual que se sellan/abren los sobres aquí dentro.
+ * libp2p se importa BAJO DEMANDA (browser-only, pesado): no se carga en las páginas del dashboard
+ * que no usan P2P. Lanza si el keystore está bloqueado.
+ */
+export async function unlockedLibp2pPrivateKey(): Promise<PrivateKey> {
+  const seed = requireSeed();
+  const { generateKeyPairFromSeed } = await import("@libp2p/crypto/keys");
+  return generateKeyPairFromSeed("Ed25519", seed);
 }
 
 /** Código de recuperación (semilla en base64url). Solo con el keystore desbloqueado. */
