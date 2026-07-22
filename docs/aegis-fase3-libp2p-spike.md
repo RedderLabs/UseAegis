@@ -57,12 +57,23 @@ guía oficial `libp2p.io/docs/webrtc-browser-connectivity`, API js-libp2p 2.x):
 - **Riesgo de bundling:** libp2p es browser-only ⇒ el nodo se **importa dinámicamente** (nunca en
   SSR) y puede requerir ajustes de webpack en Next 15. Se valida con `next build`.
 
-### D2 — Rol nuevo del nodo (bootstrap + circuit-relay v2 + signalling)
-Un peer nuevo necesita un punto de entrada al DHT y, en navegador, un relay de circuito / signalling
-WebRTC. Tu nodo Proxmox/Coolify ya hace relay-A y `.onion`.
-- **Recomendación:** que el **mismo host** haga de **bootstrap + circuit-relay v2** (servicio nuevo
-  en el compose, perfil `node`). Pregunta abierta: ¿lo colocas junto al relay (como la `.onion`) o
-  aislado? (ver [[aegis-antidos-hardening]] / [[aegis-onion-coolify]]).
+### D2 — Rol nuevo del nodo (bootstrap + circuit-relay v2 + signalling) · ✅ **DECIDIDO** (2026-07-22)
+Un peer nuevo necesita un punto de entrada a la red y, en navegador, un relay de circuito que hace
+de **señalización** del WebRTC. **Decisión:** el **mismo host** que ya corre relay + `.onion` corre
+también el bootstrap + circuit-relay v2 (coherente con la `.onion` colocada en Coolify, no aislada —
+ver [[aegis-onion-coolify]]).
+
+**Implementado (paso 3):**
+- `infra/p2p-bootstrap/server.mjs` — nodo libp2p **solo WebSockets** (el WebRTC lo ponen los
+  navegadores) con `circuitRelayServer()` + `identify`, Noise + yamux. **PeerID estable**: semilla de
+  32 bytes persistida en volumen (o inyectada por `P2P_BOOTSTRAP_SEED`) → el multiaddr de bootstrap
+  no cambia entre reinicios. Imprime PeerID + multiaddr al arrancar.
+- `infra/p2p-bootstrap/{package.json,Dockerfile}` — imagen `node:22-alpine`, sin build nativo
+  (WS-only ⇒ **no** necesita `node-datachannel`), corre como usuario `node`.
+- `docker-compose.yml` — servicio `aegis-p2p-bootstrap` (perfil `node`, puerto 9001, volumen
+  `aegis-p2p-bootstrap-data`). `docker compose --profile node config` valida.
+- **Wiring pendiente (deploy):** arrancar el servicio, copiar el multiaddr que imprime a
+  `NEXT_PUBLIC_P2P_BOOTSTRAP` y pasarlo al `P2pNode`. En prod va **detrás de Caddy con `wss`**.
 
 ### D3 — Store-and-forward (el punto frágil)
 GossipSub con caché en "peers voluntarios" **no garantiza** entrega a offline. Dos caminos:
@@ -87,10 +98,11 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
 
 ## 5. Plan de sub-pasos
 
-1. ✅ **Decisiones de diseño** (este doc) — falta que fijes D1–D4.
+1. 🟡 **Decisiones de diseño** (este doc) — D1 y D2 ✅; falta fijar D3–D4.
 2. ✅ **`createP2pTransport()`** contra el contrato + tests (hecho 2026-07-22).
-3. ⬜ **Nodo bootstrap / circuit-relay v2** en el compose (perfil `node`), desplegado en el host.
-4. ⬜ **`P2pNode` real** con `js-libp2p` en `apps/web` (WebRTC/WebSockets, PeerID desde Ed25519).
+3. ✅ **Nodo bootstrap / circuit-relay v2** en el compose (`infra/p2p-bootstrap`, perfil `node`).
+   Falta el **deploy** en el host + cablear su multiaddr (`NEXT_PUBLIC_P2P_BOOTSTRAP`).
+4. ✅ **`P2pNode` real** con `js-libp2p` en `apps/web` (`lib/p2p/node.ts`, D1 — PeerID desde Ed25519).
 5. ⬜ **Conexión directa P2P** dos navegadores en LAN → sobre E2E ida y vuelta.
 6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo*.
 7. ⬜ **Store-and-forward** → veredicto (D3).
