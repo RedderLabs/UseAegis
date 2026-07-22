@@ -12,7 +12,6 @@
   "dependencies": {
     "@aegis/transport": "workspace:*",
     "@aegis/ui-kit": "workspace:*",
-    "@chainsafe/libp2p-gossipsub": "^14.1.2",
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.1",
     "@libp2p/bootstrap": "^12.0.27",
@@ -21,7 +20,6 @@
     "@libp2p/identify": "^4.1.10",
     "@libp2p/interface": "^3.2.5",
     "@libp2p/peer-id": "^6.0.12",
-    "@libp2p/pubsub-peer-discovery": "^12.0.0",
     "@libp2p/webrtc": "^6.0.27",
     "@libp2p/websockets": "^10.1.17",
     "@noble/ciphers": "^1.2.1",

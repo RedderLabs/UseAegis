@@ -75,12 +75,27 @@ ver [[aegis-onion-coolify]]).
 - **Wiring pendiente (deploy):** arrancar el servicio, copiar el multiaddr que imprime a
   `NEXT_PUBLIC_P2P_BOOTSTRAP` y pasarlo al `P2pNode`. En prod va **detrás de Caddy con `wss`**.
 
-### D3 — Store-and-forward (el punto frágil)
-GossipSub con caché en "peers voluntarios" **no garantiza** entrega a offline. Dos caminos:
-- (a) **Relay sigue de ancla** de store-and-forward incluso en Modo B (pragmático, honesto).
-- (b) GossipSub puro (más "sin servidor", menos fiable).
-- **Recomendación:** (a) para el MVP anti-censura — el Modo B resuelve **alcanzabilidad** cuando el
-  relay está bloqueado *para ti*, no necesariamente cuando el **destinatario** está offline.
+### D3 — Store-and-forward (el punto frágil) · ✅ **DECIDIDO** (2026-07-22)
+GossipSub con caché en "peers voluntarios" **no garantiza** entrega a offline. **Decisión: (a) el
+relay sigue siendo el ANCLA de store-and-forward, también en Modo B. NO se implementa GossipSub.**
+
+**Por qué:** el Modo B resuelve **alcanzabilidad** — que TÚ puedas mandar cuando el relay está
+bloqueado *para ti* — no la persistencia para un **destinatario offline**. Meter GossipSub añadiría
+una capa frágil (entrega no garantizada, superficie de red y de abuso) para un beneficio que el
+buzón del relay ya da de forma fiable siempre que el relay sea alcanzable por *alguien*.
+
+**Cómo lo realiza la arquitectura que ya existe (sin código nuevo):**
+- El `P2pNode` hace **entrega directa**: `send()` lanza si el peer es inalcanzable.
+- El failover `createFailoverTransport([relay, p2p])` prueba **relay primero**; si el relay
+  responde, él almacena el sobre (buzón sealed-sender + TTL) y cubre al destinatario offline. Solo
+  cuando el relay está **bloqueado** se cae a P2P directo.
+- Consecuencia (límite honesto, documentado): **relay bloqueado _para ti_ + destinatario offline al
+  mismo tiempo ⇒ no hay store-and-forward**; el sobre se entrega cuando una de las dos puertas
+  vuelve. Es un compromiso consciente del MVP anti-censura, no un olvido.
+
+**Limpieza aplicada:** se retiran de `apps/web` las deps `@chainsafe/libp2p-gossipsub` y
+`@libp2p/pubsub-peer-discovery` (instaladas al explorar D1, ya no se usan). El descubrimiento va por
+`bootstrap` (D2), no por pubsub.
 
 ### D4 — Descubrimiento (DHT Kademlia)
 En navegador el peer suele ser **cliente** del DHT; los nodos server (tu bootstrap) sostienen la
@@ -98,13 +113,13 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
 
 ## 5. Plan de sub-pasos
 
-1. 🟡 **Decisiones de diseño** (este doc) — D1 y D2 ✅; falta fijar D3–D4.
+1. 🟡 **Decisiones de diseño** (este doc) — D1, D2 y D3 ✅; falta fijar D4 (DHT).
 2. ✅ **`createP2pTransport()`** contra el contrato + tests (hecho 2026-07-22).
 3. ✅ **Nodo bootstrap / circuit-relay v2** en el compose (`infra/p2p-bootstrap`, perfil `node`).
    Falta el **deploy** en el host + cablear su multiaddr (`NEXT_PUBLIC_P2P_BOOTSTRAP`).
 4. ✅ **`P2pNode` real** con `js-libp2p` en `apps/web` (`lib/p2p/node.ts`, D1 — PeerID desde Ed25519).
 5. ⬜ **Conexión directa P2P** dos navegadores en LAN → sobre E2E ida y vuelta.
 6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo*.
-7. ⬜ **Store-and-forward** → veredicto (D3).
+7. ✅ **Store-and-forward → veredicto** (D3): relay de ancla, sin GossipSub. Lo realiza el failover.
 8. ⬜ **Enganche al failover** en `apps/web/lib/chat.ts`: añadir `p2p` a la lista de candidatos.
 9. ⬜ **Cierre**: doc + memoria + PR.
