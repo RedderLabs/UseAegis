@@ -3,4 +3,7 @@ packages:
   - "packages/*"
 allowBuilds:
   esbuild: true
+  # node-datachannel es el WebRTC NATIVO para Node; en el navegador libp2p usa el WebRTC del
+  # propio navegador, así que no hace falta compilar el addon nativo. Ver Fase 3 (Modo B).
+  node-datachannel: false
   sharp: false

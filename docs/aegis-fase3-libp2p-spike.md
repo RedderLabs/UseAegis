@@ -36,11 +36,26 @@ Fuera de alcance (Fase 4): indicador verde/ámbar/rojo del header y failover con
 
 > Estas cambian el resto del spike. Marco mi recomendación, pero decides tú.
 
-### D1 — Transportes de libp2p en navegador
-El cliente es web (`apps/web`) ⇒ **no hay TCP/QUIC crudos**. Opciones reales: **WebRTC**,
-**WebTransport**, **WebSockets seguros**.
-- **Recomendación:** WebRTC (para P2P navegador↔navegador con NAT traversal por ICE) + WebSockets
-  seguros hacia el nodo bootstrap/relay-de-circuito. WebTransport como extra si el navegador lo trae.
+### D1 — Transportes de libp2p en navegador · ✅ **DECIDIDO** (2026-07-22)
+El cliente es web (`apps/web`) ⇒ **no hay TCP/QUIC crudos**. Stack elegido (verificado contra la
+guía oficial `libp2p.io/docs/webrtc-browser-connectivity`, API js-libp2p 2.x):
+
+| Capa | Módulo | Papel |
+|---|---|---|
+| Transporte | `@libp2p/websockets` | dial al nodo bootstrap/relay (WSS) |
+| Transporte | `@libp2p/webrtc` | P2P navegador↔navegador (NAT traversal por ICE) |
+| Transporte | `@libp2p/circuit-relay-v2` | reserva de circuito = **canal de señalización** del WebRTC |
+| Cifrado enlace | `@chainsafe/libp2p-noise` | Noise, atado a la Ed25519 de la identidad |
+| Muxer | `@chainsafe/libp2p-yamux` | multiplexa streams (requerido incluso para WS sobre el circuito) |
+| Servicio | `@libp2p/identify` | intercambio de capacidades/observed-addr |
+| Descubrimiento | `@libp2p/bootstrap` + `@libp2p/pubsub-peer-discovery` | entrada a la red + anuncio |
+| Pubsub | `@chainsafe/libp2p-gossipsub` | base para store-and-forward (ver D3) |
+| Clave | `@libp2p/crypto` | PeerID desde la semilla Ed25519 (`generateKeyPairFromSeed`) |
+
+- `addresses.listen`: `/p2p-circuit` (para aceptar entrantes vía relay) y `/webrtc`.
+- **WebTransport** queda opcional (extra si el navegador lo trae); no bloquea el spike.
+- **Riesgo de bundling:** libp2p es browser-only ⇒ el nodo se **importa dinámicamente** (nunca en
+  SSR) y puede requerir ajustes de webpack en Next 15. Se valida con `next build`.
 
 ### D2 — Rol nuevo del nodo (bootstrap + circuit-relay v2 + signalling)
 Un peer nuevo necesita un punto de entrada al DHT y, en navegador, un relay de circuito / signalling
