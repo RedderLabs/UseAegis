@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { StatusDot } from "./StatusDot";
 import { LogoMark } from "./Logo";
+import { JourneyTrigger } from "./MessageJourney";
 
 const REPO = "https://github.com/RedderLabs/Aegis";
 const BLOB = `${REPO}/blob/main`;
@@ -105,6 +106,7 @@ export function Footer() {
             © 2026 Redder Labs · Código abierto y auditable
           </p>
           <div className="flex gap-6 label text-muted-2">
+            <JourneyTrigger />
             <Link className="hover:text-muted transition-colors" href="/privacidad">
               Privacidad
             </Link>
