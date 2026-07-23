@@ -9,7 +9,7 @@ const MODES = [
   {
     mode: "p2p" as const,
     name: "P2P · libp2p",
-    body: "Sin relay central. Descubrimiento por DHT y store-and-forward. Failover automático si el relay es bloqueado o censurado.",
+    body: "Sin relay central: navegador a navegador por WebRTC, cifrado con Noise. El contacto se localiza por su PeerID —derivado de su clave pública, sin directorio que consultar— a través de un nodo de señalización que nunca ve el contenido. Entra automáticamente si el relay se bloquea o se censura.",
   },
   {
     mode: "mesh" as const,
