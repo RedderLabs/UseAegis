@@ -72,8 +72,14 @@ ver [[aegis-onion-coolify]]).
   (WS-only ⇒ **no** necesita `node-datachannel`), corre como usuario `node`.
 - `docker-compose.yml` — servicio `aegis-p2p-bootstrap` (perfil `node`, puerto 9001, volumen
   `aegis-p2p-bootstrap-data`). `docker compose --profile node config` valida.
-- **Wiring pendiente (deploy):** arrancar el servicio, copiar el multiaddr que imprime a
-  `NEXT_PUBLIC_P2P_BOOTSTRAP` y pasarlo al `P2pNode`. En prod va **detrás de Caddy con `wss`**.
+- **Cableado de build hecho (2026-07-23):** `NEXT_PUBLIC_P2P_BOOTSTRAP` viaja ahora como **build
+  arg** del servicio web en AMBOS composes (`docker-compose.yml` y `docker-compose.coolify.yml`) y se
+  declara en `apps/web/Dockerfile` (`ARG`+`ENV`) para incrustarse en el bundle. El compose de Coolify
+  incorpora el servicio `p2p-bootstrap` (volumen `aegis-p2p-bootstrap-data`, `P2P_BOOTSTRAP_SEED`
+  opcional) y `.env.coolify.example` documenta el flujo. `docker compose config` valida en ambos.
+- **Deploy pendiente (ejecución en el host):** asignar dominio `p2p.useaegis.app` al servicio
+  `p2p-bootstrap` (Traefik termina `wss`) + DNS A, sacar el PeerID de los logs, rellenar
+  `NEXT_PUBLIC_P2P_BOOTSTRAP` con el multiaddr y **redeployar la web**.
 
 ### D3 — Store-and-forward (el punto frágil) · ✅ **DECIDIDO** (2026-07-22)
 GossipSub con caché en "peers voluntarios" **no garantiza** entrega a offline. **Decisión: (a) el

@@ -73,6 +73,11 @@ services:
         # Umami (analítica de la landing) — NEXT_PUBLIC_* build-time. Vacías = sin analítica.
         NEXT_PUBLIC_UMAMI_SRC: ${NEXT_PUBLIC_UMAMI_SRC:-}
         NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
+        # Modo B (libp2p, Fase 3) — multiaddr del bootstrap (D2), coma-separado. BUILD-TIME: se
+        # incrusta en el bundle. VACÍO = el chat queda solo relay (idéntico a hoy). Tras el 1er
+        # deploy del servicio p2p-bootstrap, saca su PeerID de los logs, forma el multiaddr
+        # /dns4/<P2P_DOMAIN>/tcp/443/wss/p2p/<PeerID>, ponlo aquí (panel de Coolify) y REDEPLOY web.
+        NEXT_PUBLIC_P2P_BOOTSTRAP: ${NEXT_PUBLIC_P2P_BOOTSTRAP:-}
     restart: unless-stopped
     # Contención (ver relay). Next en runtime es ligero, pero puede picar bajo carga → 1 GiB de tope.
     mem_limit: 1g
@@ -124,6 +129,43 @@ services:
     volumes:
       - aegis-tor-data:/var/lib/tor
 
+  # --- P2P bootstrap + circuit-relay v2 (Modo B / Fase 3, decisión D2) --------------------
+  # Punto de entrada a la red libp2p Y relay de circuito (señalización del WebRTC navegador↔
+  # navegador). Solo WebSockets: el WebRTC lo ponen los navegadores. En Coolify NO hay Caddy →
+  # asígnale un dominio propio (p. ej. p2p.useaegis.app) al puerto 9001: el Traefik de Coolify
+  # termina TLS (wss) y hace el upgrade WebSocket automáticamente. WebRTC NO viaja por Tor: esta
+  # es una puerta CLEARNET (anti-censura del relay), no una .onion. Ver docs/aegis-fase3-libp2p-spike.md §3.5.
+  #
+  # PeerID ESTABLE: la semilla se persiste en el volumen aegis-p2p-bootstrap-data (o fíjala con
+  # P2P_BOOTSTRAP_SEED, 32 bytes hex). Tras el 1er deploy, saca el PeerID de los logs:
+  #   docker compose logs p2p-bootstrap | grep PeerID
+  # forma el multiaddr /dns4/p2p.useaegis.app/tcp/443/wss/p2p/<PeerID>, ponlo en
+  # NEXT_PUBLIC_P2P_BOOTSTRAP (panel de Coolify) y REDEPLOY el servicio web.
+  p2p-bootstrap:
+    build:
+      context: ./infra/p2p-bootstrap
+    restart: unless-stopped
+    # Contención (ver relay). WS + relay de circuito son ligeros; un tope bajo basta.
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      WS_PORT: "9001"
+      # OPCIONAL: fija el PeerID entre despliegues/hosts (32 bytes hex). Si se omite, se genera y
+      # se persiste en el volumen (estable mientras el volumen exista).
+      P2P_BOOTSTRAP_SEED: ${P2P_BOOTSTRAP_SEED:-}
+    expose:
+      - "9001"
+    volumes:
+      - aegis-p2p-bootstrap-data:/data
+
 volumes:
   # Persiste las claves de las .onion (hs_ed25519_secret_key) → dirección estable entre deploys.
   aegis-tor-data:
+  # Persiste la semilla del PeerID del bootstrap → multiaddr estable entre deploys.
+  aegis-p2p-bootstrap-data:
