@@ -33,8 +33,10 @@ export {
 export { createFailoverTransport } from "./failover";
 
 /**
- * Modos con implementación de RED real hoy. El Modo B (p2p) tiene ya su adaptador al contrato
- * (`createP2pTransport`), pero el `P2pNode` con libp2p real es el trabajo de la Fase 3: hasta que
- * exista, `p2p` no entra en esta lista (los consumidores anuncian capacidades con ella).
+ * Modos con implementación de RED real y VALIDADA hoy. El Modo B (`p2p`) se validó en red real el
+ * 2026-07-23: dos navegadores clearnet, con el relay APAGADO, intercambiaron un sobre E2E por P2P
+ * directo (WebRTC señalizado vía el bootstrap/circuit-relay), y apareció en el Canal del otro — el
+ * criterio de éxito del spike (`docs/aegis-fase3-libp2p-spike.md §1`). `mesh` (Modo C) sigue fuera
+ * hasta validarlo en la Fase 5. (Los consumidores anuncian capacidades con esta lista.)
  */
-export const IMPLEMENTED_MODES = ["relay"] as const;
+export const IMPLEMENTED_MODES = ["relay", "p2p"] as const;

@@ -1,4 +1,10 @@
+import { IMPLEMENTED_MODES } from "@aegis/transport";
+
 import { StatusDot } from "./StatusDot";
+
+/** Un modo "brilla" solo si tiene red real y validada detrás (fuente única: `IMPLEMENTED_MODES`). */
+const isLive = (mode: string): boolean =>
+  (IMPLEMENTED_MODES as readonly string[]).includes(mode);
 
 const MODES = [
   {
@@ -9,7 +15,7 @@ const MODES = [
   {
     mode: "p2p" as const,
     name: "P2P · libp2p",
-    body: "Sin relay central. Descubrimiento por DHT y store-and-forward. Failover automático si el relay es bloqueado o censurado.",
+    body: "Sin relay central: navegador a navegador por WebRTC, cifrado con Noise. El contacto se localiza por su PeerID —derivado de su clave pública, sin directorio que consultar— a través de un nodo de señalización que nunca ve el contenido. Entra automáticamente si el relay se bloquea o se censura.",
   },
   {
     mode: "mesh" as const,
@@ -38,7 +44,7 @@ export function Transports() {
           {MODES.map((m) => (
             <div key={m.mode} className="bg-bg border border-line rounded-md p-6">
               <div className="flex items-center gap-2 mb-4">
-                <StatusDot mode={m.mode} glow={m.mode === "relay"} />
+                <StatusDot mode={m.mode} glow={isLive(m.mode)} />
                 <span className="label text-text">{m.name}</span>
               </div>
               <p className="text-[13px] leading-relaxed text-muted">{m.body}</p>

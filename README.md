@@ -24,9 +24,16 @@ telemetría, sin cuentas.
   con PoW/anti-DoS). La web anuncia el `.onion` con la cabecera estándar **`Onion-Location`**
   (preservando la ruta), así Tor Browser ofrece saltar a la **misma página** del servicio oculto.
 - **Transporte intercambiable** — el mismo cifrado sobre varios caminos, con *failover* automático:
+  el cliente intenta el relay primero y, si no es alcanzable **para ti**, entrega por P2P.
   - **Modo A · Relay** — ✅ en producción.
-  - **Modo B · P2P (libp2p)** — 🚧 código completo (WebRTC + circuit-relay v2, PeerID derivado de la
-    identidad, sin DHT); pendiente la validación de red real. Ver `docs/aegis-fase3-libp2p-spike.md`.
+  - **Modo B · P2P (libp2p)** — ✅ **en producción, validado en red real**: con el relay **apagado**,
+    un mensaje viajó de navegador a navegador y llegó al destinatario. WebRTC + circuit-relay v2
+    (solo señalización), Noise sobre tu Ed25519; el contacto se localiza por su **PeerID derivado de
+    su clave pública** — sin DHT y sin directorio que consultar.
+    *Dos límites honestos:* (1) validado en NAT permisiva — la travesía **NAT-a-NAT entre redes
+    distintas** (y el posible **TURN**) es endurecimiento de la Fase 4; (2) el Modo B es **clearnet
+    por diseño**: WebRTC no viaja por Tor, así que no está disponible desde la puerta `.onion`.
+    Ver `docs/aegis-fase3-libp2p-spike.md`.
   - **Modo C · Mesh local** (BLE / Wi-Fi Aware) — futuro (cliente móvil).
 
 ## Monorepo
@@ -41,7 +48,7 @@ aegis/
 │                           #   auth Ed25519 challenge-response, directorio de prekeys, media
 ├── packages/
 │   ├── ui-kit/             # Design tokens (Terminal Chic, DISENO.md) + preset de Tailwind
-│   ├── transport/          # Abstracción de transporte: Relay ✅ / P2P (libp2p) 🚧 / Mesh
+│   ├── transport/          # Abstracción de transporte: Relay ✅ / P2P (libp2p) ✅ / Mesh 🚧
 │   ├── crypto-core/        # Placeholder — hoy la cripto vive en apps/web/lib/crypto
 │   └── protocol/           # Placeholder — sobre/serialización (consolidación pendiente)
 ├── infra/
@@ -81,9 +88,15 @@ Otros scripts: `pnpm build`, `pnpm lint`, `pnpm typecheck`, y `pnpm --filter @ae
 ## Estado
 
 **M1 (MVP privado usable) alcanzado en código:** dos personas verificadas intercambian texto,
-archivos y audio cifrados E2E por el relay, en clearnet o por `.onion`. **Fase 3 (Modo B, libp2p)
-en curso:** el código está completo y verificado (tests, typecheck, build); falta la validación de
-red real (NAT-a-NAT). Detalle y estimaciones en [`docs/ROADMAP.md`](docs/ROADMAP.md).
+archivos y audio cifrados E2E por el relay, en clearnet o por `.onion`.
+
+**Fase 3 (Modo B, libp2p) cerrada:** el P2P está desplegado y **validado en red real** — dos
+navegadores con el relay apagado intercambiaron un mensaje directo. Queda como endurecimiento la
+travesía **NAT-a-NAT entre redes distintas** (posible TURN).
+
+**En curso — Fase 4:** failover automático con umbrales afinados y el indicador de estado
+verde/ámbar/rojo, para que el salto entre caminos sea visible. Detalle y estimaciones en
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 **Auditoría externa: pendiente** (roadmap fase 7). No se afirma ninguna auditoría superada hasta
 que exista un informe de un tercero citable.
