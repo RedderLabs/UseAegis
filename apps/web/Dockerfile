@@ -33,6 +33,12 @@ ARG NEXT_PUBLIC_UMAMI_SRC=""
 ENV NEXT_PUBLIC_UMAMI_SRC=$NEXT_PUBLIC_UMAMI_SRC
 ARG NEXT_PUBLIC_UMAMI_WEBSITE_ID=""
 ENV NEXT_PUBLIC_UMAMI_WEBSITE_ID=$NEXT_PUBLIC_UMAMI_WEBSITE_ID
+# Modo B (libp2p, Fase 3) — multiaddr(s) del/los nodo(s) bootstrap, coma-separados. NEXT_PUBLIC_* →
+# se incrusta en build-time. VACÍO = el candidato P2P NO se añade al failover y el chat queda solo
+# relay (idéntico a hoy). Con valor, el chat añade P2P como 2.º candidato. Formato en prod:
+#   /dns4/p2p.useaegis.app/tcp/443/wss/p2p/<PeerID>   (el PeerID lo imprime el bootstrap al arrancar)
+ARG NEXT_PUBLIC_P2P_BOOTSTRAP=""
+ENV NEXT_PUBLIC_P2P_BOOTSTRAP=$NEXT_PUBLIC_P2P_BOOTSTRAP
 RUN pnpm --filter @aegis/web build
 
 WORKDIR /app/apps/web

@@ -1,21 +1,27 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-// Sistema tipográfico dual (stitch-aegis/DESIGN.md §Typography), self-hosteado por
-// next/font (sin CDN de fuentes en producción):
-//  - Hanken Grotesk → comunicación humana (titulares, cuerpo)
-//  - JetBrains Mono  → verificación técnica (claves, logs, labels de sistema)
-const sans = Hanken_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
+// Sistema tipográfico dual (stitch-aegis/DESIGN.md §Typography), self-hosteado de verdad con
+// `next/font/local`: los .woff2 (variables, subset latin, OFL) viven en el repo (./fonts) y se
+// sirven desde la propia app. NO se usa `next/font/google` a propósito: aquél descarga las
+// fuentes de Google EN BUILD-TIME, lo que rompe el build en servidores sin DNS/egress a Google
+// (p. ej. el nodo self-hosted) y contradice el "sin CDN de fuentes". Con los ficheros locales el
+// build es hermético (offline) y no depende de Google en ningún momento.
+//  - Hanken Grotesk → comunicación humana (titulares, cuerpo)  · eje wght 100–900
+//  - JetBrains Mono  → verificación técnica (claves, logs, labels de sistema) · eje wght 100–800
+const sans = localFont({
+  src: "./fonts/hanken-grotesk-latin-wght-normal.woff2",
+  weight: "100 900",
+  style: "normal",
   variable: "--font-sans",
   display: "swap",
 });
 
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
+const mono = localFont({
+  src: "./fonts/jetbrains-mono-latin-wght-normal.woff2",
+  weight: "100 800",
+  style: "normal",
   variable: "--font-mono",
   display: "swap",
 });

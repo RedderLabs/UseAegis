@@ -1,8 +1,10 @@
 # Fase 3 — Spike libp2p (Modo B) · documento de diseño
 
-> Estado: **arrancada** (2026-07-22). El adaptador al contrato de transporte
-> (`createP2pTransport`) ya existe y engancha con el failover; falta el `P2pNode` con libp2p real
-> y las decisiones de red que se listan abajo. Ver `docs/ARQUITECTURA.md §5` y `docs/ROADMAP.md`.
+> Estado: **CERRADA** (2026-07-23). D1–D4 fijadas, `P2pNode` real sobre js-libp2p, bootstrap
+> desplegado en prod y **criterio de éxito §1.1 validado en red real**: dos navegadores clearnet con
+> el relay apagado movieron un sobre E2E por P2P. `IMPLEMENTED_MODES` = `["relay","p2p"]`. Queda
+> como endurecimiento de Fase 4 la **NAT-a-NAT entre redes distintas** (posible TURN).
+> Ver `docs/ARQUITECTURA.md §5` y `docs/ROADMAP.md`.
 
 ## 1. Objetivo del spike
 
@@ -72,8 +74,14 @@ ver [[aegis-onion-coolify]]).
   (WS-only ⇒ **no** necesita `node-datachannel`), corre como usuario `node`.
 - `docker-compose.yml` — servicio `aegis-p2p-bootstrap` (perfil `node`, puerto 9001, volumen
   `aegis-p2p-bootstrap-data`). `docker compose --profile node config` valida.
-- **Wiring pendiente (deploy):** arrancar el servicio, copiar el multiaddr que imprime a
-  `NEXT_PUBLIC_P2P_BOOTSTRAP` y pasarlo al `P2pNode`. En prod va **detrás de Caddy con `wss`**.
+- **Cableado de build hecho (2026-07-23):** `NEXT_PUBLIC_P2P_BOOTSTRAP` viaja ahora como **build
+  arg** del servicio web en AMBOS composes (`docker-compose.yml` y `docker-compose.coolify.yml`) y se
+  declara en `apps/web/Dockerfile` (`ARG`+`ENV`) para incrustarse en el bundle. El compose de Coolify
+  incorpora el servicio `p2p-bootstrap` (volumen `aegis-p2p-bootstrap-data`, `P2P_BOOTSTRAP_SEED`
+  opcional) y `.env.coolify.example` documenta el flujo. `docker compose config` valida en ambos.
+- **Deploy pendiente (ejecución en el host):** asignar dominio `p2p.useaegis.app` al servicio
+  `p2p-bootstrap` (Traefik termina `wss`) + DNS A, sacar el PeerID de los logs, rellenar
+  `NEXT_PUBLIC_P2P_BOOTSTRAP` con el multiaddr y **redeployar la web**.
 
 ### D3 — Store-and-forward (el punto frágil) · ✅ **DECIDIDO** (2026-07-22)
 GossipSub con caché en "peers voluntarios" **no garantiza** entrega a offline. **Decisión: (a) el
@@ -143,11 +151,19 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
 
 1. ✅ **Decisiones de diseño** (este doc) — D1, D2, D3 y D4 fijadas.
 2. ✅ **`createP2pTransport()`** contra el contrato + tests (hecho 2026-07-22).
-3. ✅ **Nodo bootstrap / circuit-relay v2** en el compose (`infra/p2p-bootstrap`, perfil `node`).
-   Falta el **deploy** en el host + cablear su multiaddr (`NEXT_PUBLIC_P2P_BOOTSTRAP`).
+3. ✅ **Nodo bootstrap / circuit-relay v2** en el compose (`infra/p2p-bootstrap`, perfil `node`),
+   **desplegado en prod** (Coolify) y su multiaddr cableado en `NEXT_PUBLIC_P2P_BOOTSTRAP`
+   (build-time). Puerta `wss://p2p.useaegis.app` verificada: 101 Switching Protocols.
 4. ✅ **`P2pNode` real** con `js-libp2p` en `apps/web` (`lib/p2p/node.ts`, D1 — PeerID desde Ed25519).
-5. ⬜ **Conexión directa P2P** dos navegadores en LAN → sobre E2E ida y vuelta.
-6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo*.
+5. ✅ **Conexión directa P2P** (2026-07-23): dos navegadores **clearnet** con el **relay apagado**;
+   el mensaje de A apareció en el Canal de B. Los `500` de `POST /api/messages` en consola son el
+   failover probando el relay muerto primero (esperados); la entrega P2P no deja rastro HTTP.
+   Dos gotchas de la prueba: el P2P **no funciona desde Tor** (WebRTC bloqueado → ambos navegadores
+   `.app`), y el **auth necesita el relay** (con el relay caído no se puede loguear ni recargar sin
+   perder la sesión: el Modo B sostiene una conversación **ya iniciada**).
+6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo residual*. **Aplazado a Fase 4** como
+   endurecimiento: lo validado en el paso 5 es NAT permisiva (misma red). Si el ICE no atraviesa,
+   hará falta **TURN** (el circuit-relay v2 da señalización, no relevo de media).
 7. ✅ **Store-and-forward → veredicto** (D3): relay de ancla, sin GossipSub. Lo realiza el failover.
 8. ✅ **Enganche al failover** en `apps/web/lib/chat.ts` (2026-07-22). `createChatTransport` añade
    `p2p` como SEGUNDO candidato del failover **solo si `NEXT_PUBLIC_P2P_BOOTSTRAP` está definido**
@@ -155,6 +171,6 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
    arrancar (`lib/p2p/lazy-node.ts`): import dinámico de `lib/p2p/node.ts` (browser-only, nunca SSR)
    con la clave libp2p que deriva `identity-store::unlockedLibp2pPrivateKey` — la semilla Ed25519 NO
    sale de `identity-store`. `node.send()` acepta la clave Ed25519 (base64url, misma moneda que el
-   relay) y DERIVA el PeerID (D4). `next build` verde + 11/11 tests. `IMPLEMENTED_MODES` sigue
-   `["relay"]`: no se anuncia `p2p` como modo real hasta validarlo en red (pasos 5/6).
-9. ⬜ **Cierre**: doc + memoria + PR.
+   relay) y DERIVA el PeerID (D4). `next build` verde + 11/11 tests.
+9. ✅ **Cierre** (2026-07-23): `IMPLEMENTED_MODES` → `["relay","p2p"]` tras el pase del paso 5,
+   doc + ROADMAP + memoria actualizados, PR #4.

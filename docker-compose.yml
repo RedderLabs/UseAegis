@@ -104,6 +104,9 @@ services:
         # Se obtiene tras el 1er arranque de Tor (cat .../aegis-web/hostname) → ponla en el .env y
         # reconstruye: docker compose --profile node up -d --build aegis-web.
         NEXT_PUBLIC_WEB_ONION_URL: ${NEXT_PUBLIC_WEB_ONION_URL:-}
+        # Modo B (libp2p). Multiaddr del bootstrap (D2), coma-separado. Vacío = chat solo relay.
+        # Tras arrancar aegis-p2p-bootstrap, copia su multiaddr aquí y reconstruye aegis-web.
+        NEXT_PUBLIC_P2P_BOOTSTRAP: ${NEXT_PUBLIC_P2P_BOOTSTRAP:-}
     container_name: aegis-web
     profiles: ["node"]
     restart: unless-stopped
