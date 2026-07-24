@@ -1,4 +1,10 @@
+import { IMPLEMENTED_MODES } from "@aegis/transport";
+
 import { StatusDot } from "./StatusDot";
+
+/** Un modo "brilla" solo si tiene red real y validada detrás (fuente única: `IMPLEMENTED_MODES`). */
+const isLive = (mode: string): boolean =>
+  (IMPLEMENTED_MODES as readonly string[]).includes(mode);
 
 const MODES = [
   {
@@ -38,7 +44,7 @@ export function Transports() {
           {MODES.map((m) => (
             <div key={m.mode} className="bg-bg border border-line rounded-md p-6">
               <div className="flex items-center gap-2 mb-4">
-                <StatusDot mode={m.mode} glow={m.mode === "relay"} />
+                <StatusDot mode={m.mode} glow={isLive(m.mode)} />
                 <span className="label text-text">{m.name}</span>
               </div>
               <p className="text-[13px] leading-relaxed text-muted">{m.body}</p>
