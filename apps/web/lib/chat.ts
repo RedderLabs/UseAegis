@@ -32,6 +32,7 @@ import {
   downloadMedia,
   fetchHealth,
   fetchMessages,
+  isOnionSession,
   openMessageStream,
   sendMessage,
   uploadMedia,
@@ -471,12 +472,18 @@ function makeRelayStream(token: string): RelayStream {
 }
 
 /**
- * Multiaddrs del/los nodo(s) bootstrap del Modo B (D2), de `NEXT_PUBLIC_P2P_BOOTSTRAP`
- * (coma-separada). Lista vacía = sin bootstrap configurado ⇒ NO se añade el candidato P2P y el chat
- * queda igual que hoy (solo relay). Next inlinea `NEXT_PUBLIC_*` en el bundle del navegador.
+ * Multiaddrs del/los nodo(s) bootstrap del Modo B (D2), coma-separada, SEGÚN LA PUERTA:
+ *   - clearnet (`.app`): `NEXT_PUBLIC_P2P_BOOTSTRAP` — WSS al bootstrap, WebRTC directo entre pares.
+ *   - `.onion` (Tor):    `NEXT_PUBLIC_P2P_BOOTSTRAP_ONION` — WS a la onion del circuit-relay; el sobre
+ *     se reenvía por el circuito (no hay WebRTC sobre Tor). Multiaddr típico:
+ *     `/dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>`.
+ * Lista vacía = sin bootstrap para esa puerta ⇒ NO se añade el candidato P2P (el chat queda solo
+ * relay para esa puerta). Next inlinea `NEXT_PUBLIC_*` en el bundle del navegador.
  */
-function p2pBootstrapMultiaddrs(): string[] {
-  const raw = process.env.NEXT_PUBLIC_P2P_BOOTSTRAP ?? "";
+function p2pBootstrapMultiaddrs(onion: boolean): string[] {
+  const raw =
+    (onion ? process.env.NEXT_PUBLIC_P2P_BOOTSTRAP_ONION : process.env.NEXT_PUBLIC_P2P_BOOTSTRAP) ??
+    "";
   return raw
     .split(",")
     .map((s) => s.trim())
@@ -528,14 +535,19 @@ export function createChatTransport(token: string, ownPub: string): ChatTranspor
     }),
   ];
 
-  // Modo B (P2P/libp2p): SEGUNDO candidato, solo si hay un nodo bootstrap configurado (D2). Sin él,
-  // un navegador no tiene punto de entrada a la red → se queda con el relay. El nodo se construye
-  // PEREZOSAMENTE al arrancar (import dinámico de libp2p, browser-only, con la clave derivada de la
-  // identidad desbloqueada): nunca en SSR. El failover prueba relay PRIMERO; P2P solo entra cuando
-  // el relay no es alcanzable (anti-censura). La cripto de sobre no cambia: mueve bytes opacos.
-  const bootstrap = p2pBootstrapMultiaddrs();
+  // Modo B (P2P/libp2p): SEGUNDO candidato, solo si hay un nodo bootstrap configurado (D2) para la
+  // PUERTA actual. Sin él, un navegador no tiene punto de entrada a la red → se queda con el relay.
+  // El nodo se construye PEREZOSAMENTE al arrancar (import dinámico de libp2p, browser-only, con la
+  // clave derivada de la identidad desbloqueada): nunca en SSR. El failover prueba relay PRIMERO;
+  // P2P solo entra cuando el relay no es alcanzable (anti-censura). La cripto de sobre no cambia.
+  //
+  // El Modo B funciona por AMBAS puertas: WebRTC directo en clearnet, REENVIADO por el circuit-relay
+  // sobre Tor (allí el navegador no puede WebRTC ni escuchar). `onion` selecciona el bootstrap y el
+  // modo de discado del nodo.
+  const onion = isOnionSession();
+  const bootstrap = p2pBootstrapMultiaddrs(onion);
   if (bootstrap.length > 0) {
-    candidates.push(createP2pTransport({ node: createLazyP2pNode(bootstrap) }));
+    candidates.push(createP2pTransport({ node: createLazyP2pNode(bootstrap, onion) }));
   }
 
   const transport: Transport = createFailoverTransport(candidates);

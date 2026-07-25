@@ -55,8 +55,19 @@ const node = await createLibp2p({
   streamMuxers: [yamux()],
   services: {
     identify: identify(),
-    // Relay de circuito v2: acepta reservas de los navegadores (señalización del WebRTC).
-    relay: circuitRelayServer(),
+    // Relay de circuito v2: acepta reservas de los navegadores.
+    //
+    // En CLEARNET el circuito solo SEÑALIZA el WebRTC (navegador↔navegador directo). Pero sobre
+    // TOR no hay WebRTC (UDP bloqueado): el sobre P2P se REENVÍA por el propio circuito (TCP). Para
+    // eso el relay tiene que mover datos REALES, no solo el handshake:
+    //   - applyDefaultLimit:false → sin tope de datos/duración por conexión relayada (por defecto
+    //     los límites de *limited relay* cortarían un chat a los pocos KB/segundos). El relay sigue
+    //     viendo solo BYTES OPACOS: el sobre va cifrado E2E, esto no cambia la cripto.
+    //   - maxReservations:512 → sirve a muchos navegadores a la vez (el def. 15 se queda corto).
+    // La contención vive fuera: mem_limit del contenedor + anti-DoS de la .onion (torrc).
+    relay: circuitRelayServer({
+      reservations: { maxReservations: 512, applyDefaultLimit: false },
+    }),
   },
 });
 

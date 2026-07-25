@@ -13,6 +13,9 @@ mkdir -p /var/lib/tor/aegis-relay /var/lib/tor/aegis-web
 chown -R tor:tor /var/lib/tor
 chmod 700 /var/lib/tor /var/lib/tor/aegis-relay /var/lib/tor/aegis-web
 
+# NB: la onion P2P (Modo B) NO es un HiddenServiceDir nuevo — es un puerto virtual (9001) sobre la
+# onion de la WEB (mismo aegis-web), así que no hace falta crear ni permisar un directorio aparte.
+
 # 2. Resolver un nombre de servicio a su IP, con reintentos por si el DNS aún no está.
 # PREFIERE IPv4 (relay/web escuchan en 0.0.0.0): la red interna de Coolify es dual-stack y
 # `getent hosts` puede devolver la IPv6 primero — meterla sin corchetes rompería el torrc
@@ -47,9 +50,21 @@ RELAY_IP=$(resolve_host relay) || { echo "aegis-tor: ERROR - no resuelve relay" 
 WEB_IP=$(resolve_host web) || { echo "aegis-tor: ERROR - no resuelve web" >&2; exit 1; }
 echo "aegis-tor: relay -> $RELAY_IP ; web -> $WEB_IP"
 
+# El bootstrap P2P (Modo B) es OPCIONAL: si no está desplegado, se ELIMINA su HiddenServicePort del
+# torrc de runtime para que las onion de web/relay arranquen igual (Tor rechazaría un nombre DNS sin
+# resolver). Si está, se sustituye por su IP como con relay/web.
+if P2P_IP=$(resolve_host p2p-bootstrap); then
+	echo "aegis-tor: p2p-bootstrap -> $P2P_IP"
+	P2P_SED="s/p2p-bootstrap:9001/${P2P_IP}:9001/g"
+else
+	echo "aegis-tor: aviso - no resuelve p2p-bootstrap; la onion P2P (Modo B) queda deshabilitada" >&2
+	P2P_SED="/p2p-bootstrap:9001/d"
+fi
+
 # 3. Reescribir el torrc con las IPs resueltas (el original va horneado read-only en la imagen).
 sed -e "s/relay:8443/${RELAY_IP}:8443/g" \
 	-e "s/web:3000/${WEB_IP}:3000/g" \
+	-e "$P2P_SED" \
 	/etc/tor/torrc > /tmp/torrc.runtime
 chown tor:tor /tmp/torrc.runtime
 

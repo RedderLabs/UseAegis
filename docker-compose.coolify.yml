@@ -78,6 +78,11 @@ services:
         # deploy del servicio p2p-bootstrap, saca su PeerID de los logs, forma el multiaddr
         # /dns4/<P2P_DOMAIN>/tcp/443/wss/p2p/<PeerID>, ponlo aquí (panel de Coolify) y REDEPLOY web.
         NEXT_PUBLIC_P2P_BOOTSTRAP: ${NEXT_PUBLIC_P2P_BOOTSTRAP:-}
+        # Modo B por la puerta .onion: el circuit-relay se sirve como puerto virtual (9001) sobre la
+        # MISMA onion de la web (ver infra/tor/torrc.coolify). Tras sacar el PeerID del bootstrap y la
+        # dirección .onion de la web, forma  /dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>,
+        # ponlo aquí (panel de Coolify) y REDEPLOY web. VACÍO = sobre Tor el chat queda solo relay.
+        NEXT_PUBLIC_P2P_BOOTSTRAP_ONION: ${NEXT_PUBLIC_P2P_BOOTSTRAP_ONION:-}
     restart: unless-stopped
     # Contención (ver relay). Next en runtime es ligero, pero puede picar bajo carga → 1 GiB de tope.
     mem_limit: 1g

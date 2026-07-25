@@ -134,10 +134,42 @@ El servicio `aegis-p2p-bootstrap` entra con el resto. Puntos clave:
 - **PeerID estable:** lo imprime `docker compose --profile node logs aegis-p2p-bootstrap` al
   arrancar (semilla persistida en el volumen `aegis-p2p-bootstrap-data`; o fíjalo con
   `P2P_BOOTSTRAP_SEED`). Cópialo una vez al multiaddr y reconstruye `aegis-web`.
-- **WebRTC NO viaja por Tor:** el Modo B es una puerta **clearnet** (anti-censura del relay), no una
-  `.onion`. Sobre la puerta `.onion`, el transporte sigue siendo el relay same-origin.
+- **WebRTC NO viaja por Tor**, pero el Modo B **sí** — reenviado por el circuito (ver §3.6). Por la
+  puerta clearnet: WebRTC directo. Por la `.onion`: el sobre se reenvía por el circuit-relay (TCP).
 - **Gotcha de firewall** (heredado): si endureces con ufw default-deny, deja pasar el 443 y el
   self-SSH de Coolify (172.16/12 y 10/8), o los deploys se rompen (ver [[aegis-antidos-hardening]]).
+
+## 3.6. Modo B por la `.onion` (Tor) — reenviado por circuito · ⚠️ IMPLEMENTADO, pendiente validar en deploy
+
+El aprendizaje del paso 5 (§5) —"el P2P no funciona desde Tor"— **no era asumible**: el requisito es
+que el Modo B funcione **indistintamente por `.app` y por `.onion`**. Lo bloqueaba un límite físico
+del navegador, no un bug: **WebRTC = UDP + ICE**, y Tor solo transporta **TCP** (además el Navegador
+Tor bloquea WebRTC anti-fuga de IP). Cero UDP sobre Tor.
+
+**Lo que un navegador SÍ puede sobre Tor:** WebSockets (TCP) contra el circuit-relay, llevando el
+stream `/aegis/msg` **por el propio circuito** (sin upgrade a WebRTC). Cambios (2026-07-25):
+
+- **`infra/p2p-bootstrap/server.mjs`** — `circuitRelayServer({ maxReservations: 512, applyDefaultLimit:
+  false })`: el relay **reenvía datos reales**, no solo señaliza (los límites de *limited relay* por
+  defecto cortarían un chat a los pocos KB/s). Sigue viendo **bytes opacos** (E2E intacto).
+- **`infra/tor/torrc.coolify`** — el WS del circuit-relay se sirve como **puerto virtual 9001 sobre la
+  MISMA onion de la web** (`HiddenServicePort 9001 p2p-bootstrap:9001`). Un WebSocket = **un** stream
+  Tor (yamux multiplexa dentro) → el `MaxStreams` no lo estrangula. `entrypoint.coolify.sh` resuelve
+  `p2p-bootstrap` a IP (opcional: si no está, elimina la línea y web/relay arrancan igual).
+- **`apps/web/lib/p2p/node.ts`** — puerta `onion`: sin `webRTC()`, listen solo `/p2p-circuit`, y
+  `send()` disca `/<bootstrap>/p2p-circuit/p2p/<target>` **sin `/webrtc`**. Clearnet intacto.
+- **`chat.ts`** — `isOnionSession()` elige el bootstrap: `NEXT_PUBLIC_P2P_BOOTSTRAP_ONION`
+  (`/dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>`, `ws` plano — Tor cifra) vs `_BOOTSTRAP` (wss).
+
+**Caveat honesto (para la auditoría):** sobre Tor el sobre lo **reenvía el circuit-relay** — es Modo B
+real (mismo plano libp2p, mismo sobre E2E, **no** el buzón que *almacena* del Modo A), pero **no** P2P
+directo: el relay ve **metadatos** (quién↔quién, cuándo), nunca el contenido. En un navegador, sobre
+Tor, esto es **inevitable** (el navegador no puede escuchar ni hospedar un onion service). El P2P
+directo-sin-relay sobre Tor queda para la **app nativa + Arti** (cada peer con su propio onion).
+
+**Falta validar en deploy** (no lo cubre el test: gotcha `@libp2p/crypto` bajo `tsx`): redeploy de
+`p2p-bootstrap`+`tor`+`web`, cablear `NEXT_PUBLIC_P2P_BOOTSTRAP_ONION`, y **dos Navegadores Tor** sobre
+la `.onion` con el relay caído *para ti* → el sobre debe entregarse por P2P.
 
 ## 4. Riesgo (por qué "la más difícil de comprimir")
 
@@ -158,9 +190,12 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
 5. ✅ **Conexión directa P2P** (2026-07-23): dos navegadores **clearnet** con el **relay apagado**;
    el mensaje de A apareció en el Canal de B. Los `500` de `POST /api/messages` en consola son el
    failover probando el relay muerto primero (esperados); la entrega P2P no deja rastro HTTP.
-   Dos gotchas de la prueba: el P2P **no funciona desde Tor** (WebRTC bloqueado → ambos navegadores
-   `.app`), y el **auth necesita el relay** (con el relay caído no se puede loguear ni recargar sin
-   perder la sesión: el Modo B sostiene una conversación **ya iniciada**).
+   Dos gotchas de la prueba: el P2P **no funciona desde Tor por WebRTC** (→ **resuelto** llevándolo
+   por el circuito, §3.6, pendiente validar en deploy), y el **auth necesita el relay** (con el relay
+   caído no se puede loguear ni recargar sin perder la sesión — decisión de diseño: la sesión se
+   firma contra el relay siempre, para la auditoría; el Modo B sostiene una conversación **ya
+   iniciada**). La independencia total del relay que da WebRTC solo existe en clearnet o en la app
+   nativa + Arti, no en un navegador sobre Tor.
 6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo residual*. **Aplazado a Fase 4** como
    endurecimiento: lo validado en el paso 5 es NAT permisiva (misma red). Si el ICE no atraviesa,
    hará falta **TURN** (el circuit-relay v2 da señalización, no relevo de media).
