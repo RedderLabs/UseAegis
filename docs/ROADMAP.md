@@ -200,11 +200,20 @@ P2P** (WebRTC señalizado por el bootstrap/circuit-relay); una entrega P2P corre
 HTTP** en la consola. Con eso, `IMPLEMENTED_MODES` pasa a **`["relay","p2p"]`**: el Modo B ya se
 anuncia como modo con red real.
 
-**Dos aprendizajes de la prueba, para no repetirlos:** (1) el P2P **no funciona desde Tor** (WebRTC
-bloqueado) — el Modo B es clearnet por diseño, así que la prueba exige dos navegadores `.app`;
+**Dos aprendizajes de la prueba:** (1) el P2P **no funciona desde Tor por WebRTC** (UDP, bloqueado) —
+**abordado** (2026-07-25) llevando el Modo B **por el circuito** sobre Tor, de modo que funcione
+indistintamente por `.app` (WebRTC directo) y por `.onion` (reenviado por el circuit-relay, TCP);
+_implementado, pendiente validar en deploy_ — ver `docs/aegis-fase3-libp2p-spike.md §3.6`;
 (2) el **auth necesita el relay**: con el relay caído no puedes loguearte ni recargar (perderías la
-sesión). El Modo B mantiene viva una conversación **ya iniciada** cuando el relay se bloquea; no es
-un sustituto del arranque de sesión.
+sesión). Es **decisión de diseño** (la sesión se firma contra el relay siempre, para la auditoría),
+no un bug a desacoplar. El Modo B mantiene viva una conversación **ya iniciada** cuando el relay se
+bloquea; no es un sustituto del arranque de sesión.
+
+> **Caveat honesto del Modo B sobre Tor:** en un navegador, sobre Tor, el sobre lo **reenvía** el
+> circuit-relay (el navegador no puede escuchar ni hospedar un onion service). Sigue siendo Modo B
+> real (mismo plano libp2p, mismo sobre E2E, **no** el buzón que _almacena_ del Modo A), pero el
+> relay ve **metadatos** (quién↔quién, cuándo), nunca el contenido. El P2P directo-sin-relay sobre
+> Tor solo existe en la **app nativa + Arti** (track nativo).
 
 **Límite honesto (endurecimiento de Fase 4, no bloquea el cierre):** lo validado es NAT **permisiva**
 (ambos navegadores en la misma red). Falta **NAT-a-NAT entre dos redes distintas** — _ahí vive el

@@ -39,6 +39,11 @@ ENV NEXT_PUBLIC_UMAMI_WEBSITE_ID=$NEXT_PUBLIC_UMAMI_WEBSITE_ID
 #   /dns4/p2p.useaegis.app/tcp/443/wss/p2p/<PeerID>   (el PeerID lo imprime el bootstrap al arrancar)
 ARG NEXT_PUBLIC_P2P_BOOTSTRAP=""
 ENV NEXT_PUBLIC_P2P_BOOTSTRAP=$NEXT_PUBLIC_P2P_BOOTSTRAP
+# Modo B por la puerta .onion (Tor): multiaddr(s) del circuit-relay servido en la onion (WS plano,
+# Tor cifra). VACÍO = sobre Tor el chat queda solo relay. Formato:
+#   /dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>
+ARG NEXT_PUBLIC_P2P_BOOTSTRAP_ONION=""
+ENV NEXT_PUBLIC_P2P_BOOTSTRAP_ONION=$NEXT_PUBLIC_P2P_BOOTSTRAP_ONION
 RUN pnpm --filter @aegis/web build
 
 WORKDIR /app/apps/web
