@@ -11,7 +11,12 @@
  * consumidores.
  */
 export type {
+  FailoverStatus,
+  FailoverSwitch,
   MessageHandler,
+  ModeState,
+  ModeStatus,
+  ObservableTransport,
   Scheduler,
   Transport,
   TransportMode,
@@ -30,7 +35,7 @@ export {
   type P2pNode,
   type P2pTransportOptions,
 } from "./p2p";
-export { createFailoverTransport } from "./failover";
+export { createFailoverTransport, type FailoverOptions } from "./failover";
 
 /**
  * Modos con implementación de RED real y VALIDADA hoy. El Modo B (`p2p`) se validó en red real el

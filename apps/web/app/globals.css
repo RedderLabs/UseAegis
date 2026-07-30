@@ -81,6 +81,35 @@
   .scan-ring {
     animation: spin360 4s linear infinite;
   }
+
+  /* Indicador de transporte (DISENO.md §6). Sin ruta = el halo late; es la única señal que se
+     mueve en el header, y solo cuando algo va mal. Con ruta, el punto está quieto. */
+  .status-alarm {
+    animation: statusalarm 1.9s ease-in-out infinite;
+  }
+  @keyframes statusalarm {
+    0%,
+    100% {
+      opacity: 0.16;
+      transform: scale(1.8);
+    }
+    50% {
+      opacity: 0.42;
+      transform: scale(2.7);
+    }
+  }
+
+  /* Panel de detalle del transporte: aparece desde el punto, breve y sin rebote. */
+  .status-panel {
+    animation: panelin 140ms cubic-bezier(0.2, 0, 0, 1);
+    transform-origin: top left;
+  }
+  @keyframes panelin {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
   @keyframes spin360 {
     to {
       transform: rotate(360deg);
@@ -91,5 +120,18 @@
 @keyframes blink {
   50% {
     opacity: 0;
+  }
+}
+
+/* Respeta la preferencia del sistema: nada de movimiento decorativo si el usuario lo ha
+   desactivado. Los estados siguen siendo legibles por color y texto, no por la animación. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

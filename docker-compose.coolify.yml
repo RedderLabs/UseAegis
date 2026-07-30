@@ -83,6 +83,12 @@ services:
         # dirección .onion de la web, forma  /dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>,
         # ponlo aquí (panel de Coolify) y REDEPLOY web. VACÍO = sobre Tor el chat queda solo relay.
         NEXT_PUBLIC_P2P_BOOTSTRAP_ONION: ${NEXT_PUBLIC_P2P_BOOTSTRAP_ONION:-}
+        # ICE del WebRTC (Fase 4) — solo clearnet; sobre Tor no hay WebRTC. Sin ICE, el Modo B solo
+        # atraviesa NAT permisiva (el límite honesto que quedó abierto al cerrar la Fase 3). Autoaloja
+        # coturn y apúntalo aquí: no se usa STUN público de terceros por defecto.
+        NEXT_PUBLIC_P2P_ICE_SERVERS: ${NEXT_PUBLIC_P2P_ICE_SERVERS:-}
+        NEXT_PUBLIC_P2P_TURN_USER: ${NEXT_PUBLIC_P2P_TURN_USER:-}
+        NEXT_PUBLIC_P2P_TURN_CREDENTIAL: ${NEXT_PUBLIC_P2P_TURN_CREDENTIAL:-}
     restart: unless-stopped
     # Contención (ver relay). Next en runtime es ligero, pero puede picar bajo carga → 1 GiB de tope.
     mem_limit: 1g

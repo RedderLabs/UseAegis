@@ -2,7 +2,7 @@
 // Ejecutable en Node con: pnpm --filter @aegis/transport test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Scheduler, Transport, WireEnvelope } from "./types";
+import type { FailoverStatus, Scheduler, Transport, TransportMode, WireEnvelope } from "./types";
 import {
   createRelayTransport,
   type CursorStore,
@@ -350,6 +350,133 @@ test("failover A→B: con el relay caído, entrega por P2P", async () => {
   await alice.send("bob", enc("por la puerta B"));
   assert.equal(alice.activeMode, "p2p", "debe recordar que entregó por P2P");
   assert.deepEqual(seen, ["por la puerta B"]);
+
+  alice.stop(); // cierra el sondeo de salud del failover (start() lo abre desde la Fase 4)
+  bobP2p.stop();
+});
+
+// --- Fase 4 — conmutación automática y estado observable -------------------------------
+
+/**
+ * Transporte de mentira con un interruptor: `set(false)` lo deja inalcanzable (sonda a false y
+ * envío que lanza), `set(true)` lo devuelve. Modela "el relay se cae / vuelve" sin red.
+ */
+function switchable(mode: TransportMode, up = true) {
+  const t: Transport = {
+    activeMode: mode,
+    isAvailable: async () => up,
+    send: async () => {
+      if (!up) throw new Error(`${mode} caído`);
+    },
+    onMessage: () => () => {},
+    start: () => {},
+    stop: () => {},
+  };
+  return {
+    transport: t,
+    set(v: boolean) {
+      up = v;
+    },
+  };
+}
+
+/** Reloj manual: el estado del failover lleva marcas de tiempo y así son deterministas. */
+function manualClock() {
+  let t = 1_000;
+  return {
+    now: () => t,
+    advance(ms: number) {
+      t += ms;
+    },
+  };
+}
+
+test("failover: un fallo suelto NO da un modo por caído (umbral anti-bandazo)", async () => {
+  const relay = switchable("relay");
+  const p2p = switchable("p2p");
+  const t = createFailoverTransport([relay.transport, p2p.transport], { failureThreshold: 2 });
+
+  relay.set(false);
+  await t.send("bob", enc("uno")); // el relay falla una vez; entrega P2P
+  assert.equal(t.status().modes[0]!.state, "unknown", "un solo fallo no AFIRMA que esté caído");
+  assert.equal(t.status().modes[0]!.failures, 1);
+  assert.equal(t.activeMode, "p2p", "pero la ruta real ya es P2P: por ahí salió el sobre");
+
+  await t.send("bob", enc("dos")); // segundo fallo consecutivo → caído
+  assert.equal(t.status().modes[0]!.state, "down");
+  assert.equal(t.activeMode, "p2p", "con el relay caído, el activo conmuta a P2P");
+  assert.equal(t.status().lastSwitch?.cause, "delivery");
+});
+
+test("failover: una sonda devuelve el activo al modo preferente cuando se recupera", async () => {
+  const ms = manualScheduler();
+  const clock = manualClock();
+  const relay = switchable("relay", false);
+  const p2p = switchable("p2p");
+  const t = createFailoverTransport([relay.transport, p2p.transport], {
+    failureThreshold: 1,
+    scheduler: ms.scheduler,
+    now: clock.now,
+  });
+
+  t.start();
+  await flush(); // primera ronda de sondas: relay caído, p2p arriba
+  assert.equal(t.activeMode, "p2p");
+  assert.equal(t.status().reachable, true);
+
+  relay.set(true);
+  clock.advance(15_000);
+  await ms.tick(); // la sonda ve el relay de vuelta
+  assert.equal(t.activeMode, "relay", "el activo vuelve solo al preferente, sin enviar nada");
+  assert.equal(t.status().lastSwitch?.cause, "recovery");
+  assert.equal(t.status().modes[0]!.state, "up");
+
+  t.stop();
+});
+
+test("failover: onStatus entrega una foto inicial y luego cada cambio", async () => {
+  const relay = switchable("relay");
+  const p2p = switchable("p2p");
+  const t = createFailoverTransport([relay.transport, p2p.transport], { failureThreshold: 1 });
+
+  const seen: FailoverStatus[] = [];
+  const off = t.onStatus((s) => void seen.push(s));
+  assert.equal(seen.length, 1, "el suscriptor recibe la foto actual al suscribirse");
+  assert.equal(seen[0]!.activeMode, "relay");
+
+  relay.set(false);
+  await t.send("bob", enc("uno"));
+  assert.ok(seen.length > 1, "un cambio de estado debe publicarse");
+  assert.equal(seen[seen.length - 1]!.activeMode, "p2p");
+
+  off();
+  const before = seen.length;
+  relay.set(true);
+  await t.send("bob", enc("dos"));
+  assert.equal(seen.length, before, "tras la baja no debe llegar nada más");
+});
+
+test("failover: sin ningún modo con ruta, se sigue intentando y se reporta 'sin ruta'", async () => {
+  const ms = manualScheduler();
+  const relay = switchable("relay", false);
+  const p2p = switchable("p2p", false);
+  const t = createFailoverTransport([relay.transport, p2p.transport], {
+    failureThreshold: 1,
+    scheduler: ms.scheduler,
+  });
+
+  t.start();
+  await flush();
+  assert.equal(t.status().reachable, false, "ningún candidato con ruta");
+  await assert.rejects(() => t.send("bob", enc("nadie")), /caído/);
+
+  // Aunque ambos estén marcados caídos, un envío posterior SIGUE intentándolos (último recurso).
+  relay.set(true);
+  await t.send("bob", enc("ahora sí"));
+  assert.equal(t.activeMode, "relay");
+  assert.equal(t.status().reachable, true);
+
+  t.stop();
 });
 
 test("failover: deduplica un sobre que llega por dos vías", async () => {
