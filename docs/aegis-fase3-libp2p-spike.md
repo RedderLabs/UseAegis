@@ -196,9 +196,14 @@ entra en revisión humana (`PLANTILLA §5`). El E2E de contenido (XChaCha20-Poly
    firma contra el relay siempre, para la auditoría; el Modo B sostiene una conversación **ya
    iniciada**). La independencia total del relay que da WebRTC solo existe en clearnet o en la app
    nativa + Arti, no en un navegador sobre Tor.
-6. ⬜ **NAT real** (dos redes distintas) — *aquí vive el riesgo residual*. **Aplazado a Fase 4** como
-   endurecimiento: lo validado en el paso 5 es NAT permisiva (misma red). Si el ICE no atraviesa,
-   hará falta **TURN** (el circuit-relay v2 da señalización, no relevo de media).
+6. 🟡 **NAT real** (dos redes distintas) — *aquí vive el riesgo residual*. Lo validado en el paso 5 es
+   NAT permisiva (misma red). **Fase 4 puso el mecanismo** (2026-07-30): `webRTC()` ya se construye
+   con `rtcConfiguration.iceServers` desde `NEXT_PUBLIC_P2P_ICE_SERVERS` (+ `_TURN_USER` /
+   `_TURN_CREDENTIAL`), así que STUN y **TURN** se enchufan sin tocar código. **Sin configurar no hay
+   ICE, a propósito**: meter un STUN público de terceros por defecto le daría a ese tercero la IP de
+   cada usuario que arranca el Modo B — justo lo que evita el modelo de amenaza; el STUN/TURN se
+   autoaloja junto al bootstrap. **Falta la prueba humana**: levantar coturn y probar entre dos ISP
+   distintas (el circuit-relay v2 da señalización, no relevo de media).
 7. ✅ **Store-and-forward → veredicto** (D3): relay de ancla, sin GossipSub. Lo realiza el failover.
 8. ✅ **Enganche al failover** en `apps/web/lib/chat.ts` (2026-07-22). `createChatTransport` añade
    `p2p` como SEGUNDO candidato del failover **solo si `NEXT_PUBLIC_P2P_BOOTSTRAP` está definido**

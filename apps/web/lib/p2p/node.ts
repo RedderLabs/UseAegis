@@ -55,6 +55,37 @@ export interface Libp2pNodeOptions {
   onion?: boolean;
 }
 
+/**
+ * Servidores ICE del WebRTC (solo clearnet; sobre Tor no hay WebRTC). Es lo que decide si el Modo B
+ * atraviesa NAT-a-NAT entre DOS REDES DISTINTAS, el límite honesto que quedó abierto al cerrar la
+ * Fase 3: lo validado allí fue NAT permisiva (ambos navegadores en la misma red), donde bastan los
+ * candidatos de host.
+ *
+ *   - `NEXT_PUBLIC_P2P_ICE_SERVERS` — lista separada por comas (`stun:…`, `turn:…`, `turns:…`).
+ *   - `NEXT_PUBLIC_P2P_TURN_USER` / `NEXT_PUBLIC_P2P_TURN_CREDENTIAL` — credenciales, aplicadas
+ *     solo a las entradas `turn:`/`turns:`.
+ *
+ * SIN CONFIGURAR NO HAY ICE, a propósito: el proyecto no mete un STUN público de terceros por
+ * defecto (Google y compañía verían la IP de cada usuario que arranca el Modo B — justo lo que el
+ * modelo de amenaza evita). El STUN/TURN se autoaloja junto al bootstrap. Con la lista vacía, el
+ * Modo B sigue funcionando en NAT permisiva y por el circuito; lo que se pierde es el atravesado
+ * de NAT simétrica.
+ */
+function iceServers(): RTCIceServer[] {
+  const urls = (process.env.NEXT_PUBLIC_P2P_ICE_SERVERS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (urls.length === 0) return [];
+  const username = process.env.NEXT_PUBLIC_P2P_TURN_USER;
+  const credential = process.env.NEXT_PUBLIC_P2P_TURN_CREDENTIAL;
+  return urls.map((url) =>
+    /^turns?:/i.test(url) && username && credential
+      ? { urls: url, username, credential }
+      : { urls: url },
+  );
+}
+
 /** Hash SHA-256 → base64url, id determinista del sobre (dos entregas del MISMO blob deduplican). */
 async function blobId(blob: Uint8Array): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", blob as unknown as BufferSource));
@@ -112,7 +143,13 @@ export async function createLibp2pNode(
         // Sobre Tor se omite `webRTC()`: el transporte útil es WS(-sobre-Tor) contra el circuit-relay.
         transports: onion
           ? [webSockets(), circuitRelayTransport()]
-          : [webSockets(), webRTC(), circuitRelayTransport()],
+          : [
+              webSockets(),
+              // Con ICE configurado, el WebRTC puede atravesar NAT entre redes distintas (y
+              // relevar por TURN si el ICE no cuaja). Sin él, solo candidatos de host.
+              webRTC({ rtcConfiguration: { iceServers: iceServers() } }),
+              circuitRelayTransport(),
+            ],
         connectionEncrypters: [noise()],
         streamMuxers: [yamux()],
         // El navegador dial-a multiaddrs de circuito/WebRTC que un gater estricto rechazaría.
