@@ -48,6 +48,12 @@ services:
       BLOB_TTL_SECONDS: ${BLOB_TTL_SECONDS:-2592000}
       MEDIA_TTL_SECONDS: ${MEDIA_TTL_SECONDS:-2592000}
       MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-52428800}
+      # Cuota de almacenamiento por identidad (bytes en reposo), madura con la edad de la cuenta.
+      # Imprescindible en el relay público: sin ella, una identidad puede subir ~8 TiB/día.
+      QUOTA_BASE_BYTES: ${QUOTA_BASE_BYTES:-104857600}
+      QUOTA_MAX_BYTES: ${QUOTA_MAX_BYTES:-1073741824}
+      QUOTA_RAMP_DAYS: ${QUOTA_RAMP_DAYS:-30}
+      QUOTA_DAILY_MIN_BYTES: ${QUOTA_DAILY_MIN_BYTES:-104857600}
       # Almacén de objetos S3/B2 para adjuntos cifrados (audio/archivos). Sin estas 5, /media = 503.
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_REGION: ${S3_REGION}

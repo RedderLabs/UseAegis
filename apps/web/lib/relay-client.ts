@@ -344,10 +344,76 @@ export function openMessageStream(
 // por .onion, el tráfico de adjuntos sigue yendo por la puerta y no filtra metadatos a un tercero.
 // Se mueve como `application/octet-stream` (no base64) para no inflar un 33% adjuntos grandes.
 
+/** Bytes → texto corto para mensajes de usuario (1,5 GB / 240 MB). */
+function formatBytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1).replace(".", ",")} GB`;
+  return `${Math.round(mb)} MB`;
+}
+
+/** "2026-09-12" → "el 12 de septiembre". Si no se puede parsear, se omite la fecha. */
+function formatDay(iso: string): string | null {
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return `el ${date.getUTCDate()} de ${
+    [
+      "enero", "febrero", "marzo", "abril", "mayo", "junio",
+      "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+    ][date.getUTCMonth()]
+  }`;
+}
+
+interface RelayErrorBody {
+  error?: string;
+  quota?: number;
+  used?: number;
+  freesAt?: string | null;
+  freesBytes?: number;
+  dailyLimit?: number;
+  dailyUsed?: number;
+}
+
+/**
+ * Traduce el código de error del relay a algo que un humano pueda leer.
+ *
+ * Regla de producto (docs/aegis-cuotas-almacenamiento.md §2 y §8): al topar la cuota, lo PRIMERO
+ * que hay que decir es que la mensajería no está rota — el límite solo afecta a los adjuntos — y
+ * lo segundo, la salida gratuita con fecha. Nunca se amenaza con borrar la cuenta.
+ */
+function humanRelayError(status: number, data: RelayErrorBody): string | null {
+  switch (data.error) {
+    case "quota_exceeded": {
+      const cap = typeof data.quota === "number" ? ` (${formatBytes(data.quota)})` : "";
+      const base =
+        `Has llenado tu espacio de adjuntos${cap}. Tus mensajes de texto siguen funcionando ` +
+        `con normalidad: esto solo afecta a archivos y notas de voz.`;
+      const day = data.freesAt ? formatDay(data.freesAt) : null;
+      if (day && typeof data.freesBytes === "number" && data.freesBytes > 0) {
+        return `${base} Recuperas ${formatBytes(data.freesBytes)} ${day}, cuando expiren tus adjuntos más antiguos.`;
+      }
+      return `${base} El espacio se libera solo según van expirando tus adjuntos más antiguos.`;
+    }
+    case "daily_limit": {
+      const cap = typeof data.dailyLimit === "number" ? ` de hoy (${formatBytes(data.dailyLimit)})` : " de hoy";
+      return `Has alcanzado el límite de subida${cap}. Puedes seguir enviando texto; los adjuntos se reanudan mañana.`;
+    }
+    case "media_too_large":
+      return "El archivo es demasiado grande para enviarlo por el relay.";
+    case "media_unconfigured":
+      return "Este servidor no tiene los adjuntos habilitados; solo admite mensajes de texto.";
+    case "storage_upload_failed":
+    case "storage_download_failed":
+      return "El almacén de adjuntos no respondió. Vuelve a intentarlo en unos segundos.";
+    default:
+      return status === 429 ? "Demasiadas peticiones seguidas. Espera unos segundos y reintenta." : null;
+  }
+}
+
 /** Lee el error `{error}` de una respuesta no-2xx (o un genérico) y lo lanza como RelayError. */
 async function throwRelay(res: Response): Promise<never> {
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
-  throw new RelayError(data.error ?? `Error ${res.status}`, res.status, data.error);
+  const data = (await res.json().catch(() => ({}))) as RelayErrorBody;
+  const message = humanRelayError(res.status, data) ?? data.error ?? `Error ${res.status}`;
+  throw new RelayError(message, res.status, data.error);
 }
 
 /** Sube un ciphertext de media al relay (proxy a B2). Devuelve la `key` (uuid) para referenciarlo. */
