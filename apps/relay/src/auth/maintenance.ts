@@ -8,6 +8,7 @@ import { deleteExpiredBlobs } from "../messaging/blobs";
 import { config } from "../config";
 import { deleteExpiredMediaObjects } from "../media/store";
 import { purgeMediaFromBucket } from "../media/routes";
+import { deleteExpiredUsage } from "../media/quota";
 
 // Cuántos objetos de media caducados barre por tick (acotado: cada borrado es una llamada al
 // bucket; se drena en varios ticks si hay acumulación).
@@ -16,7 +17,13 @@ const MEDIA_SWEEP_LIMIT = 100;
 export interface Maintenance {
   stop: () => void;
   /** Ejecuta un barrido inmediato (usado también por los tests). */
-  runOnce: () => Promise<{ challenges: number; sessions: number; blobs: number; media: number }>;
+  runOnce: () => Promise<{
+    challenges: number;
+    sessions: number;
+    blobs: number;
+    media: number;
+    quota: number;
+  }>;
 }
 
 export function startMaintenance(
@@ -39,10 +46,20 @@ export function startMaintenance(
         );
       }
     }
-    if (challenges > 0 || sessions > 0 || blobs > 0 || media > 0) {
-      logger.info({ challenges, sessions, blobs, media }, "mantenimiento: filas vencidas borradas");
+    // Cuota: liberar los cubos de uso ya vencidos. Es lo que hace que la cuota "se libere sola"
+    // (la fecha que la UI le promete al usuario). Un DELETE, sin llamadas al bucket. Usa el mismo
+    // TTL que la media, expresado en días enteros porque los cubos son DATE.
+    let quota = 0;
+    if (config.quota) {
+      quota = await deleteExpiredUsage(Math.max(1, Math.ceil(config.mediaTtlSeconds / 86_400)));
     }
-    return { challenges, sessions, blobs, media };
+    if (challenges > 0 || sessions > 0 || blobs > 0 || media > 0 || quota > 0) {
+      logger.info(
+        { challenges, sessions, blobs, media, quota },
+        "mantenimiento: filas vencidas borradas",
+      );
+    }
+    return { challenges, sessions, blobs, media, quota };
   }
 
   const timer = setInterval(() => {
