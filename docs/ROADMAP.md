@@ -235,15 +235,17 @@ El failover deja de ser "prueba y reza" y pasa a **conmutar solo**, con el estad
 | Bloque **«Failover de transporte»** en la vista Transporte, con el orden de preferencia y el estado de cada candidato                                                                                                       | ✅     |
 | **Arrastre de Fase 3** — `node.stop()` atado al bloqueo del keystore (`stopActiveChatTransports()` antes de `lockKeystore()`): bloquear ya no deja el nodo libp2p anunciado en la red                                       | ✅     |
 | **Arrastre de Fase 3** — **ICE/TURN configurable** (`NEXT_PUBLIC_P2P_ICE_SERVERS` + credenciales) para el WebRTC de clearnet. Sin STUN público de terceros por defecto: se autoaloja                                        | ✅     |
+| **Arrastre de Fase 3** — **coturn autoalojado** empaquetado: servicio del compose de Coolify, config endurecida (credenciales obligatorias, `denied-peer-ip` contra pivote a la red interna, cuotas) y guía de despliegue `docs/aegis-coturn-deploy.md`                                                                  | ✅     |
+| **Arrastre de Fase 3** — **desplegar** ese coturn en el host y rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS`                                                                                                                       | ⬜ humano |
 | **Arrastre de Fase 3** — validar **NAT-a-NAT entre dos redes distintas** (dos ISP, no la misma LAN) con el TURN autoalojado                                                                                                 | ⬜ humano |
 
 Verificado: `@aegis/transport` **15/15 tests** (4 nuevos: umbral anti-bandazo, recuperación por
 sonda, publicación de estado, "sin ruta" sin dejar de intentar), `tsc` limpio en web y transport,
 `next build` OK.
 
-**Resta para cerrar M2 (trabajo humano, no de código):** levantar coturn junto al bootstrap,
-rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS` y probar el Modo B entre **dos redes distintas** —
-ahí vive el riesgo residual del Modo B, y ningún test automático lo cubre.
+**Resta para cerrar M2 (trabajo humano, no de código):** desplegar el coturn ya empaquetado
+(`docs/aegis-coturn-deploy.md`), rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS` y probar el Modo B entre
+**dos redes distintas** — ahí vive el riesgo residual del Modo B, y ningún test automático lo cubre.
 **Hito → M2 (beta resistente a censura).**
 
 ### Track paralelo — `apps/mobile` (React Native / Expo) · **4 sd**
@@ -290,7 +292,7 @@ rápido, pero el único humano y las fases de investigación (la 3, ya cerrada, 
 ### Milestones (en semanas relativas desde ahora)
 
 - **M1 — MVP privado** (fin Fase 1): **✅ alcanzado en código**. Texto, archivos y audio se intercambian cifrados E2E entre identidades verificadas (pendiente solo prueba manual del micro en navegador). El **acceso** y el **`.onion`** ya están. Resta pulido (QR, BullMQ, backup).
-- **M2 — Beta resistente a censura** (fin Fase 4): **alcanzado en código**. Relay + `.onion` (✅) + **P2P validado en red real (✅ Fase 3)** + **failover automático con umbrales e indicador de estado (✅ Fase 4)**. Resta **trabajo humano**: coturn autoalojado y la prueba NAT-a-NAT entre dos redes distintas.
+- **M2 — Beta resistente a censura** (fin Fase 4): **alcanzado en código**. Relay + `.onion` (✅) + **P2P validado en red real (✅ Fase 3)** + **failover automático con umbrales e indicador de estado (✅ Fase 4)**. Resta **trabajo humano**: desplegar el coturn ya empaquetado (`docs/aegis-coturn-deploy.md`) y la prueba NAT-a-NAT entre dos redes distintas.
 - **M3 — v1 auditable** (fin Fase 7): **~17,5 sd ≈ 4,3 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
 
 > La Fase 5 (mesh) es ya la que más puede mover el total: es investigación, no
