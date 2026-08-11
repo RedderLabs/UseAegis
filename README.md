@@ -37,12 +37,12 @@ telemetría, sin cuentas.
     Tor), con el mismo sobre E2E — pero ahí el relay ve *metadatos*, nunca contenido.
     *Límite honesto:* validado en NAT permisiva. La travesía **NAT-a-NAT entre redes distintas**
     necesita STUN/TURN autoalojado — el enganche existe (`NEXT_PUBLIC_P2P_ICE_SERVERS`), falta la
-    prueba de campo. Ver `docs/aegis-fase3-libp2p-spike.md`.
+    prueba de campo. Ver [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) §4.
   - **Modo C · Mesh local** (BLE / Wi-Fi Aware) — futuro (cliente móvil).
 
 ## Monorepo
 
-Gestionado con **pnpm workspaces** + **Turborepo**. La estructura sigue `docs/PLANTILLA.md §1`.
+Gestionado con **pnpm workspaces** + **Turborepo**.
 
 ```
 aegis/
@@ -51,7 +51,7 @@ aegis/
 │   └── relay/              # Servidor relay (Fastify + PostgreSQL): buzón sealed-sender,
 │                           #   auth Ed25519 challenge-response, directorio de prekeys, media
 ├── packages/
-│   ├── ui-kit/             # Design tokens (Terminal Chic, DISENO.md) + preset de Tailwind
+│   ├── ui-kit/             # Design tokens (Terminal Chic) + preset de Tailwind
 │   ├── transport/          # Abstracción de transporte: Relay ✅ / P2P (libp2p) ✅ / Mesh 🚧
 │   ├── crypto-core/        # Placeholder — hoy la cripto vive en apps/web/lib/crypto
 │   └── protocol/           # Placeholder — sobre/serialización (consolidación pendiente)
@@ -60,9 +60,7 @@ aegis/
 │   ├── tor/                # Servicio oculto v3 (.onion) endurecido (PoW / anti-DoS)
 │   └── p2p-bootstrap/      # Nodo bootstrap + circuit-relay v2 (Modo B, Fase 3)
 └── docs/
-    ├── ARQUITECTURA.md · ROADMAP.md · THREAT_MODEL.md
-    ├── DISENO.md · PLANTILLA.md
-    └── aegis-fase3-libp2p-spike.md
+    └── ARQUITECTURA.md · ROADMAP.md · THREAT_MODEL.md
 ```
 
 **Regla de monorepo:** ningún paquete de `packages/` importa nada de `apps/`. El flujo de
