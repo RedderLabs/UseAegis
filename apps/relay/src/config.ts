@@ -19,6 +19,53 @@ function intFromEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+/**
+ * Igual que `intFromEnv` pero admite 0 (los toggles de cuota usan 0 = desactivado). Se mantienen
+ * separadas para que el resto de variables sigan rechazando el 0 como error de configuración.
+ */
+function intFromEnvAllowZero(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`La variable ${name} debe ser un entero >= 0, no "${raw}"`);
+  }
+  return parsed;
+}
+
+/** Cuota de almacenamiento por identidad. `null` si está desactivada (QUOTA_MAX_BYTES=0). */
+export interface QuotaConfig {
+  /** Cuota de una identidad recién creada. */
+  baseBytes: number;
+  /** Cuota de una identidad ya madura. */
+  maxBytes: number;
+  /** Días que tarda en pasar de `baseBytes` a `maxBytes`. */
+  rampDays: number;
+  /** Suelo del tope de ráfaga diaria. */
+  dailyMinBytes: number;
+}
+
+/**
+ * Lee la config de cuota. Con `QUOTA_MAX_BYTES=0` devuelve null → sin techo por identidad (para un
+ * relay autoalojado donde el disco es del propio usuario). Igual que la media, es una capacidad
+ * opcional del despliegue; en el relay público SIEMPRE debe estar activa (ver §1 del diseño: sin
+ * ella, una sola identidad autenticada puede subir del orden de 8 TiB/día).
+ */
+function readQuotaConfig(): QuotaConfig | null {
+  const maxBytes = intFromEnvAllowZero("QUOTA_MAX_BYTES", 1024 * 1024 * 1024); // 1 GB
+  if (maxBytes === 0) return null;
+  const baseBytes = Math.min(
+    intFromEnvAllowZero("QUOTA_BASE_BYTES", 100 * 1024 * 1024), // 100 MB
+    maxBytes,
+  );
+  return {
+    baseBytes,
+    maxBytes,
+    rampDays: intFromEnv("QUOTA_RAMP_DAYS", 30),
+    dailyMinBytes: intFromEnvAllowZero("QUOTA_DAILY_MIN_BYTES", 100 * 1024 * 1024),
+  };
+}
+
 /** Config del almacén de objetos S3-compatible. `null` si no está configurado (media off). */
 export interface MediaConfig {
   endpoint: string; // p.ej. https://s3.us-east-005.backblazeb2.com
@@ -89,6 +136,9 @@ export const config = {
   mediaMaxBytes: intFromEnv("MEDIA_MAX_BYTES", 50 * 1024 * 1024),
   // TTL de los objetos de media en el bucket + su fila de rastreo. Igual que el buzón por defecto.
   mediaTtlSeconds: intFromEnv("MEDIA_TTL_SECONDS", 60 * 60 * 24 * 30),
+  // Techo de almacenamiento POR IDENTIDAD (bytes en reposo), que madura con la edad de la cuenta.
+  // Sin esto, MEDIA_MAX_BYTES × RL_MESSAGING_MAX deja subir ~8 TiB/día a una sola identidad.
+  quota: readQuotaConfig(),
   // Cada cuánto barre la tarea de mantenimiento challenges/sesiones/sobres vencidos.
   maintenanceIntervalSeconds: intFromEnv("MAINTENANCE_INTERVAL_SECONDS", 300),
   // Orígenes permitidos por CORS. Si se define CORS_ORIGINS (coma-separado) se usa esa

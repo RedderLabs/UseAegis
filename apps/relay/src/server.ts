@@ -68,6 +68,7 @@ export function buildServer(options: BuildOptions = {}): FastifyInstance {
     media: config.media,
     maxBytes: config.mediaMaxBytes,
     ttlSeconds: config.mediaTtlSeconds,
+    quota: config.quota,
   });
   app.register(blocksRoutes, { rateLimit: rl });
 
