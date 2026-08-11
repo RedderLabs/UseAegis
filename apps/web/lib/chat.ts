@@ -17,12 +17,17 @@ import {
   createP2pTransport,
   createRelayTransport,
   type CursorStore,
+  type ObservableTransport,
   type RelayBackend,
   type RelayStream,
   type Transport,
   type TransportMode,
   type WireEnvelope,
 } from "@aegis/transport";
+import {
+  publishFailoverStatus,
+  setTransportLive,
+} from "./transport-status";
 import { createLazyP2pNode } from "./p2p/lazy-node";
 import { openMessageBlob, sealForSelf, sealMessageFor } from "./crypto/identity-store";
 import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
@@ -32,6 +37,7 @@ import {
   downloadMedia,
   fetchHealth,
   fetchMessages,
+  isOnionSession,
   openMessageStream,
   sendMessage,
   uploadMedia,
@@ -471,12 +477,18 @@ function makeRelayStream(token: string): RelayStream {
 }
 
 /**
- * Multiaddrs del/los nodo(s) bootstrap del Modo B (D2), de `NEXT_PUBLIC_P2P_BOOTSTRAP`
- * (coma-separada). Lista vacía = sin bootstrap configurado ⇒ NO se añade el candidato P2P y el chat
- * queda igual que hoy (solo relay). Next inlinea `NEXT_PUBLIC_*` en el bundle del navegador.
+ * Multiaddrs del/los nodo(s) bootstrap del Modo B (D2), coma-separada, SEGÚN LA PUERTA:
+ *   - clearnet (`.app`): `NEXT_PUBLIC_P2P_BOOTSTRAP` — WSS al bootstrap, WebRTC directo entre pares.
+ *   - `.onion` (Tor):    `NEXT_PUBLIC_P2P_BOOTSTRAP_ONION` — WS a la onion del circuit-relay; el sobre
+ *     se reenvía por el circuito (no hay WebRTC sobre Tor). Multiaddr típico:
+ *     `/dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>`.
+ * Lista vacía = sin bootstrap para esa puerta ⇒ NO se añade el candidato P2P (el chat queda solo
+ * relay para esa puerta). Next inlinea `NEXT_PUBLIC_*` en el bundle del navegador.
  */
-function p2pBootstrapMultiaddrs(): string[] {
-  const raw = process.env.NEXT_PUBLIC_P2P_BOOTSTRAP ?? "";
+function p2pBootstrapMultiaddrs(onion: boolean): string[] {
+  const raw =
+    (onion ? process.env.NEXT_PUBLIC_P2P_BOOTSTRAP_ONION : process.env.NEXT_PUBLIC_P2P_BOOTSTRAP) ??
+    "";
   return raw
     .split(",")
     .map((s) => s.trim())
@@ -528,17 +540,27 @@ export function createChatTransport(token: string, ownPub: string): ChatTranspor
     }),
   ];
 
-  // Modo B (P2P/libp2p): SEGUNDO candidato, solo si hay un nodo bootstrap configurado (D2). Sin él,
-  // un navegador no tiene punto de entrada a la red → se queda con el relay. El nodo se construye
-  // PEREZOSAMENTE al arrancar (import dinámico de libp2p, browser-only, con la clave derivada de la
-  // identidad desbloqueada): nunca en SSR. El failover prueba relay PRIMERO; P2P solo entra cuando
-  // el relay no es alcanzable (anti-censura). La cripto de sobre no cambia: mueve bytes opacos.
-  const bootstrap = p2pBootstrapMultiaddrs();
+  // Modo B (P2P/libp2p): SEGUNDO candidato, solo si hay un nodo bootstrap configurado (D2) para la
+  // PUERTA actual. Sin él, un navegador no tiene punto de entrada a la red → se queda con el relay.
+  // El nodo se construye PEREZOSAMENTE al arrancar (import dinámico de libp2p, browser-only, con la
+  // clave derivada de la identidad desbloqueada): nunca en SSR. El failover prueba relay PRIMERO;
+  // P2P solo entra cuando el relay no es alcanzable (anti-censura). La cripto de sobre no cambia.
+  //
+  // El Modo B funciona por AMBAS puertas: WebRTC directo en clearnet, REENVIADO por el circuit-relay
+  // sobre Tor (allí el navegador no puede WebRTC ni escuchar). `onion` selecciona el bootstrap y el
+  // modo de discado del nodo.
+  const onion = isOnionSession();
+  const bootstrap = p2pBootstrapMultiaddrs(onion);
   if (bootstrap.length > 0) {
-    candidates.push(createP2pTransport({ node: createLazyP2pNode(bootstrap) }));
+    candidates.push(createP2pTransport({ node: createLazyP2pNode(bootstrap, onion) }));
   }
 
-  const transport: Transport = createFailoverTransport(candidates);
+  const transport: ObservableTransport = createFailoverTransport(candidates);
+
+  // El failover publica su estado al store de la carcasa: es lo que pinta el punto del header
+  // (DISENO.md §6). La suscripción entrega la foto actual de inmediato, así que el indicador
+  // nunca arranca en blanco.
+  const offStatus = transport.onStatus(publishFailoverStatus);
 
   const subscribers = new Set<(msg: ChatMessage) => void>();
   const send: SendFn = (peerId, blob) => transport.send(peerId, blob);
@@ -555,12 +577,21 @@ export function createChatTransport(token: string, ownPub: string): ChatTranspor
     }
   });
 
-  return {
+  const chat: ChatTransport = {
     get activeMode() {
       return transport.activeMode;
     },
-    start: () => transport.start(),
-    stop: () => transport.stop(),
+    start() {
+      transport.start();
+      setTransportLive(true);
+      activeChats.add(chat);
+    },
+    stop() {
+      activeChats.delete(chat);
+      offStatus();
+      transport.stop();
+      setTransportLive(false);
+    },
     sendText: (contact, text) => sealAndSendText(send, ownPub, contact, text),
     sendFile: (contact, file, kind, durationMs) =>
       sealAndSendFile(send, token, ownPub, contact, file, kind, durationMs),
@@ -569,6 +600,27 @@ export function createChatTransport(token: string, ownPub: string): ChatTranspor
       return () => subscribers.delete(handler);
     },
   };
+
+  return chat;
+}
+
+/**
+ * Transportes de chat arrancados en esta pestaña. Existe por una sola razón: al BLOQUEAR la sesión
+ * hay que apagar también el nodo libp2p (nota de la revisión humana de la Fase 3, `PLANTILLA §5`).
+ * Sin esto, el nodo P2P seguiría anunciado y conectado al bootstrap después de bloquear, hasta que
+ * React desmontara el Canal — una identidad viva en la red con el keystore ya cerrado.
+ */
+const activeChats = new Set<ChatTransport>();
+
+/** Para todos los transportes de chat vivos. Llamar ANTES de `lockKeystore()`. Idempotente. */
+export function stopActiveChatTransports(): void {
+  for (const chat of [...activeChats]) {
+    try {
+      chat.stop();
+    } catch {
+      /* apagado best-effort: bloquear la sesión nunca debe fallar por esto */
+    }
+  }
 }
 
 /**

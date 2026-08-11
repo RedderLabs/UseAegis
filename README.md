@@ -23,17 +23,21 @@ telemetría, sin cuentas.
 - **Dos puertas, mismo cifrado** — clearnet (HTTPS) y **servicio oculto .onion** (Tor v3, endurecido
   con PoW/anti-DoS). La web anuncia el `.onion` con la cabecera estándar **`Onion-Location`**
   (preservando la ruta), así Tor Browser ofrece saltar a la **misma página** del servicio oculto.
-- **Transporte intercambiable** — el mismo cifrado sobre varios caminos, con *failover* automático:
-  el cliente intenta el relay primero y, si no es alcanzable **para ti**, entrega por P2P.
+- **Transporte intercambiable** — el mismo cifrado sobre varios caminos, con *failover* **automático**:
+  el cliente intenta el relay primero y, si no es alcanzable **para ti**, entrega por P2P. La
+  conmutación no la decides tú: dos fallos seguidos dan un modo por caído, y una sonda cada 15 s lo
+  devuelve solo en cuanto vuelve. El header lo dice con un punto de color, y el detalle se abre al
+  pulsarlo.
   - **Modo A · Relay** — ✅ en producción.
   - **Modo B · P2P (libp2p)** — ✅ **en producción, validado en red real**: con el relay **apagado**,
     un mensaje viajó de navegador a navegador y llegó al destinatario. WebRTC + circuit-relay v2
     (solo señalización), Noise sobre tu Ed25519; el contacto se localiza por su **PeerID derivado de
-    su clave pública** — sin DHT y sin directorio que consultar.
-    *Dos límites honestos:* (1) validado en NAT permisiva — la travesía **NAT-a-NAT entre redes
-    distintas** (y el posible **TURN**) es endurecimiento de la Fase 4; (2) el Modo B es **clearnet
-    por diseño**: WebRTC no viaja por Tor, así que no está disponible desde la puerta `.onion`.
-    Ver `docs/aegis-fase3-libp2p-spike.md`.
+    su clave pública** — sin DHT y sin directorio que consultar. Funciona por **ambas puertas**: en
+    clearnet, WebRTC directo; sobre `.onion`, **reenviado por el circuit-relay** (no hay WebRTC sobre
+    Tor), con el mismo sobre E2E — pero ahí el relay ve *metadatos*, nunca contenido.
+    *Límite honesto:* validado en NAT permisiva. La travesía **NAT-a-NAT entre redes distintas**
+    necesita STUN/TURN autoalojado — el enganche existe (`NEXT_PUBLIC_P2P_ICE_SERVERS`), falta la
+    prueba de campo. Ver `docs/aegis-fase3-libp2p-spike.md`.
   - **Modo C · Mesh local** (BLE / Wi-Fi Aware) — futuro (cliente móvil).
 
 ## Monorepo
@@ -91,12 +95,16 @@ Otros scripts: `pnpm build`, `pnpm lint`, `pnpm typecheck`, y `pnpm --filter @ae
 archivos y audio cifrados E2E por el relay, en clearnet o por `.onion`.
 
 **Fase 3 (Modo B, libp2p) cerrada:** el P2P está desplegado y **validado en red real** — dos
-navegadores con el relay apagado intercambiaron un mensaje directo. Queda como endurecimiento la
-travesía **NAT-a-NAT entre redes distintas** (posible TURN).
+navegadores con el relay apagado intercambiaron un mensaje directo.
 
-**En curso — Fase 4:** failover automático con umbrales afinados y el indicador de estado
-verde/ámbar/rojo, para que el salto entre caminos sea visible. Detalle y estimaciones en
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+**Fase 4 (failover automático + indicador) cerrada en código:** la conmutación entre caminos es
+automática y con umbral (dos fallos seguidos dan un modo por caído; una sonda cada 15 s lo devuelve
+cuando vuelve), y el estado es visible: punto verde (relay) / ámbar (P2P) / naranja (malla) / rojo
+(sin ruta) en el header, con el detalle bajo demanda. Bloquear la sesión apaga también el nodo P2P.
+
+**M2 (beta resistente a censura) alcanzado en código.** Lo que queda es **de campo, no de teclado**:
+levantar STUN/TURN autoalojado y probar el Modo B entre **dos redes distintas** — ahí vive el riesgo
+residual. Detalle y estimaciones en [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 **Auditoría externa: pendiente** (roadmap fase 7). No se afirma ninguna auditoría superada hasta
 que exista un informe de un tercero citable.

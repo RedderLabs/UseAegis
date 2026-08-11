@@ -200,11 +200,20 @@ P2P** (WebRTC señalizado por el bootstrap/circuit-relay); una entrega P2P corre
 HTTP** en la consola. Con eso, `IMPLEMENTED_MODES` pasa a **`["relay","p2p"]`**: el Modo B ya se
 anuncia como modo con red real.
 
-**Dos aprendizajes de la prueba, para no repetirlos:** (1) el P2P **no funciona desde Tor** (WebRTC
-bloqueado) — el Modo B es clearnet por diseño, así que la prueba exige dos navegadores `.app`;
+**Dos aprendizajes de la prueba:** (1) el P2P **no funciona desde Tor por WebRTC** (UDP, bloqueado) —
+**abordado** (2026-07-25) llevando el Modo B **por el circuito** sobre Tor, de modo que funcione
+indistintamente por `.app` (WebRTC directo) y por `.onion` (reenviado por el circuit-relay, TCP);
+_implementado, pendiente validar en deploy_ — ver `docs/aegis-fase3-libp2p-spike.md §3.6`;
 (2) el **auth necesita el relay**: con el relay caído no puedes loguearte ni recargar (perderías la
-sesión). El Modo B mantiene viva una conversación **ya iniciada** cuando el relay se bloquea; no es
-un sustituto del arranque de sesión.
+sesión). Es **decisión de diseño** (la sesión se firma contra el relay siempre, para la auditoría),
+no un bug a desacoplar. El Modo B mantiene viva una conversación **ya iniciada** cuando el relay se
+bloquea; no es un sustituto del arranque de sesión.
+
+> **Caveat honesto del Modo B sobre Tor:** en un navegador, sobre Tor, el sobre lo **reenvía** el
+> circuit-relay (el navegador no puede escuchar ni hospedar un onion service). Sigue siendo Modo B
+> real (mismo plano libp2p, mismo sobre E2E, **no** el buzón que _almacena_ del Modo A), pero el
+> relay ve **metadatos** (quién↔quién, cuándo), nunca el contenido. El P2P directo-sin-relay sobre
+> Tor solo existe en la **app nativa + Arti** (track nativo).
 
 **Límite honesto (endurecimiento de Fase 4, no bloquea el cierre):** lo validado es NAT **permisiva**
 (ambos navegadores en la misma red). Falta **NAT-a-NAT entre dos redes distintas** — _ahí vive el
@@ -212,12 +221,31 @@ riesgo residual_, y es donde probablemente haga falta **TURN** (el circuit-relay
 señalización, no el relevo de media si el ICE falla). Ningún test automático cubre libp2p real
 (`@libp2p/crypto` no resuelve bajo el runner `tsx`): se valida a mano con navegadores.
 
-### Fase 4 — Failover automático A → B + indicador de estado · **1 sd**
+### Fase 4 — Failover automático A → B + indicador de estado · ✅ **HECHA en código** (2026-07-30)
 
-Detección de fallo, conmutación, y el punto verde/ámbar/rojo del header (`DISENO.md §6`).
-**Arrastra de la Fase 3** (endurecimiento del Modo B, ver arriba): validar **NAT-a-NAT entre dos
-redes distintas** y, si el ICE no atraviesa, añadir **TURN**; además, atar `node.stop()` al bloqueo
-del keystore (nota de la revisión humana `PLANTILLA §5`).
+El failover deja de ser "prueba y reza" y pasa a **conmutar solo**, con el estado a la vista.
+
+| Entregable                                                                                                                                                                                                                  | Estado |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **Detección** de fallo con umbral: `failureThreshold` fallos CONSECUTIVOS (de envío o de sonda) marcan un modo como caído — un 500 suelto no mueve el indicador                                                             | ✅     |
+| **Conmutación**: el modo activo es el primer candidato con ruta; al fallar una entrega, el indicador refleja la ruta REAL en el acto (se distingue "ha fallado" de "se le da por muerto")                                   | ✅     |
+| **Recuperación automática**: ronda de sondas (`isAvailable`) cada 15 s que devuelve el activo al candidato preferente en cuanto vuelve — sin recargar y sin que el usuario mande nada                                       | ✅     |
+| **Estado observable**: `createFailoverTransport` devuelve un `ObservableTransport` (`status()` + `onStatus()`) con la salud, la latencia y la última conmutación de cada modo                                               | ✅     |
+| **Punto de estado del header** (`DISENO.md §6`): verde/ámbar/naranja + rojo de "sin ruta", con el detalle bajo demanda al pulsarlo (`components/TransportStatus.tsx`). Sustituye a la pastilla de sesión y absorbe su aviso | ✅     |
+| Bloque **«Failover de transporte»** en la vista Transporte, con el orden de preferencia y el estado de cada candidato                                                                                                       | ✅     |
+| **Arrastre de Fase 3** — `node.stop()` atado al bloqueo del keystore (`stopActiveChatTransports()` antes de `lockKeystore()`): bloquear ya no deja el nodo libp2p anunciado en la red                                       | ✅     |
+| **Arrastre de Fase 3** — **ICE/TURN configurable** (`NEXT_PUBLIC_P2P_ICE_SERVERS` + credenciales) para el WebRTC de clearnet. Sin STUN público de terceros por defecto: se autoaloja                                        | ✅     |
+| **Arrastre de Fase 3** — **coturn autoalojado** empaquetado: servicio del compose de Coolify, config endurecida (credenciales obligatorias, `denied-peer-ip` contra pivote a la red interna, cuotas) y guía de despliegue `docs/aegis-coturn-deploy.md`                                                                  | ✅     |
+| **Arrastre de Fase 3** — **desplegar** ese coturn en el host y rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS`                                                                                                                       | ⬜ humano |
+| **Arrastre de Fase 3** — validar **NAT-a-NAT entre dos redes distintas** (dos ISP, no la misma LAN) con el TURN autoalojado                                                                                                 | ⬜ humano |
+
+Verificado: `@aegis/transport` **15/15 tests** (4 nuevos: umbral anti-bandazo, recuperación por
+sonda, publicación de estado, "sin ruta" sin dejar de intentar), `tsc` limpio en web y transport,
+`next build` OK.
+
+**Resta para cerrar M2 (trabajo humano, no de código):** desplegar el coturn ya empaquetado
+(`docs/aegis-coturn-deploy.md`), rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS` y probar el Modo B entre
+**dos redes distintas** — ahí vive el riesgo residual del Modo B, y ningún test automático lo cubre.
 **Hito → M2 (beta resistente a censura).**
 
 ### Track paralelo — `apps/mobile` (React Native / Expo) · **4 sd**
@@ -249,23 +277,23 @@ Dockerfile determinista, hash publicado por release, instrucciones de reproducci
 | 2 · Abstracción transporte                                                               | ✅ hecha      | 4,5 sd    |
 | 2.5 · `.onion`                                                                           | ✅ hecha      | 4,5 sd    |
 | 3 · libp2p (Modo B validado en red real)                                                 | ✅ hecha      | 4,5 sd    |
-| 4 · Failover + UI                                                                        | 1 sd          | 5,5 sd    |
-| — · Móvil (track paralelo)                                                               | 4 sd          | 9,5 sd    |
-| 5 · Mesh (BLE / Wi-Fi Aware)                                                             | 6 sd          | 15,5 sd   |
-| 6 · Archivos                                                                             | 1 sd          | 16,5 sd   |
-| 7 · Reproducible + audit                                                                 | 2 sd          | 18,5 sd   |
+| 4 · Failover + UI                                                                        | ✅ hecha      | 4,5 sd    |
+| — · Móvil (track paralelo)                                                               | 4 sd          | 8,5 sd    |
+| 5 · Mesh (BLE / Wi-Fi Aware)                                                             | 6 sd          | 14,5 sd   |
+| 6 · Archivos                                                                             | 1 sd          | 15,5 sd   |
+| 7 · Reproducible + audit                                                                 | 2 sd          | 17,5 sd   |
 
-**Total ingeniería restante: ~18,5 sd ≈ 4,5 meses** (–10,5 sd respecto a los 29 previos: la Fase 2.5
-`.onion`, ~4 sd de acceso/relay, el **texto E2E** de la Fase 1 y ahora la **Fase 3 (Modo B)** ya
-están entregados y desplegados). Referencia: sigue
+**Total ingeniería restante: ~17,5 sd ≈ 4,3 meses** (–11,5 sd respecto a los 29 previos: la Fase 2.5
+`.onion`, ~4 sd de acceso/relay, el **texto E2E** de la Fase 1, la **Fase 3 (Modo B)** y ahora la
+**Fase 4 (failover automático + indicador)** ya están entregados). Referencia: sigue
 entre el escenario ideal de 2 devs y el de 1 dev sin asistencia — Claude tira hacia el lado
 rápido, pero el único humano y las fases de investigación (la 3, ya cerrada, y la 5) mantienen el suelo.
 
 ### Milestones (en semanas relativas desde ahora)
 
 - **M1 — MVP privado** (fin Fase 1): **✅ alcanzado en código**. Texto, archivos y audio se intercambian cifrados E2E entre identidades verificadas (pendiente solo prueba manual del micro en navegador). El **acceso** y el **`.onion`** ya están. Resta pulido (QR, BullMQ, backup).
-- **M2 — Beta resistente a censura** (fin Fase 4): **~1,5 sd ≈ 2 semanas**. Relay + `.onion` (✅) + **P2P validado en red real (✅ Fase 3)**; resta el failover automático con umbrales, el indicador de estado y el endurecimiento NAT/TURN.
-- **M3 — v1 auditable** (fin Fase 7): **~18,5 sd ≈ 4,5 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
+- **M2 — Beta resistente a censura** (fin Fase 4): **alcanzado en código**. Relay + `.onion` (✅) + **P2P validado en red real (✅ Fase 3)** + **failover automático con umbrales e indicador de estado (✅ Fase 4)**. Resta **trabajo humano**: desplegar el coturn ya empaquetado (`docs/aegis-coturn-deploy.md`) y la prueba NAT-a-NAT entre dos redes distintas.
+- **M3 — v1 auditable** (fin Fase 7): **~17,5 sd ≈ 4,3 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
 
 > La Fase 5 (mesh) es ya la que más puede mover el total: es investigación, no
 > ingeniería resuelta, y es justamente la que menos se comprime con asistencia

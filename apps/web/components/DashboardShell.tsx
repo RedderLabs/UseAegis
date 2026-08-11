@@ -14,8 +14,9 @@ import { groupIdentity } from "@/lib/identity";
 import { endSession, getSession, getToken, type Session } from "@/lib/session";
 import { logout } from "@/lib/relay-client";
 import { isUnlocked, lockKeystore } from "@/lib/crypto/identity-store";
-import { unreadCount } from "@/lib/chat";
+import { stopActiveChatTransports, unreadCount } from "@/lib/chat";
 import { setFaviconSecure } from "@/lib/favicon";
+import { TransportStatus } from "./TransportStatus";
 import {
   IconChat,
   IconUsers,
@@ -82,6 +83,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [router]);
 
   async function lock() {
+    // Apaga el transporte ANTES de nada: con el Modo B, bloquear la sesión sin parar el nodo
+    // libp2p dejaría la identidad anunciada y conectada al bootstrap con el keystore ya cerrado
+    // (nota de la revisión humana de la Fase 3, PLANTILLA §5).
+    stopActiveChatTransports();
     // Revoca la sesión en el relay (best-effort) antes de limpiar la local.
     const token = getToken();
     if (token) {
@@ -123,20 +128,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             <span className="font-mono font-semibold tracking-[0.14em] text-sm">
               AEGIS
             </span>
-            <span className="hidden sm:block h-4 w-px bg-line" />
-            <span
-              className="hidden sm:inline-flex items-center gap-1.5 label"
-              style={{ color: session.secure ? "#c3f400" : "#fbbf24" }}
-            >
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{
-                  backgroundColor: session.secure ? "#c3f400" : "#fbbf24",
-                  boxShadow: session.secure ? "0 0 8px #c3f400" : undefined,
-                }}
-              />
-              {session.secure ? "Sesión verificada" : "Sesión sin proteger"}
-            </span>
+            <span className="block h-4 w-px bg-line" />
+            {/* Punto de estado de transporte: el color dice la ruta, el resto se abre al pulsarlo */}
+            <TransportStatus secure={session.secure} />
           </div>
           <span className="font-mono text-[11px] text-secondary truncate max-w-[45%]">
             {grouped}

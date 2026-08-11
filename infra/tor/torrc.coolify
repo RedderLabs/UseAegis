@@ -33,6 +33,13 @@ HiddenServiceMaxStreamsCloseCircuit 1
 HiddenServiceDir /var/lib/tor/aegis-web
 HiddenServiceVersion 3
 HiddenServicePort 80 web:3000
+# Modo B (P2P) SOBRE la MISMA onion, en un puerto virtual: el WS del circuit-relay (bootstrap:9001).
+# Sobre Tor no hay WebRTC (UDP) → el sobre P2P se REENVÍA por el circuito (TCP). El navegador, ya
+# dentro de la puerta .onion, disca  /dns4/<esta-onion>/tcp/9001/ws/p2p/<PeerID>  (ws plano: Tor
+# cifra el circuito; la página onion es http, así que no es contenido mixto). Un WebSocket = UN
+# stream Tor (yamux multiplexa dentro) → el MaxStreams de abajo no lo estrangula. El relay ve solo
+# bytes opacos (E2E intacto). entrypoint.coolify.sh resuelve `p2p-bootstrap` a IP (Tor exige literal).
+HiddenServicePort 9001 p2p-bootstrap:9001
 # Defensa anti-DoS de la onion de la WEB (mismos criterios que arriba; los navegadores por Tor
 # ya resuelven el PoW de forma transparente si el servicio lo exige bajo carga).
 HiddenServiceEnableIntroDoSDefense 1

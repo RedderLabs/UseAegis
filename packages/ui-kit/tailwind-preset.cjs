@@ -38,6 +38,8 @@ module.exports = {
         "status-relay": "#c3f400",
         "status-p2p": "#fbbf24",
         "status-mesh": "#ea580c",
+        // Sin ruta: no es un modo, es la ausencia de todos ellos
+        "status-offline": "#ffb4ab",
       },
       fontFamily: {
         // Hanken Grotesk (humano) + JetBrains Mono (técnico). Las vars las inyecta

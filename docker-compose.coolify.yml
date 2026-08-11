@@ -48,6 +48,12 @@ services:
       BLOB_TTL_SECONDS: ${BLOB_TTL_SECONDS:-2592000}
       MEDIA_TTL_SECONDS: ${MEDIA_TTL_SECONDS:-2592000}
       MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-52428800}
+      # Cuota de almacenamiento por identidad (bytes en reposo), madura con la edad de la cuenta.
+      # Imprescindible en el relay público: sin ella, una identidad puede subir ~8 TiB/día.
+      QUOTA_BASE_BYTES: ${QUOTA_BASE_BYTES:-104857600}
+      QUOTA_MAX_BYTES: ${QUOTA_MAX_BYTES:-1073741824}
+      QUOTA_RAMP_DAYS: ${QUOTA_RAMP_DAYS:-30}
+      QUOTA_DAILY_MIN_BYTES: ${QUOTA_DAILY_MIN_BYTES:-104857600}
       # Almacén de objetos S3/B2 para adjuntos cifrados (audio/archivos). Sin estas 5, /media = 503.
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_REGION: ${S3_REGION}
@@ -78,6 +84,17 @@ services:
         # deploy del servicio p2p-bootstrap, saca su PeerID de los logs, forma el multiaddr
         # /dns4/<P2P_DOMAIN>/tcp/443/wss/p2p/<PeerID>, ponlo aquí (panel de Coolify) y REDEPLOY web.
         NEXT_PUBLIC_P2P_BOOTSTRAP: ${NEXT_PUBLIC_P2P_BOOTSTRAP:-}
+        # Modo B por la puerta .onion: el circuit-relay se sirve como puerto virtual (9001) sobre la
+        # MISMA onion de la web (ver infra/tor/torrc.coolify). Tras sacar el PeerID del bootstrap y la
+        # dirección .onion de la web, forma  /dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>,
+        # ponlo aquí (panel de Coolify) y REDEPLOY web. VACÍO = sobre Tor el chat queda solo relay.
+        NEXT_PUBLIC_P2P_BOOTSTRAP_ONION: ${NEXT_PUBLIC_P2P_BOOTSTRAP_ONION:-}
+        # ICE del WebRTC (Fase 4) — solo clearnet; sobre Tor no hay WebRTC. Sin ICE, el Modo B solo
+        # atraviesa NAT permisiva (el límite honesto que quedó abierto al cerrar la Fase 3). Autoaloja
+        # coturn y apúntalo aquí: no se usa STUN público de terceros por defecto.
+        NEXT_PUBLIC_P2P_ICE_SERVERS: ${NEXT_PUBLIC_P2P_ICE_SERVERS:-}
+        NEXT_PUBLIC_P2P_TURN_USER: ${NEXT_PUBLIC_P2P_TURN_USER:-}
+        NEXT_PUBLIC_P2P_TURN_CREDENTIAL: ${NEXT_PUBLIC_P2P_TURN_CREDENTIAL:-}
     restart: unless-stopped
     # Contención (ver relay). Next en runtime es ligero, pero puede picar bajo carga → 1 GiB de tope.
     mem_limit: 1g
@@ -163,6 +180,56 @@ services:
       - "9001"
     volumes:
       - aegis-p2p-bootstrap-data:/data
+
+  # --- coturn: STUN/TURN del WebRTC (Modo B / Fase 4) ------------------------------------
+  # Sin ICE, el Modo B solo atraviesa NAT permisiva (ambos navegadores en la MISMA red): es el
+  # límite honesto que quedó abierto al cerrar la Fase 3. Con este STUN/TURN propio atraviesa NAT
+  # entre redes distintas. Se autoaloja A PROPÓSITO: un STUN público de terceros vería la IP de
+  # cada usuario que arranca el Modo B. Aquí esa IP la ve un servidor que YA es nuestro.
+  #
+  # NO lleva dominio en Coolify: Traefik solo proxea HTTP/TCP y el grueso de TURN es UDP. Publica
+  # sus puertos DIRECTAMENTE en el host → hay que abrirlos en el cortafuegos (ufw, ver §3 del doc).
+  #
+  # Tras el 1er deploy, apunta el cliente a él y REDEPLOY web (son build-time):
+  #   NEXT_PUBLIC_P2P_ICE_SERVERS=stun:turn.useaegis.app:3478,turn:turn.useaegis.app:3478
+  #   NEXT_PUBLIC_P2P_TURN_USER / NEXT_PUBLIC_P2P_TURN_CREDENTIAL = TURN_USER / TURN_PASSWORD
+  # Ver docs/aegis-coturn-deploy.md. Si NO quieres TURN, borra este servicio: web/relay siguen
+  # igual y el Modo B se queda como hoy (NAT permisiva) — el failover a Modo A no depende de esto.
+  coturn:
+    build:
+      context: ./infra/coturn
+      dockerfile: Dockerfile.coolify
+    restart: unless-stopped
+    # Contención (ver relay). coturn es un reenviador de paquetes: ligero en RAM, sin forks.
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      # OBLIGATORIA: IP pública IPv4 del host. En Docker hay NAT 1:1 y sin esto los candidatos
+      # ICE salen con la IP interna del contenedor (172.x) — inservibles desde fuera.
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP}
+      # OBLIGATORIAS: sin credenciales el entrypoint aborta (un TURN abierto es un relevo gratis).
+      TURN_USER: ${TURN_USER}
+      TURN_PASSWORD: ${TURN_PASSWORD}
+      TURN_REALM: ${TURN_REALM:-useaegis.app}
+    ports:
+      # Puertos de control STUN/TURN.
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      # TLS (turns:). Solo escucha si se monta certificado; publicarlo igualmente no abre nada.
+      - "5349:5349/tcp"
+      # Rango de relevo, ESTRECHO a propósito: cada puerto publicado levanta su propio
+      # docker-proxy. Debe coincidir con min-port/max-port de turnserver.conf.template.
+      - "49160-49200:49160-49200/udp"
+    # OPCIONAL — turns:5349. Monta un certificado válido para el dominio del TURN y descomenta.
+    # Sin él arranca solo turn:3478, que basta: el payload ya va cifrado E2E por encima.
+    # volumes:
+    #   - /ruta/al/certificado:/etc/coturn/certs:ro
 
 volumes:
   # Persiste las claves de las .onion (hs_ed25519_secret_key) → dirección estable entre deploys.

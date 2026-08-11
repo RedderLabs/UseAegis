@@ -45,6 +45,45 @@ export interface Libp2pNodeOptions {
    * Sin al menos uno, un navegador no tiene punto de entrada a la red ni forma de recibir WebRTC.
    */
   bootstrapMultiaddrs: string[];
+  /**
+   * Puerta `.onion` (Tor). Sobre Tor NO hay WebRTC (UDP bloqueado por diseño del navegador): el
+   * sobre P2P se REENVÍA por el propio circuito (TCP, WS-sobre-Tor al bootstrap). Con esto:
+   *   - no se monta el transporte `webRTC()` ni se escucha en `/webrtc` (inútil sobre Tor),
+   *   - `send()` disca `/<bootstrap>/p2p-circuit/p2p/<target>` SIN el upgrade a `/webrtc`.
+   * En clearnet (`false`, por defecto) se prefiere WebRTC directo, con el circuito como reserva.
+   */
+  onion?: boolean;
+}
+
+/**
+ * Servidores ICE del WebRTC (solo clearnet; sobre Tor no hay WebRTC). Es lo que decide si el Modo B
+ * atraviesa NAT-a-NAT entre DOS REDES DISTINTAS, el límite honesto que quedó abierto al cerrar la
+ * Fase 3: lo validado allí fue NAT permisiva (ambos navegadores en la misma red), donde bastan los
+ * candidatos de host.
+ *
+ *   - `NEXT_PUBLIC_P2P_ICE_SERVERS` — lista separada por comas (`stun:…`, `turn:…`, `turns:…`).
+ *   - `NEXT_PUBLIC_P2P_TURN_USER` / `NEXT_PUBLIC_P2P_TURN_CREDENTIAL` — credenciales, aplicadas
+ *     solo a las entradas `turn:`/`turns:`.
+ *
+ * SIN CONFIGURAR NO HAY ICE, a propósito: el proyecto no mete un STUN público de terceros por
+ * defecto (Google y compañía verían la IP de cada usuario que arranca el Modo B — justo lo que el
+ * modelo de amenaza evita). El STUN/TURN se autoaloja junto al bootstrap. Con la lista vacía, el
+ * Modo B sigue funcionando en NAT permisiva y por el circuito; lo que se pierde es el atravesado
+ * de NAT simétrica.
+ */
+function iceServers(): RTCIceServer[] {
+  const urls = (process.env.NEXT_PUBLIC_P2P_ICE_SERVERS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (urls.length === 0) return [];
+  const username = process.env.NEXT_PUBLIC_P2P_TURN_USER;
+  const credential = process.env.NEXT_PUBLIC_P2P_TURN_CREDENTIAL;
+  return urls.map((url) =>
+    /^turns?:/i.test(url) && username && credential
+      ? { urls: url, username, credential }
+      : { urls: url },
+  );
 }
 
 /** Hash SHA-256 → base64url, id determinista del sobre (dos entregas del MISMO blob deduplican). */
@@ -68,6 +107,7 @@ export async function createLibp2pNode(
   let node: Libp2p | null = null;
   let recvSeq = 0; // orden local de recepción (P2P no tiene cursor global del servidor)
   const listeners = new Set<(env: WireEnvelope) => void>();
+  const onion = opts.onion === true; // puerta Tor: sin WebRTC, todo reenviado por el circuito
 
   /** Lee un sobre completo de un stream entrante (hasta el cierre) y lo entrega a los listeners. */
   async function handleIncoming(stream: Stream): Promise<void> {
@@ -95,10 +135,21 @@ export async function createLibp2pNode(
       node = await createLibp2p({
         privateKey,
         addresses: {
-          // /p2p-circuit: aceptar entrantes vía relay. /webrtc: conexiones directas P2P.
-          listen: ["/p2p-circuit", "/webrtc"],
+          // /p2p-circuit: aceptar entrantes vía relay (imprescindible en ambas puertas: un navegador
+          // no escucha, recibe reenviado). /webrtc: conexiones directas P2P — solo en clearnet; sobre
+          // Tor no hay WebRTC, así que no se anuncia (evita gastar en señalización que no cuaja).
+          listen: onion ? ["/p2p-circuit"] : ["/p2p-circuit", "/webrtc"],
         },
-        transports: [webSockets(), webRTC(), circuitRelayTransport()],
+        // Sobre Tor se omite `webRTC()`: el transporte útil es WS(-sobre-Tor) contra el circuit-relay.
+        transports: onion
+          ? [webSockets(), circuitRelayTransport()]
+          : [
+              webSockets(),
+              // Con ICE configurado, el WebRTC puede atravesar NAT entre redes distintas (y
+              // relevar por TURN si el ICE no cuaja). Sin él, solo candidatos de host.
+              webRTC({ rtcConfiguration: { iceServers: iceServers() } }),
+              circuitRelayTransport(),
+            ],
         connectionEncrypters: [noise()],
         streamMuxers: [yamux()],
         // El navegador dial-a multiaddrs de circuito/WebRTC que un gater estricto rechazaría.
@@ -129,14 +180,18 @@ export async function createLibp2pNode(
       const peerId = libp2pPeerIdFromEd25519(fromBase64Url(recipientPub));
       const target = peerIdFromString(peerId);
       // D4: sin DHT. Primero intenta por PeerID (reusa una conexión ya abierta o direcciones
-      // conocidas); si no hay ruta, disca a través del CIRCUITO de cada bootstrap conocido:
-      //   /<bootstrap>/p2p-circuit/webrtc/p2p/<target>  → relayado + upgrade a WebRTC directo.
+      // conocidas); si no hay ruta, disca a través del CIRCUITO de cada bootstrap conocido. El
+      // sufijo del circuito depende de la puerta:
+      //   - clearnet: /<bootstrap>/p2p-circuit/webrtc/p2p/<target>  → relayado + upgrade a WebRTC.
+      //   - .onion:   /<bootstrap>/p2p-circuit/p2p/<target>         → REENVIADO por el circuito (TCP),
+      //     sin WebRTC (bloqueado sobre Tor). El relay mueve bytes opacos; la cripto E2E no cambia.
+      const circuitSuffix = onion ? `/p2p-circuit/p2p/${peerId}` : `/p2p-circuit/webrtc/p2p/${peerId}`;
       let stream: Stream;
       try {
         stream = await node.dialProtocol(target, AEGIS_MSG_PROTOCOL);
       } catch (directErr) {
         const relayed = opts.bootstrapMultiaddrs.map((b) =>
-          multiaddr(b).encapsulate(`/p2p-circuit/webrtc/p2p/${peerId}`),
+          multiaddr(b).encapsulate(circuitSuffix),
         );
         // Sin bootstrap no hay forma de alcanzar al peer: propaga para que el failover use el relay.
         if (relayed.length === 0) throw directErr;

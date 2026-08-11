@@ -88,12 +88,20 @@ Campo de texto + un solo botón de acción que cambia de estado: micrófono cuan
 - Los errores no se disculpan y no son vagos: "No se pudo enviar. Sin conexión al relay." — no "Algo salió mal".
 - Un estado vacío es una invitación a actuar, no un mensaje de disculpa: pantalla de "sin conversaciones" ofrece directamente el botón de escanear QR de contacto, no un texto largo explicando qué es Aegis.
 
-## 6. Indicador de modo de transporte (pendiente de integrar visualmente)
+## 6. Indicador de modo de transporte ✅ (integrado en la Fase 4)
 
-Cuando se una la arquitectura de transporte múltiple (relay / P2P / mesh BLE), el único cambio visual permitido en el header es el color del punto de estado ya existente:
+Con la arquitectura de transporte múltiple (relay / P2P / mesh BLE) en marcha, el único cambio visual permitido en el header es el color del punto de estado:
 
 - 🟢 Verde (`--accent`): relay activo, baja latencia
 - 🟡 Ámbar: modo P2P (libp2p), sin relay central
-- 🔴 Rojo/naranja apagado: modo mesh local (BLE/Wi-Fi Aware), sin internet
+- 🟠 Naranja apagado: modo mesh local (BLE/Wi-Fi Aware), sin internet
+- 🔴 Rojo de error: **sin ruta** — ningún modo responde. No es un modo: es la ausencia de todos, y por eso no comparte color con el mesh (que sí es una ruta viva, solo que local).
 
 No se añade texto explicativo permanente — un tap sobre el punto muestra el detalle bajo demanda, coherente con la regla de "cero fricción visual".
+
+**Cómo quedó** (`apps/web/components/TransportStatus.tsx`, Fase 4):
+
+- El punto sustituye al antiguo pastilla de sesión del header y absorbe sus dos datos en una sola lectura de instrumento: `RELAY · TOR`. Ni el modo ni la puerta son explicación; son el estado del aparato. Todo lo demás (salud de cada candidato, latencia, última conmutación, aviso de IP visible) vive en el panel que se abre al pulsarlo.
+- **Lo único que se mueve** en el header es el halo del punto, y solo cuando **no hay ruta**. Con ruta, el punto está quieto: el movimiento se reserva para lo que va mal.
+- El color se toma de `transportStatus` (`@aegis/ui-kit/tokens`), no de literales sueltos.
+- **Honestidad del indicador:** el failover con P2P solo corre en el Canal. En el resto de vistas el punto refleja una sonda ligera al relay, y el panel lo dice con esas palabras en vez de fingir un modo activo que nadie está midiendo.

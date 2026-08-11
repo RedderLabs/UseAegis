@@ -1,8 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { transportStatus } from "@aegis/ui-kit/tokens";
+import type { TransportMode } from "@aegis/transport";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
+import {
+  getServerTransportSnapshot,
+  getTransportSnapshot,
+  subscribeTransportStatus,
+} from "@/lib/transport-status";
 import {
   currentGateway,
   fetchHealth,
@@ -184,6 +198,9 @@ function Transport() {
           </Tile>
         </div>
 
+        {/* Failover: cómo quedó la elección de modo la última vez que se midió */}
+        <Failover />
+
         {/* Aviso: puerta .onion pero el circuito aún no responde */}
         {onionUnreachable && (
           <Alert tone="warn" title="Circuito .onion no disponible">
@@ -247,6 +264,88 @@ function Transport() {
         </div>
       </div>
     </div>
+  );
+}
+
+const MODE_LABEL: Record<TransportMode, string> = { relay: "Relay", p2p: "P2P", mesh: "Malla" };
+const MODE_ROLE: Record<TransportMode, string> = {
+  relay: "Modo A · buzón cifrado, retiene para quien está desconectado",
+  p2p: "Modo B · entrega directa, sin pasar por el buzón",
+  mesh: "Modo C · malla local por radio, sin internet",
+};
+
+/**
+ * Estado del failover A→B (Fase 4). El transporte con failover solo corre en el Canal: aquí se
+ * muestra su ÚLTIMA lectura, etiquetada como tal. Fingir una medición en vivo sería justo el tipo
+ * de mentira cómoda que esta app no se permite.
+ */
+function Failover() {
+  const { status, live } = useSyncExternalStore(
+    subscribeTransportStatus,
+    getTransportSnapshot,
+    getServerTransportSnapshot,
+  );
+
+  return (
+    <section className="mt-4 bg-surface border border-line rounded-sm">
+      <header className="flex items-baseline justify-between gap-3 px-4 py-3 border-b border-line">
+        <h2 className="label text-accent">Failover de transporte</h2>
+        <span className="font-mono text-[10px] text-muted-2">
+          {status ? (live ? "en vivo" : "última lectura del Canal") : "sin lecturas"}
+        </span>
+      </header>
+
+      {status ? (
+        <>
+          <ul className="divide-y divide-line">
+            {status.modes.map((m, i) => (
+              <li key={m.mode} className="flex items-center gap-3 px-4 py-3">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{
+                    backgroundColor:
+                      m.state === "down" ? transportStatus.offline : transportStatus[m.mode],
+                    opacity: m.state === "unknown" ? 0.35 : 1,
+                  }}
+                />
+                <div className="min-w-0">
+                  <p className="label text-text">
+                    {MODE_LABEL[m.mode]}
+                    {m.mode === status.activeMode && status.reachable && (
+                      <span className="ml-2 text-accent">· activo</span>
+                    )}
+                  </p>
+                  <p className="text-[12px] leading-relaxed text-muted-2 mt-0.5">
+                    {MODE_ROLE[m.mode]}
+                  </p>
+                </div>
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted text-right tabular-nums">
+                  {m.state === "up" ? "con ruta" : m.state === "down" ? "sin ruta" : "sin datos"}
+                  {m.state === "up" && m.latencyMs !== null && (
+                    <span className="block text-muted-2">{m.latencyMs} ms</span>
+                  )}
+                  {m.state === "down" && m.failures > 0 && (
+                    <span className="block text-muted-2">{m.failures} fallos</span>
+                  )}
+                </span>
+                <span className="sr-only">Preferencia {i + 1}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="px-4 py-3 border-t border-line text-[13px] leading-relaxed text-muted">
+            El envío prueba los modos en este orden y se queda con el primero que entrega. Si el
+            preferente vuelve, la ruta regresa sola a él en la siguiente comprobación.
+            {status.modes.length === 1 &&
+              " Ahora mismo solo hay un candidato: el Modo B no está configurado para esta puerta."}
+          </p>
+        </>
+      ) : (
+        <p className="px-4 py-4 text-[13px] leading-relaxed text-muted">
+          El failover se mide mientras el <b className="text-text">Canal</b> está abierto: es donde
+          vive el transporte. Abre el Canal y vuelve para ver el estado de cada modo.
+        </p>
+      )}
+    </section>
   );
 }
 

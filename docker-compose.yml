@@ -107,6 +107,10 @@ services:
         # Modo B (libp2p). Multiaddr del bootstrap (D2), coma-separado. Vacío = chat solo relay.
         # Tras arrancar aegis-p2p-bootstrap, copia su multiaddr aquí y reconstruye aegis-web.
         NEXT_PUBLIC_P2P_BOOTSTRAP: ${NEXT_PUBLIC_P2P_BOOTSTRAP:-}
+        # ICE del WebRTC (Fase 4). Vacío = solo NAT permisiva. Ver .env.coolify.example.
+        NEXT_PUBLIC_P2P_ICE_SERVERS: ${NEXT_PUBLIC_P2P_ICE_SERVERS:-}
+        NEXT_PUBLIC_P2P_TURN_USER: ${NEXT_PUBLIC_P2P_TURN_USER:-}
+        NEXT_PUBLIC_P2P_TURN_CREDENTIAL: ${NEXT_PUBLIC_P2P_TURN_CREDENTIAL:-}
     container_name: aegis-web
     profiles: ["node"]
     restart: unless-stopped

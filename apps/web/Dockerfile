@@ -39,6 +39,19 @@ ENV NEXT_PUBLIC_UMAMI_WEBSITE_ID=$NEXT_PUBLIC_UMAMI_WEBSITE_ID
 #   /dns4/p2p.useaegis.app/tcp/443/wss/p2p/<PeerID>   (el PeerID lo imprime el bootstrap al arrancar)
 ARG NEXT_PUBLIC_P2P_BOOTSTRAP=""
 ENV NEXT_PUBLIC_P2P_BOOTSTRAP=$NEXT_PUBLIC_P2P_BOOTSTRAP
+# Modo B por la puerta .onion (Tor): multiaddr(s) del circuit-relay servido en la onion (WS plano,
+# Tor cifra). VACÍO = sobre Tor el chat queda solo relay. Formato:
+#   /dns4/<web-onion>.onion/tcp/9001/ws/p2p/<PeerID>
+ARG NEXT_PUBLIC_P2P_BOOTSTRAP_ONION=""
+ENV NEXT_PUBLIC_P2P_BOOTSTRAP_ONION=$NEXT_PUBLIC_P2P_BOOTSTRAP_ONION
+# ICE del WebRTC (Fase 4) — solo clearnet. Sin esto, el Modo B solo atraviesa NAT permisiva. No hay
+# STUN público por defecto a propósito (un tercero vería la IP de cada usuario del Modo B).
+ARG NEXT_PUBLIC_P2P_ICE_SERVERS=""
+ENV NEXT_PUBLIC_P2P_ICE_SERVERS=$NEXT_PUBLIC_P2P_ICE_SERVERS
+ARG NEXT_PUBLIC_P2P_TURN_USER=""
+ENV NEXT_PUBLIC_P2P_TURN_USER=$NEXT_PUBLIC_P2P_TURN_USER
+ARG NEXT_PUBLIC_P2P_TURN_CREDENTIAL=""
+ENV NEXT_PUBLIC_P2P_TURN_CREDENTIAL=$NEXT_PUBLIC_P2P_TURN_CREDENTIAL
 RUN pnpm --filter @aegis/web build
 
 WORKDIR /app/apps/web
