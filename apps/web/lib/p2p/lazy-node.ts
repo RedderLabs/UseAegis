@@ -20,8 +20,11 @@ import { unlockedLibp2pPrivateKey } from "../crypto/identity-store";
 /**
  * Crea un `P2pNode` perezoso que dial-a los `bootstrapMultiaddrs` dados (D2). El nodo libp2p real
  * no se construye hasta `start()`: import dinámico de `./node` + derivación de la clave libp2p.
+ *
+ * `onion` = puerta Tor: el nodo real omite WebRTC y reenvía por el circuito (ver `node.ts`). Lo
+ * decide `createChatTransport` según `isOnionSession()`, junto con qué bootstrap usar.
  */
-export function createLazyP2pNode(bootstrapMultiaddrs: string[]): P2pNode {
+export function createLazyP2pNode(bootstrapMultiaddrs: string[], onion = false): P2pNode {
   let inner: P2pNode | null = null;
   let creating: Promise<P2pNode> | null = null;
   // Listeners registrados; el valor es su baja en el nodo real (null hasta que el nodo exista).
@@ -36,7 +39,7 @@ export function createLazyP2pNode(bootstrapMultiaddrs: string[]): P2pNode {
           import("./node"),
           unlockedLibp2pPrivateKey(),
         ]);
-        const node = await createLibp2pNode(privateKey, { bootstrapMultiaddrs });
+        const node = await createLibp2pNode(privateKey, { bootstrapMultiaddrs, onion });
         // Reengancha los listeners que se registraron antes de existir el nodo.
         for (const [cb, off] of listeners) {
           if (!off) listeners.set(cb, node.onEnvelope(cb));

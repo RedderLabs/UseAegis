@@ -36,11 +36,16 @@ export const colors = {
   error: "#ffb4ab",
 } as const;
 
-/** Punto de estado de transporte (DISENO.md §6). */
+/**
+ * Punto de estado de transporte (DISENO.md §6). Los tres primeros son MODOS; `offline` no es un
+ * modo, es la ausencia de ruta — se pinta con el rojo de error para que no se confunda con el
+ * naranja del mesh (que sí es una ruta viva, solo que local).
+ */
 export const transportStatus = {
   relay: colors.accent, // Cyber Lime: relay activo, baja latencia
   p2p: "#fbbf24", // ámbar: modo P2P (libp2p), sin relay central
   mesh: "#ea580c", // rojo/naranja apagado: mesh local (BLE/Wi-Fi Aware)
+  offline: colors.error, // sin ruta: ningún modo alcanzable ahora mismo
 } as const;
 
 export const fontFamily = {
