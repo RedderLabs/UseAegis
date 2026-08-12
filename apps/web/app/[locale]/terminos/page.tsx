@@ -81,6 +81,31 @@ export default async function TerminosPage({ params }: { params: Promise<{ local
             <p>{t.acceptableUse.body}</p>
           </Section>
 
+          <Section title={t.userContent.title}>
+            <p>{t.userContent.body}</p>
+            <p>{t.userContent.body2}</p>
+          </Section>
+
+          <Section title={t.intermediary.title}>
+            <p>{t.intermediary.body}</p>
+            <p>{t.intermediary.body2}</p>
+          </Section>
+
+          <Section title={t.selfHosting.title}>
+            <p>{t.selfHosting.body}</p>
+            <p>{t.selfHosting.body2}</p>
+          </Section>
+
+          <Section title={t.liability.title}>
+            <p>{t.liability.body}</p>
+            <p>{t.liability.body2}</p>
+          </Section>
+
+          <Section title={t.authorities.title}>
+            <p>{t.authorities.body}</p>
+            <p>{t.authorities.body2}</p>
+          </Section>
+
           <Section title={t.changes.title}>
             <p>{t.changes.body}</p>
           </Section>
