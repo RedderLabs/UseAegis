@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconMic, IconSend, IconTrash } from "./Icons";
+import { useT } from "@/lib/i18n/provider";
 
 // Candidatos de contenedor/códec por orden de preferencia (Opus donde se pueda).
 const MIME_CANDIDATES = [
@@ -40,6 +41,7 @@ export function VoiceRecorder({
   onRecorded: (file: File, durationMs: number) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -66,14 +68,14 @@ export function VoiceRecorder({
     if (disabled || recording) return;
     setError(null);
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setError("Este navegador no permite grabar audio.");
+      setError(t.voice.noRecording);
       return;
     }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setError("No se pudo acceder al micrófono (permiso denegado).");
+      setError(t.voice.micDenied);
       return;
     }
     const mime = pickMime();
@@ -82,7 +84,7 @@ export function VoiceRecorder({
       recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
     } catch {
       stream.getTracks().forEach((t) => t.stop());
-      setError("Este navegador no soporta la grabación de audio.");
+      setError(t.voice.unsupported);
       return;
     }
     chunksRef.current = [];
@@ -98,7 +100,7 @@ export function VoiceRecorder({
       setRecording(false);
       setElapsed(0);
       if (cancelledRef.current || blob.size === 0) return;
-      const file = new File([blob], `nota-de-voz.${extFor(type)}`, { type });
+      const file = new File([blob], `${t.voice.filename}.${extFor(type)}`, { type });
       onRecorded(file, durationMs);
     };
 
@@ -111,7 +113,7 @@ export function VoiceRecorder({
     timerRef.current = window.setInterval(() => {
       setElapsed((performance.now() - startRef.current) / 1000);
     }, 200);
-  }, [disabled, recording, cleanup, onRecorded]);
+  }, [disabled, recording, cleanup, onRecorded, t]);
 
   const stopAndSend = useCallback(() => {
     if (!recorderRef.current) return;
@@ -131,7 +133,7 @@ export function VoiceRecorder({
         <button
           onClick={cancel}
           className="w-9 h-9 rounded-sm flex items-center justify-center text-muted hover:text-error transition-colors"
-          title="Cancelar grabación"
+          title={t.voice.cancelTitle}
         >
           <IconTrash className="w-5 h-5" />
         </button>
@@ -142,7 +144,7 @@ export function VoiceRecorder({
         <button
           onClick={stopAndSend}
           className="w-10 h-10 rounded-sm flex items-center justify-center bg-accent text-bg hover:brightness-110 active:scale-95 transition-all"
-          title="Enviar nota de voz"
+          title={t.voice.sendTitle}
         >
           <IconSend className="w-5 h-5" />
         </button>
@@ -156,7 +158,7 @@ export function VoiceRecorder({
         onClick={() => void start()}
         disabled={disabled}
         className="w-9 h-9 rounded-sm flex items-center justify-center text-muted hover:text-accent transition-colors disabled:opacity-40"
-        title="Grabar nota de voz (cifrada de extremo a extremo)"
+        title={t.voice.recordTitle}
       >
         <IconMic className="w-5 h-5" />
       </button>

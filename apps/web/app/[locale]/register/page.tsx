@@ -12,15 +12,10 @@ import {
 import { createKeystore, exportKeystore } from "@/lib/crypto/identity-store";
 import { seedToPhrase } from "@/lib/crypto/recovery-phrase";
 import { generatePassword, PASSWORD_LENGTHS } from "@/lib/password-gen";
+import { useLocalePath, useT } from "@/lib/i18n/provider";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const MIN_PASSPHRASE = 8;
-
-const HANDSHAKE_INIT = [
-  "> Inicializando protocolos E2E…",
-  "> Sembrando entropía desde el CSPRNG del sistema…",
-  "> Derivando par de claves Ed25519 (256 bits)…",
-];
 
 interface Candidate {
   seed: Uint8Array;
@@ -29,9 +24,11 @@ interface Candidate {
 }
 
 export default function RegisterPage() {
+  const t = useT();
+  const href = useLocalePath();
   const [display, setDisplay] = useState("·".repeat(IDENTITY_LENGTH));
   const [candidate, setCandidate] = useState<Candidate | null>(null);
-  const [logs, setLogs] = useState<string[]>(HANDSHAKE_INIT);
+  const [logs, setLogs] = useState<string[]>(t.register.handshakeInit);
   const [confirmed, setConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [passphrase, setPassphrase] = useState("");
@@ -101,8 +98,8 @@ export default function RegisterPage() {
     const fingerprint = await fingerprint16(publicKey);
     setCandidate({ seed, publicKeyB64: toBase64Url(publicKey), fingerprint });
     revealFingerprint(fingerprint);
-    addLog(`> Clave pública derivada · huella ${fingerprint}`);
-  }, [addLog, revealFingerprint]);
+    addLog(t.register.logKeyDerived(fingerprint));
+  }, [addLog, revealFingerprint, t]);
 
   useEffect(() => {
     void generateCandidate();
@@ -115,11 +112,11 @@ export default function RegisterPage() {
     if (!candidate || confirmed || saving) return;
     setPassError(null);
     if (passphrase.length < MIN_PASSPHRASE) {
-      setPassError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setPassError(t.login.errors.minPassphrase(MIN_PASSPHRASE));
       return;
     }
     if (passphrase !== confirmPass) {
-      setPassError("Las contraseñas no coinciden.");
+      setPassError(t.login.errors.passwordsDontMatch);
       return;
     }
     setSaving(true);
@@ -128,11 +125,11 @@ export default function RegisterPage() {
       // nunca se guarda en claro. Ver lib/crypto/vault.ts.
       await createKeystore(candidate.seed, passphrase);
       setConfirmed(true);
-      addLog(`> IDENTIDAD CIFRADA · protegida con tu contraseña (Argon2id)`);
-      addLog("> Clave privada cifrada en almacén local · nunca sale del dispositivo");
+      addLog(t.register.logEncrypted);
+      addLog(t.register.logStored);
     } catch (err) {
       setPassError((err as Error).message);
-      addLog(`> ERROR al guardar: ${(err as Error).message}`);
+      addLog(t.register.logSaveError((err as Error).message));
     } finally {
       setSaving(false);
     }
@@ -152,28 +149,29 @@ export default function RegisterPage() {
       .split(" ")
       .map((w, i) => `${String(i + 1).padStart(2, " ")}. ${w}`)
       .join("\n");
+    const f = t.register.recoveryFile;
     const contents = [
-      "AEGIS — Frase de recuperación de identidad",
+      f.header,
       "",
-      `Huella pública: ${candidate.fingerprint}`,
+      f.fingerprint(candidate.fingerprint),
       "",
-      "Frase de recuperación (24 palabras — mantenla en secreto, es tu clave privada):",
+      f.phraseLabel,
       "",
       phrase,
       "",
       numbered,
       "",
-      "Con estas 24 palabras, EN ESTE ORDEN, puedes restaurar tu identidad en otro dispositivo.",
-      "No hay servidor con tus claves: si la pierdes, nadie puede recuperarla por ti.",
+      f.footer1,
+      f.footer2,
     ].join("\n");
     const blob = new Blob([contents], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `aegis-recuperacion-${candidate.fingerprint}.txt`;
+    a.download = f.filename(candidate.fingerprint);
     a.click();
     URL.revokeObjectURL(url);
-    addLog("> Exportación de la frase de recuperación: OK");
+    addLog(t.register.logRecoveryExported);
   }
 
   // Exporta el KEYSTORE CIFRADO a un fichero (p. ej. para guardarlo en un USB). A diferencia
@@ -187,12 +185,12 @@ export default function RegisterPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `aegis-keystore-${candidate.fingerprint}.aegis-key.json`;
+      a.download = `useaegis-keystore-${candidate.fingerprint}.aegis-key.json`;
       a.click();
       URL.revokeObjectURL(url);
-      addLog("> Exportación de tus llaves cifradas (USB): OK");
+      addLog(t.register.logKeystoreExported);
     } catch (err) {
-      addLog(`> ERROR al exportar tus llaves: ${(err as Error).message}`);
+      addLog(t.register.logKeystoreError((err as Error).message));
     }
   }
 
@@ -208,14 +206,14 @@ export default function RegisterPage() {
         <div className="w-full max-w-[560px]">
           {/* Cabecera */}
           <div className="flex flex-col items-center text-center mb-8">
-            <Link href="/" className="mb-6" aria-label="Aegis — inicio">
+            <Link href={href("/")} className="mb-6" aria-label={t.register.logoAlt}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/Aegis.svg" alt="Aegis Secure Messaging" className="h-12 w-auto" />
+              <img src="/Aegis.svg" alt={t.register.imgAlt} className="h-12 w-auto" />
             </Link>
             <h1 className="font-sans text-3xl md:text-4xl font-bold tracking-tight text-text">
-              Crea tu identidad
+              {t.register.title}
             </h1>
-            <p className="label text-muted-2 mt-2">Sin datos personales</p>
+            <p className="label text-muted-2 mt-2">{t.register.subtitle}</p>
           </div>
 
           {/* Vault */}
@@ -227,9 +225,9 @@ export default function RegisterPage() {
                 <span
                   className={`w-1.5 h-1.5 rounded-full bg-accent ${confirmed ? "" : "animate-pulse"}`}
                 />
-                {confirmed ? "Identidad fijada" : "Generada · se fija al confirmar"}
+                {confirmed ? t.register.fixed : t.register.generated}
               </span>
-              <span className="font-mono text-[11px] text-muted-2">Ed25519 · 256b</span>
+              <span className="font-mono text-[11px] text-muted-2">{t.register.algo}</span>
             </div>
 
             {/* Huella de la identidad */}
@@ -245,22 +243,20 @@ export default function RegisterPage() {
 
             <div className="space-y-2">
               <h2 className="font-sans text-lg font-semibold text-text">
-                Solo tú tienes el control
+                {t.register.controlTitle}
               </h2>
               <p className="text-[13px] leading-relaxed text-muted">
-                Tu identidad es un par de claves Ed25519 de 256 bits generado en este
-                dispositivo. La clave privada se guarda <span className="text-text">cifrada
-                con tu contraseña</span> (Argon2id): sin ella, lo almacenado es ruido y nadie
-                más puede usar tu identidad. Estas 16 letras son su{" "}
-                <span className="text-text">huella pública</span>: sirven para reconocerla, no
-                para iniciar sesión tecleándolas. Guarda tu frase de recuperación (24 palabras)
-                para restaurarla en otro dispositivo, o exporta tus llaves a un USB.
+                {t.register.controlBodyStart}
+                <span className="text-text">{t.register.controlBodyEncrypted}</span>
+                {t.register.controlBodyMiddle}
+                <span className="text-text">{t.register.controlBodyFingerprint}</span>
+                {t.register.controlBodyEnd}
               </p>
             </div>
 
             {/* Logs */}
             <div className="bg-surface-2 border border-line rounded-sm p-3">
-              <p className="label text-muted mb-2">Handshake</p>
+              <p className="label text-muted mb-2">{t.register.handshake}</p>
               <div
                 ref={logRef}
                 className="font-mono text-[11px] leading-relaxed text-muted-2 h-28 overflow-y-auto space-y-0.5"
@@ -276,26 +272,25 @@ export default function RegisterPage() {
               <div className="space-y-3 border-t border-line pt-4">
                 <div className="space-y-1">
                   <h2 className="font-sans text-base font-semibold text-text">
-                    Protege tu identidad
+                    {t.register.protectTitle}
                   </h2>
                   <p className="text-[12px] leading-relaxed text-muted">
-                    La clave privada se cifra con esta contraseña (Argon2id) antes de guardarse.
-                    Se pedirá cada vez que inicies sesión.{" "}
-                    <span className="text-text">
-                      No hay forma de recuperarla si la olvidas
-                    </span>{" "}
-                    — para eso está la frase de recuperación.
+                    {t.register.protectBodyStart}
+                    <span className="text-text">{t.register.protectBodyStrong}</span>
+                    {t.register.protectBodyEnd}
                   </p>
                 </div>
 
                 {/* Generador de contraseña fuerte (recomendado) */}
                 <div className="rounded-sm border border-accent/25 bg-accent/5 p-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="label text-accent">Generar contraseña segura</p>
-                    <span className="font-mono text-[10px] text-muted-2">recomendado</span>
+                    <p className="label text-accent">{t.register.generatorTitle}</p>
+                    <span className="font-mono text-[10px] text-muted-2">
+                      {t.register.recommended}
+                    </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[11px] text-muted-2">Longitud</span>
+                    <span className="font-mono text-[11px] text-muted-2">{t.register.length}</span>
                     {PASSWORD_LENGTHS.map((n) => (
                       <button
                         key={n}
@@ -320,7 +315,7 @@ export default function RegisterPage() {
                           : "border-line text-muted hover:text-text"
                       }`}
                     >
-                      Símbolos (!&*)
+                      {t.register.symbols}
                     </button>
                   </div>
                   <button
@@ -328,11 +323,10 @@ export default function RegisterPage() {
                     onClick={fillGeneratedPassword}
                     className="w-full label py-2.5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition"
                   >
-                    Generar contraseña
+                    {t.register.generate}
                   </button>
                   <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
-                    Se rellena arriba y se muestra para que la copies. Guárdala en tu gestor de
-                    contraseñas: no hay forma de recuperarla si la pierdes.
+                    {t.register.generatorNote}
                   </p>
                 </div>
 
@@ -342,14 +336,14 @@ export default function RegisterPage() {
                   className="label w-fit rounded-sm border border-accent/40 px-2 py-1 text-accent hover:bg-accent hover:text-bg transition-colors"
                   aria-pressed={showPass}
                 >
-                  {showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  {showPass ? t.register.hidePassword : t.register.showPassword}
                 </button>
                 <input
                   type={showPass ? "text" : "password"}
                   value={passphrase}
                   autoComplete="new-password"
                   onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder={`Contraseña (mín. ${MIN_PASSPHRASE} caracteres)`}
+                  placeholder={t.register.passwordPlaceholder(MIN_PASSPHRASE)}
                   className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
                 />
                 <input
@@ -357,12 +351,12 @@ export default function RegisterPage() {
                   value={confirmPass}
                   autoComplete="new-password"
                   onChange={(e) => setConfirmPass(e.target.value)}
-                  placeholder="Repite la contraseña"
+                  placeholder={t.register.repeatPlaceholder}
                   className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
                 />
                 {confirmPass.length > 0 && confirmPass !== passphrase && (
                   <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
-                    Las contraseñas no coinciden todavía.
+                    {t.login.passwordsDontMatchYet}
                   </p>
                 )}
                 {passError && (
@@ -376,20 +370,19 @@ export default function RegisterPage() {
               <div className="border-t border-line pt-4 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="font-sans text-base font-semibold text-text">
-                    Tu frase de recuperación
+                    {t.register.phraseTitle}
                   </h2>
                   <button
                     onClick={copyPhrase}
                     className="label text-muted-2 hover:text-accent transition-colors shrink-0"
                   >
-                    {copiedPhrase ? "Copiada ✓" : "Copiar"}
+                    {copiedPhrase ? t.register.phraseCopied : t.common.copy}
                   </button>
                 </div>
                 <p className="text-[12px] leading-relaxed text-muted">
-                  Estas <span className="text-text">24 palabras, en este orden</span>, SON tu
-                  identidad. Anótalas en papel y guárdalas en un sitio seguro: es la única forma de
-                  restaurarla en otro dispositivo, y nadie —tampoco nosotros— puede recuperarla si
-                  las pierdes.
+                  {t.register.phraseBodyStart}
+                  <span className="text-text">{t.register.phraseBodyStrong}</span>
+                  {t.register.phraseBodyEnd}
                 </p>
                 <ol className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 bg-bg border border-line rounded-sm p-3">
                   {phrase.split(" ").map((word, i) => (
@@ -411,14 +404,18 @@ export default function RegisterPage() {
                 disabled={!candidate}
                 className="flex-1 label py-3.5 px-4 border border-line hover:border-accent-dim hover:text-text text-muted transition-colors disabled:opacity-40 disabled:pointer-events-none rounded-sm"
               >
-                Descargar recuperación
+                {t.register.downloadRecovery}
               </button>
               <button
                 onClick={confirmIdentity}
                 disabled={!candidate || confirmed || saving}
                 className="flex-1 label py-3.5 px-4 bg-accent text-bg font-bold hover:brightness-110 transition rounded-sm glow-pulse disabled:opacity-60 disabled:pointer-events-none"
               >
-                {confirmed ? "Identidad establecida ✓" : saving ? "Guardando…" : "Confirmar identidad"}
+                {confirmed
+                  ? t.register.confirmed
+                  : saving
+                    ? t.common.saving
+                    : t.register.confirm}
               </button>
             </div>
             {!confirmed && candidate && (
@@ -426,7 +423,7 @@ export default function RegisterPage() {
                 onClick={() => void generateCandidate()}
                 className="label text-muted-2 hover:text-accent transition-colors self-center"
               >
-                Regenerar identidad
+                {t.register.regenerate}
               </button>
             )}
             {confirmed && (
@@ -434,7 +431,7 @@ export default function RegisterPage() {
                 onClick={downloadKeystore}
                 className="label text-muted hover:text-accent transition-colors self-center"
               >
-                Exportar tus llaves cifradas a fichero (USB)
+                {t.register.exportKeystore}
               </button>
             )}
           </div>
@@ -442,17 +439,17 @@ export default function RegisterPage() {
           <div className="mt-8 flex flex-col items-center gap-3">
             {confirmed ? (
               <Link
-                href="/login"
+                href={href("/login")}
                 className="label bg-accent text-bg font-bold px-5 py-3 rounded-sm hover:brightness-110 transition"
               >
-                Iniciar sesión →
+                {t.register.goLogin}
               </Link>
             ) : (
               <Link
-                href="/login"
+                href={href("/login")}
                 className="label text-muted-2 hover:text-accent transition-colors"
               >
-                ← Ya tengo una identidad
+                {t.register.haveIdentity}
               </Link>
             )}
           </div>

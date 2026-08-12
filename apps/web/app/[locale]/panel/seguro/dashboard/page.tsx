@@ -31,6 +31,7 @@ import {
 } from "@/lib/chat";
 import { IconSend, IconCheck, IconClip, IconDownload, IconPlay } from "@/components/Icons";
 import { VoiceRecorder } from "@/components/VoiceRecorder";
+import { useLocalePath, useT } from "@/lib/i18n/provider";
 
 const BASE = "/panel/seguro/dashboard";
 
@@ -65,6 +66,7 @@ const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 /** Burbuja de nota de voz: descarga+descifra bajo demanda y reproduce con controles nativos. */
 function AudioBubble({ file }: { file: FileAttachment }) {
+  const t = useT();
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +86,7 @@ function AudioBubble({ file }: { file: FileAttachment }) {
       const blob = await downloadAttachment(token, file);
       setUrl(URL.createObjectURL(blob));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar la nota de voz.");
+      setError(err instanceof Error ? err.message : t.channel.errors.loadVoiceNote);
     } finally {
       setLoading(false);
     }
@@ -100,15 +102,19 @@ function AudioBubble({ file }: { file: FileAttachment }) {
       onClick={() => void load()}
       disabled={loading}
       className="flex items-center gap-3 text-left w-full min-w-0 disabled:opacity-60"
-      title="Reproducir (descarga y descifra)"
+      title={t.channel.playTitle}
     >
       <span className="w-9 h-9 rounded-sm bg-surface border border-line flex items-center justify-center shrink-0 text-accent">
         <IconPlay className="w-4 h-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] text-text">Nota de voz</span>
+        <span className="block text-[13px] text-text">{t.channel.voiceNote}</span>
         <span className="block font-mono text-[10px] text-muted-2">
-          {loading ? "Descifrando…" : error ? error : `${hint} · reproducir`}
+          {loading
+            ? t.channel.decrypting
+            : error
+              ? error
+              : `${hint} · ${t.channel.playHint}`}
         </span>
       </span>
     </button>
@@ -117,6 +123,7 @@ function AudioBubble({ file }: { file: FileAttachment }) {
 
 /** Burbuja de un adjunto: nombre + tamaño + botón para descargar y descifrar bajo demanda. */
 function AttachmentBubble({ file }: { file: FileAttachment }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,7 +144,7 @@ function AttachmentBubble({ file }: { file: FileAttachment }) {
       // Revoca tras un momento para no cortar la descarga en curso.
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo descargar el archivo.");
+      setError(err instanceof Error ? err.message : t.channel.errors.downloadFile);
     } finally {
       setBusy(false);
     }
@@ -148,7 +155,7 @@ function AttachmentBubble({ file }: { file: FileAttachment }) {
       onClick={() => void open()}
       disabled={busy}
       className="flex items-center gap-3 text-left w-full min-w-0 disabled:opacity-60"
-      title="Descargar y descifrar"
+      title={t.channel.downloadTitle}
     >
       <span className="w-9 h-9 rounded-sm bg-surface border border-line flex items-center justify-center shrink-0 text-accent">
         <IconDownload className="w-4 h-4" />
@@ -156,7 +163,11 @@ function AttachmentBubble({ file }: { file: FileAttachment }) {
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] text-text truncate">{file.name}</span>
         <span className="block font-mono text-[10px] text-muted-2">
-          {busy ? "Descifrando…" : error ? error : `${formatSize(file.size)} · descargar`}
+          {busy
+            ? t.channel.decrypting
+            : error
+              ? error
+              : `${formatSize(file.size)} · ${t.channel.downloadHint}`}
         </span>
       </span>
     </button>
@@ -165,6 +176,8 @@ function AttachmentBubble({ file }: { file: FileAttachment }) {
 
 function Channel() {
   const session = useDashboardSession();
+  const t = useT();
+  const href = useLocalePath();
   const ownPub = session.publicKey;
   const searchParams = useSearchParams();
   const peerParam = searchParams.get("peer");
@@ -286,7 +299,7 @@ function Channel() {
       });
     } catch (err) {
       // Muestra la causa real (RelayError o cualquier Error, p. ej. "Identidad bloqueada").
-      const msg = err instanceof Error ? err.message : "No se pudo enviar el mensaje.";
+      const msg = err instanceof Error ? err.message : t.channel.errors.sendMessage;
       setMessages((prev) => [
         ...prev,
         {
@@ -300,7 +313,7 @@ function Channel() {
     } finally {
       setSending(false);
     }
-  }, [draft, selected, sending, ownPub]);
+  }, [draft, selected, sending, ownPub, t]);
 
   const sendAttachment = useCallback(
     async (file: File, kind: "file" | "audio" = "file", durationMs?: number) => {
@@ -312,7 +325,7 @@ function Channel() {
           {
             id: `err-${Date.now()}`,
             dir: "out",
-            body: `⚠️ «${file.name}» supera el límite de ${formatSize(MAX_ATTACHMENT_BYTES)}.`,
+            body: t.channel.errors.tooLarge(file.name, formatSize(MAX_ATTACHMENT_BYTES)),
             sentAt: new Date().toISOString(),
             peerPub: selected.pub,
           },
@@ -328,7 +341,7 @@ function Channel() {
           return next;
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "No se pudo enviar el archivo.";
+        const msg = err instanceof Error ? err.message : t.channel.errors.sendFile;
         setMessages((prev) => [
           ...prev,
           {
@@ -343,7 +356,7 @@ function Channel() {
         setAttaching(false);
       }
     },
-    [selected, attaching, ownPub],
+    [selected, attaching, ownPub, t],
   );
 
   /** Refresca la lista, selecciona el contacto recién añadido y cierra el panel de alta. */
@@ -369,9 +382,9 @@ function Channel() {
       await finishAdd(contact);
     } catch (err) {
       if (err instanceof RelayError && err.status === 404) {
-        setAddError(`No existe ningún usuario con el nombre de usuario «${h}».`);
+        setAddError(t.channel.errors.usernameNotFound(h));
       } else {
-        setAddError(err instanceof Error ? err.message : "No se pudo añadir el contacto.");
+        setAddError(err instanceof Error ? err.message : t.channel.errors.addContact);
       }
     } finally {
       setAddBusy(false);
@@ -381,14 +394,14 @@ function Channel() {
   /** Alta desde un QR: la clave viene fuera de banda; se verifica al descargar su key bundle. */
   async function addByQr({ pub }: ContactUri) {
     const token = getToken();
-    if (!token) throw new Error("Sesión no disponible.");
-    if (pub === ownPub) throw new Error("Ese QR es el tuyo: no puedes añadirte a ti mismo.");
+    if (!token) throw new Error(t.channel.errors.noSession);
+    if (pub === ownPub) throw new Error(t.channel.errors.ownQr);
     try {
       const contact = await addContactByPublicKey(token, pub);
       await finishAdd(contact);
     } catch (err) {
       if (err instanceof RelayError && err.status === 404) {
-        throw new Error("No encontramos esa identidad. ¿El QR es correcto y esa persona ya se registró?");
+        throw new Error(t.channel.errors.qrIdentityNotFound);
       }
       throw err;
     }
@@ -404,7 +417,9 @@ function Channel() {
               {selected ? contactLabel(selected).slice(selected.handle ? 1 : 0, selected.handle ? 3 : 2).toUpperCase() : "—"}
             </div>
             <div className="min-w-0 flex-1">
-              <label className="label text-muted-2 block mb-0.5">Conversación con</label>
+              <label className="label text-muted-2 block mb-0.5">
+                {t.channel.conversationWith}
+              </label>
               <select
                 value={selected?.pub ?? ""}
                 onChange={(e) => setSelected(contacts.find((c) => c.pub === e.target.value) ?? null)}
@@ -412,7 +427,7 @@ function Channel() {
                 className="w-full max-w-xs bg-surface-2 border border-line rounded-sm px-2 py-1.5 font-mono text-[13px] text-text focus:outline-none focus:border-accent/50 disabled:text-muted-2"
               >
                 {contacts.length === 0 ? (
-                  <option value="">Sin contactos todavía</option>
+                  <option value="">{t.channel.noContactsYet}</option>
                 ) : (
                   contacts.map((c) => (
                     <option key={c.pub} value={c.pub}>
@@ -430,7 +445,7 @@ function Channel() {
               }}
               className="shrink-0 label text-accent border border-accent/30 rounded-sm px-3 py-2 hover:bg-accent/5 transition-colors"
             >
-              + Añadir
+              {t.channel.addContact}
             </button>
           </div>
 
@@ -449,7 +464,7 @@ function Channel() {
                       addMode === m ? "bg-accent text-bg" : "text-muted hover:text-text"
                     }`}
                   >
-                    {m === "name" ? "Por nombre" : "Por QR"}
+                    {m === "name" ? t.channel.byName : t.channel.byQr}
                   </button>
                 ))}
               </div>
@@ -461,7 +476,7 @@ function Channel() {
                       value={handle}
                       onChange={(e) => setHandle(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && addContact()}
-                      placeholder="nombre de usuario (p. ej. alicia)"
+                      placeholder={t.channel.handlePlaceholder}
                       className="flex-1 bg-surface-2 border border-line rounded-sm px-3 py-2 text-[13px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent/50"
                     />
                     <button
@@ -469,13 +484,12 @@ function Channel() {
                       disabled={!handle.trim() || addBusy}
                       className="label text-bg bg-accent rounded-sm px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
                     >
-                      {addBusy ? "Buscando…" : "Añadir"}
+                      {addBusy ? t.channel.searching : t.common.add}
                     </button>
                   </div>
                   {addError && <p className="text-[12px] text-error">{addError}</p>}
                   <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
-                    Descargamos su llave de cifrado y comprobamos que es de verdad suya antes de
-                    guardarla. El buzón es el mismo por conexión normal y protegida (Tor).
+                    {t.channel.addNote}
                   </p>
                 </>
               ) : (
@@ -488,13 +502,11 @@ function Channel() {
         {/* Aviso de solicitudes de contacto (gente que te ha escrito sin ser contacto) */}
         {pending > 0 && (
           <Link
-            href={`${BASE}/contactos`}
+            href={href(`${BASE}/contactos`)}
             className="shrink-0 flex items-center justify-between gap-3 bg-accent/10 border-b border-accent/30 px-4 md:px-6 py-2.5 hover:bg-accent/15 transition-colors"
           >
-            <span className="label text-accent">
-              Tienes {pending} {pending === 1 ? "solicitud" : "solicitudes"} de contacto
-            </span>
-            <span className="label text-accent">Ver →</span>
+            <span className="label text-accent">{t.channel.pendingRequests(pending)}</span>
+            <span className="label text-accent">{t.channel.seeRequests}</span>
           </Link>
         )}
 
@@ -502,24 +514,24 @@ function Channel() {
         <div ref={threadRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-4">
           <div className="flex justify-center">
             <span className="label text-muted-2 bg-surface-2 border border-line rounded-sm px-3 py-1.5 text-center">
-              Solo tú y tu contacto podéis leerlo · cifrado de extremo a extremo · XChaCha20-Poly1305
+              {t.channel.e2eBanner}
             </span>
           </div>
 
           {!selected ? (
             <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
-              <p className="text-[14px] text-muted">No tienes contactos todavía.</p>
+              <p className="text-[14px] text-muted">{t.channel.emptyNoContacts}</p>
               <p className="font-mono text-[11px] text-muted-2">
-                Pulsa «+ Añadir» e introduce el nombre de usuario de otra persona para empezar.
+                {t.channel.emptyNoContactsHint}
               </p>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
               <p className="text-[14px] text-muted">
-                Sin mensajes con {contactLabel(selected)} todavía.
+                {t.channel.emptyNoMessages(contactLabel(selected))}
               </p>
               <p className="font-mono text-[11px] text-muted-2">
-                Escribe abajo para enviar el primero.
+                {t.channel.emptyNoMessagesHint}
               </p>
             </div>
           ) : (
@@ -554,7 +566,7 @@ function Channel() {
                     {formatTime(m.sentAt)}
                   </span>
                   {m.dir === "out" && <IconCheck className="w-3 h-3" />}
-                  {m.dir === "out" ? "Enviado" : "Recibido"}
+                  {m.dir === "out" ? t.channel.sent : t.channel.received}
                 </span>
               </div>
             ))
@@ -566,7 +578,7 @@ function Channel() {
           <div className="flex items-center justify-between mb-2">
             <span className="inline-flex items-center gap-1.5 label text-muted-2">
               <span className="w-1.5 h-1.5 rounded-full bg-accent-dim" />
-              Se cifra en tu dispositivo · XChaCha20-Poly1305
+              {t.channel.encryptedHere}
             </span>
           </div>
           <div className="flex items-center gap-2 bg-surface-2 border border-line rounded-sm px-2 py-1.5 focus-within:border-accent/50 transition-colors">
@@ -584,7 +596,7 @@ function Channel() {
               onClick={() => fileInputRef.current?.click()}
               disabled={!selected || attaching}
               className="w-9 h-9 shrink-0 rounded-sm flex items-center justify-center text-muted hover:text-accent transition-colors disabled:opacity-40"
-              title="Adjuntar archivo (cifrado de extremo a extremo)"
+              title={t.channel.attachTitle}
             >
               <IconClip className="w-5 h-5" />
             </button>
@@ -600,10 +612,10 @@ function Channel() {
               disabled={!selected}
               placeholder={
                 attaching
-                  ? "Cifrando y enviando archivo…"
+                  ? t.channel.placeholderAttaching
                   : selected
-                    ? "Transmitir mensaje…"
-                    : "Elige o añade un contacto para empezar"
+                    ? t.channel.placeholderReady
+                    : t.channel.placeholderNoContact
               }
               className="flex-1 bg-transparent border-none px-1 py-2 text-[14px] text-text placeholder:text-muted-2 focus:outline-none disabled:cursor-not-allowed"
             />
@@ -612,7 +624,7 @@ function Channel() {
                 onClick={() => void send()}
                 disabled={!selected || sending}
                 className="w-10 h-10 rounded-sm flex items-center justify-center transition-all bg-accent text-bg hover:brightness-110 active:scale-95 disabled:opacity-40"
-                title="Enviar"
+                title={t.channel.sendTitle}
               >
                 <IconSend className="w-5 h-5" />
               </button>
@@ -628,27 +640,29 @@ function Channel() {
 
       {/* Panel derecho — metadata honesta */}
       <aside className="hidden xl:flex flex-col w-72 shrink-0 border-l border-line bg-surface/60 backdrop-blur-sm p-5 overflow-y-auto">
-        <h2 className="label text-muted border-b border-line pb-2 mb-4">Estado de la sesión</h2>
+        <h2 className="label text-muted border-b border-line pb-2 mb-4">{t.channel.aside.title}</h2>
         <div className="space-y-3">
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">Conexión</p>
+            <p className="label text-muted-2 mb-1">{t.channel.aside.connection}</p>
             <div className="flex items-center justify-between">
               <span className="font-mono text-[13px] text-accent">
-                {session.secure ? "Protegida (Tor)" : "Normal"}
+                {session.secure
+                  ? t.channel.aside.connectionSecure
+                  : t.channel.aside.connectionNormal}
               </span>
               <span className="w-2 h-2 rounded-full bg-accent" style={{ boxShadow: "0 0 8px #c3f400" }} />
             </div>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">Cifrado de contenido</p>
+            <p className="label text-muted-2 mb-1">{t.channel.aside.contentEncryption}</p>
             <span className="font-mono text-[12px] text-text">XChaCha20-Poly1305</span>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">Remitente</p>
-            <span className="font-mono text-[12px] text-accent">Remitente oculto</span>
+            <p className="label text-muted-2 mb-1">{t.channel.aside.sender}</p>
+            <span className="font-mono text-[12px] text-accent">{t.channel.aside.senderSealed}</span>
           </div>
           <div className="bg-bg border border-line rounded-sm p-3">
-            <p className="label text-muted-2 mb-1">Contactos verificados</p>
+            <p className="label text-muted-2 mb-1">{t.channel.aside.verifiedContacts}</p>
             <span className="font-mono text-[13px] text-text">{contacts.length}</span>
           </div>
         </div>

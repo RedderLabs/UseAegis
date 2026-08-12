@@ -2,8 +2,10 @@ import Link from "next/link";
 import { StatusDot } from "./StatusDot";
 import { LogoMark } from "./Logo";
 import { JourneyTrigger } from "./MessageJourney";
+import { LocaleSwitcher } from "./LocaleSwitcher";
+import { getDictionary, localePath, type Locale } from "@/lib/i18n";
 
-const REPO = "https://github.com/RedderLabs/Aegis";
+const REPO = "https://github.com/RedderLabs/UseAegis";
 const BLOB = `${REPO}/blob/main`;
 // Panel PÚBLICO de analítica (Umami, sin cookies): transparencia total, cualquiera ve las visitas.
 const STATS_URL = "https://stats.useaegis.app/share/sDFD9RSBa4h54r1P";
@@ -24,7 +26,9 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
   );
 }
 
-export function Footer() {
+export function Footer({ locale }: { locale: Locale }) {
+  const t = getDictionary(locale);
+
   return (
     <footer className="border-t border-line bg-surface">
       <div className="max-w-shell mx-auto px-5 md:px-8 py-14">
@@ -33,50 +37,47 @@ export function Footer() {
             <div className="flex items-center gap-2.5 mb-3">
               <LogoMark className="h-6 w-6" />
               <span className="font-mono font-semibold tracking-[0.14em] text-sm text-text">
-                AEGIS
+                USE AEGIS
               </span>
             </div>
-            <p className="text-[13px] leading-relaxed text-muted">
-              Una función, sin desvíos: mensajes cifrados que llegan. El servidor
-              solo transporta ruido.
-            </p>
+            <p className="text-[13px] leading-relaxed text-muted">{t.footer.tagline}</p>
           </div>
           <div>
-            <p className="label text-muted mb-4">Proyecto</p>
+            <p className="label text-muted mb-4">{t.footer.project}</p>
             <ul className="space-y-2.5 text-[13px] text-muted">
               <li>
-                <Ext href={REPO}>Código fuente</Ext>
+                <Ext href={REPO}>{t.footer.sourceCode}</Ext>
               </li>
               <li>
-                <Ext href={`${BLOB}/docs/THREAT_MODEL.md`}>Modelo de amenaza</Ext>
+                <Ext href={`${BLOB}/docs/THREAT_MODEL.md`}>{t.footer.threatModel}</Ext>
               </li>
               <li>
-                <Ext href={`${BLOB}/docs/ROADMAP.md`}>Reproducible builds</Ext>
+                <Ext href={`${BLOB}/docs/ROADMAP.md`}>{t.footer.reproducibleBuilds}</Ext>
               </li>
             </ul>
           </div>
           <div>
-            <p className="label text-muted mb-4">Comunidad</p>
+            <p className="label text-muted mb-4">{t.footer.community}</p>
             <ul className="space-y-2.5 text-[13px] text-muted">
               <li>
-                <Ext href={`${REPO}/blob/main/README.md`}>Contribuir</Ext>
+                <Ext href={`${REPO}/blob/main/README.md`}>{t.footer.contribute}</Ext>
               </li>
               <li>
-                <Ext href={`${REPO}/releases`}>Anuncios</Ext>
+                <Ext href={`${REPO}/releases`}>{t.footer.announcements}</Ext>
               </li>
               <li>
-                <Ext href={`${REPO}/issues`}>Reportar un fallo</Ext>
+                <Ext href={`${REPO}/issues`}>{t.footer.reportBug}</Ext>
               </li>
               <li>
-                <Ext href={`${BLOB}/SECURITY.md`}>Seguridad (divulgación)</Ext>
+                <Ext href={`${BLOB}/SECURITY.md`}>{t.footer.security}</Ext>
               </li>
             </ul>
           </div>
           <div>
-            <p className="label text-muted mb-4">Estado</p>
+            <p className="label text-muted mb-4">{t.footer.status}</p>
             <div className="inline-flex items-center gap-2 border border-line rounded-sm px-3 py-2">
               <StatusDot className="w-1.5 h-1.5" />
-              <span className="label text-accent">Relay operativo</span>
+              <span className="label text-accent">{t.footer.relayUp}</span>
             </div>
             <a
               href={STATS_URL}
@@ -84,35 +85,42 @@ export function Footer() {
               rel="noopener noreferrer"
               className="mt-3 flex w-fit items-center gap-2 border border-line rounded-sm px-3 py-2 label text-muted hover:text-text hover:border-accent transition-colors"
             >
-              Estadísticas públicas →
+              {t.footer.publicStats}
             </a>
-            <p className="mt-3 label text-muted-2">Auditoría externa: pendiente</p>
+            <p className="mt-3 label text-muted-2">{t.footer.externalAudit}</p>
           </div>
         </div>
         {WEB_ONION && (
           <div className="mt-12 pt-6 border-t border-line">
-            <p className="label text-muted mb-2">Servicio oculto (Tor)</p>
+            <p className="label text-muted mb-2">{t.footer.hiddenService}</p>
             <a
               href={`http://${WEB_ONION}`}
               className="font-mono text-[12px] break-all text-muted hover:text-accent transition-colors"
-              title="Abrir en Tor Browser"
+              title={t.footer.openInTor}
             >
               {WEB_ONION}
             </a>
           </div>
         )}
         <div className="mt-12 pt-6 border-t border-line flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="label text-muted-2">
-            © 2026 Redder Labs · Código abierto y auditable
-          </p>
-          <div className="flex gap-6 label text-muted-2">
+          <p className="label text-muted-2">{t.footer.copyright}</p>
+          <div className="flex items-center gap-6 label text-muted-2">
             <JourneyTrigger />
-            <Link className="hover:text-muted transition-colors" href="/privacidad">
-              Privacidad
+            <Link
+              className="hover:text-muted transition-colors"
+              href={localePath(locale, "/privacidad")}
+            >
+              {t.footer.privacy}
             </Link>
-            <Link className="hover:text-muted transition-colors" href="/terminos">
-              Términos
+            <Link
+              className="hover:text-muted transition-colors"
+              href={localePath(locale, "/terminos")}
+            >
+              {t.footer.terms}
             </Link>
+            {/* Segundo punto de cambio de idioma: quien llega por un enlace profundo y hace scroll
+                hasta el pie no tiene que volver arriba para encontrarlo. */}
+            <LocaleSwitcher />
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@ import {
   verifyWithPublicKey,
 } from "./ed25519";
 import { prekeyMessage, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
+import { dict } from "../i18n/runtime";
 import { AEAD_NONCE_BYTES, aeadDecrypt, aeadEncrypt, deriveAeadKey, randomNonce } from "./aead";
 
 export const ENVELOPE_VERSION = 1;
@@ -174,7 +175,7 @@ export async function openEnvelope(params: {
     senderAuthMessage(recipientEd25519Pub, ephPub, inner.kind, inner.sentAt, inner.body),
     sig,
   );
-  if (!ok) throw new Error("Firma del remitente inválida.");
+  if (!ok) throw new Error(dict().errors.invalidSenderSignature);
 
   return { senderPub: inner.senderPub, kind: inner.kind, sentAt: inner.sentAt, body: inner.body };
 }

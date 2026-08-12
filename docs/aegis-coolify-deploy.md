@@ -32,7 +32,7 @@ siguientes para que compartan red interna.
 ## 3. Aplicación (Docker Compose)
 
 1. **+ New → Docker Compose** (basado en Git).
-2. **Repositorio**: `https://github.com/RedderLabs/Aegis` · **rama**: `feat/node-onion-tor-caddy`
+2. **Repositorio**: `https://github.com/RedderLabs/UseAegis` · **rama**: `feat/node-onion-tor-caddy`
    (o `main` tras mergear el PR) · **Compose file**: `docker-compose.coolify.yml`.
 3. Coolify detecta dos servicios: `web` y `relay`.
 4. Activa **"Connect To Predefined Network"** en la app, para que resuelva el host interno del

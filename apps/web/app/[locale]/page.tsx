@@ -9,25 +9,29 @@ import { CTA } from "@/components/CTA";
 import { Footer } from "@/components/Footer";
 import { UmamiAnalytics } from "@/components/UmamiAnalytics";
 import { MessageJourney } from "@/components/MessageJourney";
+import { DEFAULT_LOCALE, isLocale } from "@/lib/i18n";
 
-export default function Home() {
+export default async function Home({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: raw } = await params;
+  const locale = isLocale(raw) ? raw : DEFAULT_LOCALE;
+
   return (
     <>
       <div className="fixed inset-0 grid-bg z-0 pointer-events-none" />
-      <Nav />
+      <Nav locale={locale} />
       <main className="relative z-10 pt-14">
-        <Hero />
+        <Hero locale={locale} />
         <div className="max-w-shell mx-auto px-5 md:px-8">
           <div className="h-px hairline-accent" />
         </div>
-        <Protects />
-        <Transports />
+        <Protects locale={locale} />
+        <Transports locale={locale} />
         <SecureSession />
-        <Handshake />
-        <Limits />
-        <CTA />
+        <Handshake locale={locale} />
+        <Limits locale={locale} />
+        <CTA locale={locale} />
       </main>
-      <Footer />
+      <Footer locale={locale} />
       {/* Momento de bienvenida: popup opcional que enseña el viaje del mensaje (solo landing). */}
       <MessageJourney />
       {/* Analítica solo de la landing (no en la app). No-op si no está configurada. */}

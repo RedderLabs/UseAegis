@@ -8,10 +8,15 @@ import { claimUsername, fetchMe, RelayError, WEB_ONION_URL } from "@/lib/relay-c
 import { generateUsername } from "@/lib/username";
 import { encodeContactUri } from "@/lib/contact-uri";
 import { ContactQR } from "@/components/ContactQr";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { IconCopy, IconDownload, IconQr } from "@/components/Icons";
+import { LOCALE_LABELS } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 function Settings() {
   const session = useDashboardSession();
+  const t = useT();
+  const locale = useLocale();
   const grouped = groupIdentity(session.id);
   const [copied, setCopied] = useState(false);
   // La puerta (transporte) la fija el origen por el que se abrió la app; `session.secure` la
@@ -75,9 +80,9 @@ function Settings() {
           throw err;
         }
       }
-      setNameError("No conseguimos reservar un nombre libre. Prueba «Regenerar» y de nuevo.");
+      setNameError(t.settings.username.noFreeName);
     } catch (err) {
-      setNameError(err instanceof Error ? err.message : "No se pudo guardar el nombre.");
+      setNameError(err instanceof Error ? err.message : t.settings.username.saveFailed);
     } finally {
       setSavingName(false);
     }
@@ -128,15 +133,13 @@ function Settings() {
 
   function downloadId() {
     const blob = new Blob(
-      [
-        `AEGIS — Huella pública de identidad\n\n${session.id}\n\nEsta es la huella PÚBLICA de tu identidad (sirve para reconocerte o compartirte).\nNO sirve para recuperar el acceso: para eso está la frase de recuperación\n(24 palabras) que guardaste al crear la identidad.`,
-      ],
+      [`${t.settings.file.header}\n\n${session.id}\n\n${t.settings.file.body}`],
       { type: "text/plain" },
     );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `aegis-huella-${session.id}.txt`;
+    a.download = t.settings.file.filename(session.id);
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -145,25 +148,22 @@ function Settings() {
     <div className="flex-1 overflow-y-auto p-5 md:p-8">
       <div className="max-w-[1100px] mx-auto">
         <h1 className="font-sans text-3xl font-bold tracking-tight text-text mb-6">
-          Ajustes
+          {t.settings.title}
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Nombre de usuario público (handle) — se elige UNA vez y es definitivo */}
         <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
-          <p className="label text-text">Tu nombre de usuario</p>
+          <p className="label text-text">{t.settings.username.title}</p>
           <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
-            Es el nombre público con el que te añaden como contacto. Lo generamos por ti (una
-            palabra + un número) para que sea único.{" "}
-            <span className="text-muted">
-              Se elige una sola vez y queda fijo: no se puede cambiar después.
-            </span>
+            {t.settings.username.bodyStart}
+            <span className="text-muted">{t.settings.username.bodyStrong}</span>
           </p>
 
           <div className="mt-4 pt-4 border-t border-line">
-            <p className="label text-muted-2 mb-1">Ahora mismo</p>
+            <p className="label text-muted-2 mb-1">{t.settings.username.current}</p>
             {!usernameLoaded ? (
-              <p className="font-mono text-[13px] text-muted-2">Comprobando…</p>
+              <p className="font-mono text-[13px] text-muted-2">{t.common.checking}</p>
             ) : username ? (
               <div className="flex items-center gap-3">
                 <p className="font-mono text-[15px] text-accent">@{username}</p>
@@ -171,13 +171,11 @@ function Settings() {
                   onClick={() => void navigator.clipboard?.writeText(`@${username}`).catch(() => {})}
                   className="inline-flex items-center gap-1 label text-muted-2 hover:text-text transition-colors"
                 >
-                  <IconCopy className="w-3.5 h-3.5" /> Copiar
+                  <IconCopy className="w-3.5 h-3.5" /> {t.common.copy}
                 </button>
               </div>
             ) : (
-              <p className="font-mono text-[13px] text-muted">
-                Todavía no tienes nombre. Elige uno para que puedan añadirte.
-              </p>
+              <p className="font-mono text-[13px] text-muted">{t.settings.username.none}</p>
             )}
           </div>
 
@@ -187,14 +185,16 @@ function Settings() {
               <div className="mt-4 flex items-start gap-2 bg-bg border border-line rounded-sm p-3">
                 <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
                 <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
-                  Tu nombre de usuario es <span className="text-accent">definitivo</span>. Comparte
-                  tu <span className="text-text">@{username}</span> completo para que te añadan como
-                  contacto.
+                  {t.settings.username.fixedStart}
+                  <span className="text-accent">{t.settings.username.fixedWord}</span>
+                  {t.settings.username.fixedMiddle}
+                  <span className="text-text">@{username}</span>
+                  {t.settings.username.fixedEnd}
                 </p>
               </div>
             ) : (
               <div className="mt-4">
-                <p className="label text-muted-2 mb-1.5">Tu nombre propuesto</p>
+                <p className="label text-muted-2 mb-1.5">{t.settings.username.proposed}</p>
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                   <div className="flex-1 flex items-center bg-bg border border-line rounded-sm px-3 py-2.5">
                     <span className="font-mono text-[15px] text-accent select-all">
@@ -207,26 +207,26 @@ function Settings() {
                       disabled={savingName}
                       className="shrink-0 label py-2.5 px-4 border border-line text-muted hover:text-text hover:border-accent-dim rounded-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
                     >
-                      Regenerar
+                      {t.settings.username.regenerate}
                     </button>
                     <button
                       onClick={claimCandidate}
                       disabled={savingName || !candidate}
                       className="shrink-0 label py-2.5 px-5 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none"
                     >
-                      {savingName ? "Guardando…" : "Usar este"}
+                      {savingName ? t.common.saving : t.settings.username.useThis}
                     </button>
                   </div>
                 </div>
                 <p className="font-mono text-[11px] text-status-p2p mt-2">
-                  Elige con calma: una vez lo confirmes con «Usar este», no podrás cambiarlo.
+                  {t.settings.username.warning}
                 </p>
                 {nameError && (
                   <p className="font-mono text-[11px] text-status-p2p mt-2">{nameError}</p>
                 )}
                 {nameSaved && (
                   <p className="font-mono text-[11px] text-accent mt-2">
-                    Guardado ✓ · comparte tu @nombre completo para que te añadan.
+                    {t.settings.username.saved}
                   </p>
                 )}
               </div>
@@ -236,24 +236,21 @@ function Settings() {
         {/* Mi código QR — para que me añadan escaneándolo o subiendo una foto de él */}
         <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
           <p className="label text-text flex items-center gap-1.5">
-            <IconQr className="w-4 h-4 text-accent" /> Tu código QR
+            <IconQr className="w-4 h-4 text-accent" /> {t.settings.qr.title}
           </p>
           <p className="font-mono text-[11px] text-muted-2 mt-1 leading-relaxed">
-            Otra persona te añade escaneándolo con su móvil (o subiendo una foto). Tu llave viaja
-            dentro del código, así que no depende de que el servidor diga la verdad: al añadirte se
-            comprueba tu llave de cifrado.
+            {t.settings.qr.body}
           </p>
           <div className="mt-4 pt-4 border-t border-line flex flex-col sm:flex-row gap-5 sm:items-center">
             {contactUri ? (
               <ContactQR uri={contactUri} />
             ) : (
-              <p className="font-mono text-[12px] text-muted-2">No disponible.</p>
+              <p className="font-mono text-[12px] text-muted-2">{t.settings.qr.unavailable}</p>
             )}
             <div className="flex-1 min-w-0">
               {!username && (
                 <p className="font-mono text-[11px] text-status-p2p mb-3 leading-relaxed">
-                  Aún no tienes @nombre: el QR ya funciona, pero elige uno arriba para que tu nombre
-                  se muestre a quien te añada.
+                  {t.settings.qr.noHandleWarning}
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
@@ -262,14 +259,15 @@ function Settings() {
                   disabled={!contactUri}
                   className="inline-flex items-center gap-1.5 label py-2 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
                 >
-                  <IconCopy className="w-3.5 h-3.5" /> {copiedCode ? "Copiado" : "Copiar código"}
+                  <IconCopy className="w-3.5 h-3.5" />{" "}
+                  {copiedCode ? t.settings.qr.copiedCode : t.settings.qr.copyCode}
                 </button>
                 <button
                   onClick={() => void downloadQr()}
                   disabled={!contactUri}
                   className="inline-flex items-center gap-1.5 label py-2 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
                 >
-                  <IconDownload className="w-3.5 h-3.5" /> Descargar QR
+                  <IconDownload className="w-3.5 h-3.5" /> {t.settings.qr.downloadQr}
                 </button>
               </div>
             </div>
@@ -278,10 +276,11 @@ function Settings() {
 
         {/* Transporte / puerta */}
         <section className="bg-surface border border-line rounded-sm p-5">
-          <p className="label text-text">Conexión</p>
+          <p className="label text-text">{t.settings.connection.title}</p>
           <p className="font-mono text-[11px] text-muted-2 mt-1">
-            La decide la dirección por la que abriste la app: no hay nada que activar. Para el modo
-            protegido, abre la <code className="text-text">.onion</code> en el Navegador Tor.
+            {t.settings.connection.bodyStart}
+            <code className="text-text">.onion</code>
+            {t.settings.connection.bodyEnd}
           </p>
           <div className="mt-4 pt-4 border-t border-line flex items-center gap-2">
             <span
@@ -289,18 +288,16 @@ function Settings() {
               style={{ backgroundColor: onion ? "#c3f400" : "#fbbf24" }}
             />
             <span className="label" style={{ color: onion ? "#c3f400" : "#fbbf24" }}>
-              {onion ? "Conexión protegida (Tor)" : "Conexión normal"}
+              {onion ? t.settings.connection.secure : t.settings.connection.normal}
             </span>
           </div>
           <p className="font-mono text-[11px] text-muted-2 mt-3 leading-relaxed">
-            {onion
-              ? "Tu conexión va por Tor; tu IP no es visible para el servidor."
-              : "Tu IP es visible para el servidor."}
+            {onion ? t.settings.connection.secureNote : t.settings.connection.normalNote}
             {!onion && WEB_ONION_URL && (
               <>
-                {" "}
-                Para más anonimato o si hay censura, abre nuestra{" "}
-                <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
+                {t.settings.connection.onionInviteStart}
+                <span className="text-accent break-all">{WEB_ONION_URL}</span>
+                {t.settings.connection.onionInviteEnd}
               </>
             )}
           </p>
@@ -308,7 +305,7 @@ function Settings() {
 
         {/* Identidad */}
         <section className="bg-surface border border-line rounded-sm p-5">
-          <p className="label text-muted mb-3">Tu identidad</p>
+          <p className="label text-muted mb-3">{t.settings.identity.title}</p>
           <div className="bg-bg border border-line rounded-sm p-3">
             <p className="font-mono text-[13px] text-accent break-all leading-relaxed">
               {grouped}
@@ -320,37 +317,41 @@ function Settings() {
               className="inline-flex items-center gap-1.5 label text-muted hover:text-text transition-colors"
             >
               <IconCopy className="w-3.5 h-3.5" />
-              {copied ? "Copiada" : "Copiar id"}
+              {copied ? t.common.copied : t.settings.identity.copyId}
             </button>
             <button
               onClick={downloadId}
               className="inline-flex items-center gap-1.5 label text-muted hover:text-text transition-colors"
             >
               <IconDownload className="w-3.5 h-3.5" />
-              Descargar
+              {t.common.download}
             </button>
           </div>
         </section>
 
         {/* Acerca de */}
         <section className="md:col-span-2 bg-surface border border-line rounded-sm p-5">
-          <p className="label text-muted mb-3">Acerca de</p>
+          <p className="label text-muted mb-3">{t.settings.about.title}</p>
           <dl className="space-y-2 font-mono text-[12px]">
-            <div className="flex justify-between">
-              <dt className="text-muted-2">Idioma</dt>
-              <dd className="text-text">Español</dd>
+            <div className="flex justify-between items-center">
+              <dt className="text-muted-2">{t.settings.about.language}</dt>
+              {/* Además de informar, deja cambiarlo aquí mismo: es donde el usuario lo busca. */}
+              <dd className="flex items-center gap-2">
+                <span className="text-text">{LOCALE_LABELS[locale]}</span>
+                <LocaleSwitcher />
+              </dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-muted-2">Cifrado</dt>
+              <dt className="text-muted-2">{t.settings.about.encryption}</dt>
               <dd className="text-text">X25519 · XChaCha20-Poly1305</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-muted-2">Código</dt>
-              <dd className="text-accent">Abierto y auditable</dd>
+              <dt className="text-muted-2">{t.settings.about.code}</dt>
+              <dd className="text-accent">{t.settings.about.codeValue}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-muted-2">Auditoría externa</dt>
-              <dd className="text-status-p2p">Pendiente</dd>
+              <dt className="text-muted-2">{t.settings.about.audit}</dt>
+              <dd className="text-status-p2p">{t.settings.about.auditValue}</dd>
             </div>
           </dl>
         </section>

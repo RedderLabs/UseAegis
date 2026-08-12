@@ -13,6 +13,7 @@
 import { fingerprint16, fromBase64Url } from "./crypto/ed25519";
 import { verifyPeerPrekey } from "./crypto/messaging";
 import { fetchBundle, type DirectoryEntry } from "./relay-client";
+import { dict } from "./i18n/runtime";
 
 const DB_NAME = "aegis-contacts";
 const DB_VERSION = 1;
@@ -80,7 +81,7 @@ export function removeContact(pub: string): Promise<void> {
  */
 export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Contact> {
   if (!entry.keyBundle) {
-    throw new Error("Ese usuario aún no ha publicado su llave de cifrado; no se puede añadir.");
+    throw new Error(dict().errors.noPrekey);
   }
   const edPub = fromBase64Url(entry.publicKey);
   const x25519Pub = fromBase64Url(entry.keyBundle.x25519PublicKey);

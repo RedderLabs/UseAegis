@@ -27,10 +27,12 @@ import {
   RelayError,
   WEB_ONION_URL,
 } from "@/lib/relay-client";
+import { useLocalePath, useT } from "@/lib/i18n/provider";
+import type { Dictionary } from "@/lib/i18n";
 
 const MIN_PASSPHRASE = 8;
 
-function describeError(err: unknown): string {
+function describeError(err: unknown, t: Dictionary): string {
   if (err instanceof RelayError) {
     if (err.status === 0) {
       // El propio RelayError ya trae el texto accionable según la puerta (clearnet vs .onion):
@@ -38,14 +40,16 @@ function describeError(err: unknown): string {
       // relay caído o bloqueador. Respetarlo en vez de pisarlo con un mensaje genérico de clearnet.
       return err.message;
     }
-    if (err.code === "signature_verification_failed") return "Firma rechazada por el servidor.";
-    return `El servidor respondió con un error (${err.status}).`;
+    if (err.code === "signature_verification_failed") return t.login.errors.signatureRejected;
+    return t.login.errors.serverError(err.status);
   }
-  return (err as Error)?.message ?? "Error desconocido.";
+  return (err as Error)?.message ?? t.login.errors.unknown;
 }
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useT();
+  const href = useLocalePath();
   const [status, setStatus] = useState<KeystoreStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +108,7 @@ export default function LoginPage() {
     } catch {
       /* el material de contacto se puede publicar más tarde */
     }
-    router.push("/panel");
+    router.push(href("/panel"));
   }
 
   // Desbloquea un keystore cifrado con la passphrase y entra.
@@ -116,7 +120,7 @@ export default function LoginPage() {
       const identity = await unlockKeystore(passphrase);
       await finishLogin(identity);
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
       setBusy(false);
     }
   }
@@ -125,11 +129,11 @@ export default function LoginPage() {
   async function onMigrate() {
     if (busy) return;
     if (passphrase.length < MIN_PASSPHRASE) {
-      setError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setError(t.login.errors.minPassphrase(MIN_PASSPHRASE));
       return;
     }
     if (passphrase !== confirmPass) {
-      setError("Las contraseñas no coinciden.");
+      setError(t.login.errors.passwordsDontMatch);
       return;
     }
     setBusy(true);
@@ -138,7 +142,7 @@ export default function LoginPage() {
       const identity = await migrateLegacy(passphrase);
       await finishLogin(identity);
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
       setBusy(false);
     }
   }
@@ -147,11 +151,11 @@ export default function LoginPage() {
   async function onImport() {
     if (busy) return;
     if (passphrase.length < MIN_PASSPHRASE) {
-      setError(`La contraseña debe tener al menos ${MIN_PASSPHRASE} caracteres.`);
+      setError(t.login.errors.minPassphrase(MIN_PASSPHRASE));
       return;
     }
     if (passphrase !== confirmPass) {
-      setError("Las contraseñas no coinciden.");
+      setError(t.login.errors.passwordsDontMatch);
       return;
     }
     setBusy(true);
@@ -160,14 +164,14 @@ export default function LoginPage() {
       const identity = await importFromRecovery(importValue, passphrase);
       await finishLogin(identity);
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
       setBusy(false);
     }
   }
 
   // Lee el fichero de keystore elegido por el usuario (desde el USB) a memoria. Si por error se
-  // adjunta el fichero de FRASE de recuperación (aegis-recuperacion-*.txt), no es un keystore:
-  // se detecta y se redirige al importador correcto con las 24 palabras ya rellenadas.
+  // adjunta el fichero de FRASE de recuperación, no es un keystore: se detecta y se redirige al
+  // importador correcto con las 24 palabras ya rellenadas.
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -186,10 +190,7 @@ export default function LoginPage() {
             setFileJson("");
             setFileOpen(false);
             setImportOpen(true);
-            setError(
-              "Ese fichero es tu FRASE de recuperación, no un keystore. He puesto tus 24 palabras " +
-                "aquí abajo: crea una contraseña y entra.",
-            );
+            setError(t.login.errors.wrongFileIsPhrase);
             return;
           } catch {
             /* no es una frase de recuperación: sigue el flujo normal de keystore */
@@ -197,7 +198,7 @@ export default function LoginPage() {
         }
         setFileJson(text);
       })
-      .catch(() => setError("No se pudo leer el fichero."));
+      .catch(() => setError(t.login.errors.cannotReadFile));
   }
 
   // Lee el fichero de FRASE de recuperación (.txt) y extrae las 24 palabras al textarea.
@@ -211,7 +212,7 @@ export default function LoginPage() {
         const { extractRecoveryFromText } = await import("@/lib/crypto/recovery-phrase");
         setImportValue(extractRecoveryFromText(text)); // lanza con mensaje claro si no hay frase
       })
-      .catch((err) => setError((err as Error)?.message ?? "No se pudo leer el fichero."));
+      .catch((err) => setError((err as Error)?.message ?? t.login.errors.cannotReadFile));
   }
 
   // Desbloquea desde el fichero cargado y entra. persistFile decide si se guarda en el PC.
@@ -223,7 +224,7 @@ export default function LoginPage() {
       const identity = await unlockFromFile(fileJson, passphrase, { persist: persistFile });
       await finishLogin(identity);
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
       setBusy(false);
     }
   }
@@ -237,8 +238,8 @@ export default function LoginPage() {
         style={{ backgroundColor: "#c3f400", boxShadow: "0 0 8px #c3f400" }}
       />
       <p className="font-mono text-[10px] leading-relaxed text-muted-2">
-        <span className="text-accent">Conexión protegida (Tor)</span> — el tráfico va por Tor y tu
-        IP no es visible para el servidor.
+        <span className="text-accent">{t.login.gatewaySecure}</span>
+        {t.login.gatewaySecureBody}
       </p>
     </div>
   ) : (
@@ -248,12 +249,13 @@ export default function LoginPage() {
         style={{ backgroundColor: "#fbbf24" }}
       />
       <p className="font-mono text-[10px] leading-relaxed text-muted-2">
-        <span className="text-text">Conexión normal</span> — tu IP es visible para el servidor.
+        <span className="text-text">{t.login.gatewayNormal}</span>
+        {t.login.gatewayNormalBody}
         {WEB_ONION_URL && (
           <>
-            {" "}
-            Si hay censura o quieres anonimato, abre nuestra{" "}
-            <span className="text-accent break-all">{WEB_ONION_URL}</span> en el Navegador Tor.
+            {t.login.gatewayNormalOnionStart}
+            <span className="text-accent break-all">{WEB_ONION_URL}</span>
+            {t.login.gatewayNormalOnionEnd}
           </>
         )}
       </p>
@@ -269,7 +271,7 @@ export default function LoginPage() {
           className="label shrink-0 rounded-sm border border-accent/40 px-2 py-1 text-accent hover:bg-accent hover:text-bg transition-colors"
           aria-pressed={showPass}
         >
-          {showPass ? "Ocultar" : "Mostrar"}
+          {showPass ? t.login.hide : t.login.show}
         </button>
         <label htmlFor="passphrase" className="label text-muted">
           {label}
@@ -285,7 +287,7 @@ export default function LoginPage() {
         onKeyDown={(e) => {
           if (e.key === "Enter" && status?.state === "locked") onUnlock();
         }}
-        placeholder="Tu contraseña"
+        placeholder={t.login.passwordPlaceholder}
         className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
     </div>
@@ -294,7 +296,7 @@ export default function LoginPage() {
   const confirmInput = (
     <div className="space-y-2">
       <label htmlFor="confirm" className="label text-muted">
-        Repite la contraseña
+        {t.login.repeatPassword}
       </label>
       <input
         id="confirm"
@@ -302,12 +304,12 @@ export default function LoginPage() {
         value={confirmPass}
         autoComplete="new-password"
         onChange={(e) => setConfirmPass(e.target.value)}
-        placeholder="Confírmala"
+        placeholder={t.login.repeatPasswordPlaceholder}
         className="w-full bg-bg border border-line rounded-sm pl-3 pr-11 py-2.5 font-mono text-sm text-text placeholder:text-muted-2 focus:outline-none focus:border-accent"
       />
       {confirmPass.length > 0 && confirmPass !== passphrase && (
         <p className="font-mono text-[11px] text-status-p2p leading-relaxed">
-          Las contraseñas no coinciden todavía.
+          {t.login.passwordsDontMatchYet}
         </p>
       )}
     </div>
@@ -330,31 +332,34 @@ export default function LoginPage() {
                 <LogoMark className="h-11 w-11" />
               </div>
             </div>
-            <Link href="/" className="font-mono font-semibold tracking-[0.14em] text-lg text-text">
-              AEGIS
+            <Link
+              href={href("/")}
+              className="font-mono font-semibold tracking-[0.14em] text-lg text-text"
+            >
+              USE AEGIS
             </Link>
-            <p className="label text-muted-2 mt-1">Iniciar sesión</p>
+            <p className="label text-muted-2 mt-1">{t.login.subtitle}</p>
           </div>
 
           <div className="bg-surface/70 backdrop-blur-xl border border-line rounded-md p-6">
             {status === null ? (
-              <p className="label text-muted-2 text-center py-6">Comprobando dispositivo…</p>
+              <p className="label text-muted-2 text-center py-6">{t.login.checkingDevice}</p>
             ) : fileOpen ? (
               /* --- Entrar desde fichero de keystore (USB) --- */
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <span className="label text-muted">Tus llaves desde fichero (USB)</span>
+                  <span className="label text-muted">{t.login.file.title}</span>
                   <p className="font-mono text-[11px] text-muted-2 leading-relaxed">
-                    Elige tu fichero <span className="text-text">.aegis-key.json</span>. En modo
-                    portátil la identidad solo vive en memoria durante esta sesión: al cerrar no
-                    queda nada en este equipo.
+                    {t.login.file.bodyStart}
+                    <span className="text-text">.aegis-key.json</span>
+                    {t.login.file.bodyEnd}
                   </p>
                 </div>
 
                 <label className="flex items-center gap-3 border border-line rounded-sm px-3 py-2.5 cursor-pointer hover:border-accent-dim transition-colors">
-                  <span className="label text-accent">Elegir fichero</span>
+                  <span className="label text-accent">{t.login.file.choose}</span>
                   <span className="font-mono text-[11px] text-muted-2 truncate">
-                    {fileName || "ningún fichero seleccionado"}
+                    {fileName || t.login.file.none}
                   </span>
                   <input
                     type="file"
@@ -364,7 +369,7 @@ export default function LoginPage() {
                   />
                 </label>
 
-                {passphraseInput("Contraseña")}
+                {passphraseInput(t.login.password)}
 
                 <button
                   type="button"
@@ -372,9 +377,9 @@ export default function LoginPage() {
                   className="w-full flex items-center justify-between"
                 >
                   <span className="flex flex-col text-left">
-                    <span className="label text-text">Recordar en este equipo</span>
+                    <span className="label text-text">{t.login.file.remember}</span>
                     <span className="font-mono text-[10px] text-muted-2">
-                      {persistFile ? "Se guardarán tus llaves aquí" : "Modo portátil: no se guarda nada"}
+                      {persistFile ? t.login.file.rememberOn : t.login.file.rememberOff}
                     </span>
                   </span>
                   <span
@@ -407,7 +412,7 @@ export default function LoginPage() {
                     }}
                     className="flex-1 label py-3 px-4 border border-line text-muted hover:text-text transition-colors rounded-sm"
                   >
-                    Cancelar
+                    {t.common.cancel}
                   </button>
                   <button
                     type="button"
@@ -415,7 +420,7 @@ export default function LoginPage() {
                     disabled={busy || fileJson.length === 0 || passphrase.length === 0}
                     className="flex-1 label py-3 px-4 bg-accent text-bg font-bold hover:brightness-110 transition rounded-sm disabled:opacity-40 disabled:pointer-events-none"
                   >
-                    {busy ? "Desbloqueando…" : "Entrar"}
+                    {busy ? t.login.file.submitBusy : t.login.file.submit}
                   </button>
                 </div>
               </div>
@@ -424,7 +429,7 @@ export default function LoginPage() {
               <div className="space-y-7">
                 <div className="space-y-2">
                   <span className="label text-muted flex justify-between items-center">
-                    <span>Identidad protegida en este dispositivo</span>
+                    <span>{t.login.locked.title}</span>
                     <span
                       className="w-1.5 h-1.5 rounded-full"
                       style={{ backgroundColor: "#c3f400", boxShadow: "0 0 8px #c3f400" }}
@@ -435,13 +440,10 @@ export default function LoginPage() {
                       {groupIdentity(status.fingerprint)}
                     </span>
                   </div>
-                  <p className="font-mono text-[11px] text-muted-2">
-                    Tu identidad está cifrada. Introduce tu contraseña para desbloquearla en
-                    esta sesión — nadie más puede usar esta identidad sin ella.
-                  </p>
+                  <p className="font-mono text-[11px] text-muted-2">{t.login.locked.body}</p>
                 </div>
 
-                {passphraseInput("Contraseña", true)}
+                {passphraseInput(t.login.password, true)}
                 {gatewayInfo}
 
                 {error && (
@@ -454,27 +456,27 @@ export default function LoginPage() {
                   disabled={busy || passphrase.length === 0}
                   className="w-full bg-accent text-bg label py-3.5 px-5 hover:brightness-110 active:scale-[0.99] transition rounded-sm disabled:opacity-40 disabled:pointer-events-none"
                 >
-                  {busy ? "Desbloqueando…" : "Desbloquear e iniciar sesión"}
+                  {busy ? t.login.locked.submitBusy : t.login.locked.submit}
                 </button>
               </div>
             ) : status.state === "legacy" && !importOpen ? (
               /* --- Identidad antigua sin cifrar: forzar protección con passphrase --- */
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <span className="label text-status-p2p">Identidad sin cifrar detectada</span>
+                  <span className="label text-status-p2p">{t.login.legacy.title}</span>
                   <div className="border-b border-line py-2">
                     <span className="font-mono text-sm tracking-[0.12em] text-text">
                       {groupIdentity(status.fingerprint)}
                     </span>
                   </div>
                   <p className="text-[13px] text-muted leading-relaxed">
-                    Esta identidad estaba guardada <span className="text-text">sin protección</span>:
-                    cualquiera con acceso al equipo podía usarla. Protégela ahora con una contraseña
-                    para cifrarla. A partir de entonces se pedirá al entrar.
+                    {t.login.legacy.bodyStart}
+                    <span className="text-text">{t.login.legacy.bodyUnprotected}</span>
+                    {t.login.legacy.bodyEnd}
                   </p>
                 </div>
 
-                {passphraseInput("Nueva contraseña", true)}
+                {passphraseInput(t.login.legacy.newPassword, true)}
                 {confirmInput}
                 {gatewayInfo}
 
@@ -488,7 +490,7 @@ export default function LoginPage() {
                   disabled={busy}
                   className="w-full bg-accent text-bg label py-3.5 px-5 hover:brightness-110 active:scale-[0.99] transition rounded-sm disabled:opacity-40 disabled:pointer-events-none"
                 >
-                  {busy ? "Cifrando…" : "Proteger e iniciar sesión"}
+                  {busy ? t.login.legacy.submitBusy : t.login.legacy.submit}
                 </button>
               </div>
             ) : importOpen ? (
@@ -497,10 +499,10 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <label htmlFor="recovery" className="label text-muted">
-                      Frase de recuperación
+                      {t.login.import.label}
                     </label>
                     <label className="label text-accent shrink-0 cursor-pointer hover:brightness-110 transition">
-                      Adjuntar fichero
+                      {t.login.import.attachFile}
                       <input
                         type="file"
                         accept=".txt,text/plain"
@@ -515,11 +517,11 @@ export default function LoginPage() {
                     onChange={(e) => setImportValue(e.target.value)}
                     rows={3}
                     spellCheck={false}
-                    placeholder="Pega tus 24 palabras, o adjunta tu fichero aegis-recuperacion-*.txt"
+                    placeholder={t.login.import.placeholder}
                     className="w-full bg-bg border border-line rounded-sm px-3 py-2 font-mono text-[12px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent break-all"
                   />
                 </div>
-                {passphraseInput("Contraseña para proteger esta identidad")}
+                {passphraseInput(t.login.import.passwordLabel)}
                 {confirmInput}
                 {gatewayInfo}
 
@@ -536,7 +538,7 @@ export default function LoginPage() {
                     }}
                     className="flex-1 label py-3 px-4 border border-line text-muted hover:text-text transition-colors rounded-sm"
                   >
-                    Cancelar
+                    {t.common.cancel}
                   </button>
                   <button
                     type="button"
@@ -544,23 +546,20 @@ export default function LoginPage() {
                     disabled={busy || importValue.trim().length === 0}
                     className="flex-1 label py-3 px-4 bg-accent text-bg font-bold hover:brightness-110 transition rounded-sm disabled:opacity-40 disabled:pointer-events-none"
                   >
-                    {busy ? "Importando…" : "Importar y entrar"}
+                    {busy ? t.login.import.submitBusy : t.login.import.submit}
                   </button>
                 </div>
               </div>
             ) : (
               /* --- No hay identidad: crear o importar --- */
               <div className="space-y-6">
-                <p className="text-[13px] text-muted leading-relaxed">
-                  No hay ninguna identidad en este dispositivo. Crea una nueva o importa la tuya
-                  con tu frase de recuperación.
-                </p>
+                <p className="text-[13px] text-muted leading-relaxed">{t.login.empty.body}</p>
                 <div className="flex flex-col gap-3">
                   <Link
-                    href="/register"
+                    href={href("/register")}
                     className="w-full text-center bg-accent text-bg label py-3.5 px-5 hover:brightness-110 transition rounded-sm"
                   >
-                    Crear identidad
+                    {t.login.empty.create}
                   </Link>
                   <button
                     type="button"
@@ -570,7 +569,7 @@ export default function LoginPage() {
                     }}
                     className="label text-muted hover:text-accent transition-colors"
                   >
-                    Importar con frase de recuperación
+                    {t.login.empty.importPhrase}
                   </button>
                   <button
                     type="button"
@@ -580,7 +579,7 @@ export default function LoginPage() {
                     }}
                     className="label text-muted hover:text-accent transition-colors"
                   >
-                    Entrar desde fichero (USB)
+                    {t.login.empty.fromFile}
                   </button>
                 </div>
               </div>
@@ -601,20 +600,20 @@ export default function LoginPage() {
                     }}
                     className="label text-muted hover:text-accent transition-colors"
                   >
-                    Entrar desde fichero (USB)
+                    {t.login.empty.fromFile}
                   </button>
                   <Link
-                    href="/register"
+                    href={href("/register")}
                     className="label text-muted hover:text-text transition-colors"
                   >
-                    Usar otra identidad
+                    {t.login.useAnother}
                   </Link>
                 </div>
               )}
             <div className="flex items-center gap-3 opacity-40">
               <span className="h-px w-8 bg-line" />
               <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
-                E2E · X25519 / XChaCha20-Poly1305
+                {t.login.crypto}
               </span>
               <span className="h-px w-8 bg-line" />
             </div>
