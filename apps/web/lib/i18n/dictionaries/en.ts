@@ -331,6 +331,36 @@ const en = {
       title: "Acceptable use",
       body: "Use Aegis protects the privacy of your communications; using it responsibly is on you. Do not use it for illegal activity or to harm others. The tool protects data, it does not shelter conduct.",
     },
+    userContent: {
+      title: "User content and conduct",
+      body: "Use Aegis does not create, host, publish or distribute content of its own: it carries encrypted messages between the people who choose to talk to each other. Whatever is written, sent or shared —text, files, audio— is the sole responsibility of the person who originates it and the person who transmits it.",
+      body2:
+        "Neither the project, nor those who develop it, nor those who operate a relay accept any liability whatsoever —civil, criminal, administrative or of any other kind— for the content, the conduct or the damages arising from the use third parties make of the tool, including unlawful or fraudulent use.",
+    },
+    intermediary: {
+      title: "We are transport, not a publisher",
+      body: "Messages are end-to-end encrypted: the relay sees envelopes, not letters. Neither the project nor a relay operator can read, review, filter or moderate what passes through, because they do not hold the keys. That impossibility is technical, not a policy we could lift at anyone's request.",
+      body2:
+        "The service therefore acts as a mere technical intermediary —transmission and temporary storage—: it does not select, originate or modify messages, nor choose their recipients. This is the role that intermediary-service law reserves for carriers of data, and under which the corresponding liability exemption is claimed. Upon actual knowledge of manifestly unlawful content held on a relay we operate, we will act diligently to remove it.",
+    },
+    selfHosting: {
+      title: "Your own instances and .onion",
+      body: "Use Aegis is published precisely so that anyone can run it themselves, including as a .onion hidden service. Whoever deploys their own instance becomes its operator: legal compliance in their jurisdiction is theirs, and so is responsibility for that instance and its users.",
+      body2:
+        "The authors of the software are not party to that relationship and have no control over, access to or visibility into third-party instances. Publishing a tool does not make whoever wrote it answerable for what others do with it.",
+    },
+    liability: {
+      title: "Limitation of liability",
+      body: "To the fullest extent permitted by applicable law, neither the authors, nor contributors to the code, nor relay operators shall be liable for any damages —direct, indirect, incidental, special or consequential, including lost profits, loss of data or reputational harm— arising from the use of, or the inability to use, Use Aegis, even if advised of the possibility of such damages.",
+      body2:
+        "Anyone using the service does so at their own risk and will hold authors and operators harmless against third-party claims arising from that use or from the content they transmit.",
+    },
+    authorities: {
+      title: "Requests from authorities and third parties",
+      body: "The project will honour requests that are legally binding on it from a competent authority, within whatever technically exists. It is worth knowing in advance what does exist: there are no phone numbers, no email addresses, no real names; content is end-to-end encrypted and the keys live only on devices; the system is designed to retain the minimum.",
+      body2:
+        "Cooperation here is not a matter of willingness but of possibility: what is not held cannot be handed over, and what cannot be decrypted cannot be decrypted. Requests may be sent to the contact published in the repository.",
+    },
     changes: {
       title: "Changes",
       body: "These terms may be updated as the project matures. Relevant changes will be reflected here and in the repository history, which is public.",

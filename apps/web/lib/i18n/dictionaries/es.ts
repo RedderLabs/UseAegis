@@ -333,6 +333,36 @@ const es = {
       title: "Uso aceptable",
       body: "Use Aegis protege la privacidad de tus comunicaciones; su uso responsable es cosa tuya. No lo utilices para actividades ilegales ni para dañar a terceros. La herramienta protege datos, no ampara conductas.",
     },
+    userContent: {
+      title: "Contenido y conducta de los usuarios",
+      body: "Use Aegis no crea, aloja, publica ni distribuye contenido propio: transporta mensajes cifrados entre las personas que eligen comunicarse. Lo que se escribe, se envía o se comparte —textos, ficheros, audio— es responsabilidad exclusiva de quien lo origina y de quien lo transmite.",
+      body2:
+        "Ni el proyecto, ni quienes lo desarrollan, ni quienes operan un relay asumen responsabilidad alguna, civil, penal, administrativa o de cualquier otra índole, por el contenido, la conducta o los daños derivados del uso que terceros hagan de la herramienta, incluido su uso ilícito o fraudulento.",
+    },
+    intermediary: {
+      title: "Somos transporte, no editor",
+      body: "Los mensajes van cifrados de extremo a extremo: el relay ve sobres, no cartas. Ni el proyecto ni el operador de un relay pueden leer, revisar, filtrar ni moderar lo que circula, porque no tienen las claves. Esa imposibilidad es técnica, no una política que podamos levantar a petición de nadie.",
+      body2:
+        "El servicio actúa por tanto como mero intermediario técnico —transmisión y almacenamiento temporal—: no selecciona, no origina, no modifica los mensajes ni elige a sus destinatarios. Es el papel que la normativa de servicios de intermediación reserva a los transportistas de datos, y bajo el que se acoge a la exención de responsabilidad correspondiente. Ante el conocimiento efectivo de un contenido manifiestamente ilícito alojado en un relay propio, se actuará con diligencia para retirarlo.",
+    },
+    selfHosting: {
+      title: "Instancias propias y .onion",
+      body: "Use Aegis se publica precisamente para que cualquiera lo ejecute por su cuenta, incluso como servicio oculto .onion. Quien despliega su propia instancia pasa a ser su operador: le corresponde el cumplimiento legal de su jurisdicción y responde de esa instancia y de sus usuarios.",
+      body2:
+        "Los autores del software no son parte de esa relación y no tienen control, acceso ni visibilidad sobre instancias de terceros. Publicar una herramienta no convierte a quien la escribe en responsable de lo que otros hagan con ella.",
+    },
+    liability: {
+      title: "Limitación de responsabilidad",
+      body: "En la máxima medida que permita la ley aplicable, ni los autores, ni quienes contribuyen al código, ni quienes operan un relay responderán de daño alguno —directo, indirecto, incidental, especial o consecuente, incluidos lucro cesante, pérdida de datos o daño reputacional— derivado del uso o de la imposibilidad de uso de Use Aegis, aun habiendo sido advertidos de esa posibilidad.",
+      body2:
+        "Quien usa el servicio lo hace bajo su propia responsabilidad y mantendrá indemnes a autores y operadores frente a reclamaciones de terceros que traigan causa de su uso o del contenido que transmita.",
+    },
+    authorities: {
+      title: "Requerimientos de autoridades y terceros",
+      body: "El proyecto atenderá los requerimientos que le sean legalmente exigibles por una autoridad competente, dentro de lo que técnicamente exista. Conviene saber de antemano qué existe: no hay teléfonos, ni correos, ni nombres reales; el contenido va cifrado de extremo a extremo y las claves viven solo en los dispositivos; el sistema está diseñado para retener lo mínimo.",
+      body2:
+        "Colaborar no es aquí una cuestión de voluntad sino de posibilidad: no se puede entregar lo que no se tiene, ni descifrar lo que no se puede descifrar. Las solicitudes pueden dirigirse al contacto publicado en el repositorio.",
+    },
     changes: {
       title: "Cambios",
       body: "Estas condiciones pueden actualizarse a medida que el proyecto madura. Los cambios relevantes se reflejarán aquí y en el historial del repositorio, que es público.",
