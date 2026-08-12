@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { colors } from "@aegis/ui-kit/tokens";
+import { useT } from "@/lib/i18n/provider";
 
 const HIDE_KEY = "aegis.journey.hide.v1";
 const OPEN_EVENT = "aegis:open-journey";
@@ -35,13 +36,14 @@ function noiseFor(text: string): string {
 
 /** Enlace discreto (footer) que reabre el demo. Cliente: emite el evento que escucha MessageJourney. */
 export function JourneyTrigger({ className = "" }: { className?: string }) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={() => window.dispatchEvent(new CustomEvent(OPEN_EVENT))}
       className={`label text-muted hover:text-accent transition-colors ${className}`}
     >
-      Cómo viaja un mensaje →
+      {t.journey.trigger}
     </button>
   );
 }
@@ -75,11 +77,12 @@ const IconLock = (
 );
 
 export function MessageJourney() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"invite" | "demo">("invite");
   const [dontShow, setDontShow] = useState(false);
 
-  const [caption, setCaption] = useState("Pulsa “Enviar” para ver el viaje.");
+  const [caption, setCaption] = useState(t.journey.captions.idle);
   const [captionSoft, setCaptionSoft] = useState(true);
   const [lit, setLit] = useState<Record<NodeKey, boolean>>({ a: true, o: false, r: false, b: false });
   const [relaySeen, setRelaySeen] = useState(false);
@@ -87,7 +90,7 @@ export function MessageJourney() {
   const [peekOn, setPeekOn] = useState(false);
   const [peekText, setPeekText] = useState("");
   const [packetMode, setPacketMode] = useState<"plain" | "noise">("plain");
-  const [sendLabel, setSendLabel] = useState("Enviar ▷");
+  const [sendLabel, setSendLabel] = useState(t.journey.send);
   const [sending, setSending] = useState(false);
 
   const trackRef = useRef<HTMLDivElement>(null);
@@ -202,7 +205,7 @@ export function MessageJourney() {
     setSending(true);
     stopPeek();
 
-    const text = (msgRef.current?.value || "Hola").slice(0, 40);
+    const text = (msgRef.current?.value || t.journey.defaultMessage).slice(0, 40);
     const on = onionRef.current;
     const red = reducedRef.current;
 
@@ -212,10 +215,10 @@ export function MessageJourney() {
     currentRef.current = "a";
     moveTo("a", 0);
     setCaptionSoft(false);
-    setCaption("Tu mensaje, en claro, aquí en tu dispositivo.");
+    setCaption(t.journey.captions.plain);
     await wait(red ? 500 : 850);
 
-    setCaption("① Se cifra aquí. Solo tu contacto podrá abrirlo.");
+    setCaption(t.journey.captions.encrypt);
     await scramble(noiseFor(text), 720);
     setPacketMode("noise");
     moveTo("a", 0);
@@ -226,7 +229,7 @@ export function MessageJourney() {
       : { relay: "②", arrive: "③", open: "④" };
 
     if (on) {
-      setCaption("② Sales por la puerta .onion — Tor oculta tu IP.");
+      setCaption(t.journey.captions.onion);
       currentRef.current = "o";
       moveTo("o", 850);
       await wait(red ? 400 : 850);
@@ -234,32 +237,32 @@ export function MessageJourney() {
       await wait(red ? 200 : 400);
     }
 
-    setCaption(`${labels.relay} Viaja al servidor…`);
+    setCaption(t.journey.captions.toServer(labels.relay));
     currentRef.current = "r";
     moveTo("r", 950);
     await wait(red ? 300 : 950);
     startPeek();
-    setCaption("El servidor solo ve ruido. Ni el texto, ni de quién viene.");
+    setCaption(t.journey.captions.serverBlind);
     await wait(red ? 900 : 1600);
 
-    setCaption(`${labels.arrive} Llega al dispositivo de tu contacto…`);
+    setCaption(t.journey.captions.arrive(labels.arrive));
     currentRef.current = "b";
     moveTo("b", 950);
     await wait(red ? 300 : 950);
     setLit((l) => ({ ...l, b: true }));
     await wait(red ? 150 : 300);
 
-    setCaption(`${labels.open} Se descifra solo aquí. Vuelve a ser tu mensaje.`);
+    setCaption(t.journey.captions.decrypt(labels.open));
     await scramble(text, 720);
     setPacketMode("plain");
     moveTo("b", 0);
     await wait(red ? 300 : 550);
 
-    setCaption("Listo. En todo el camino, solo viajó ruido.");
+    setCaption(t.journey.captions.done);
     runningRef.current = false;
     setSending(false);
-    setSendLabel("Repetir ↻");
-  }, [litOnly, moveTo, scramble, setText, startPeek, stopPeek]);
+    setSendLabel(t.journey.replay);
+  }, [litOnly, moveTo, scramble, setText, startPeek, stopPeek, t]);
 
   /* ---- apertura / cierre ---- */
   useEffect(() => {
@@ -298,8 +301,8 @@ export function MessageJourney() {
   /* Al entrar al demo: recoloca y auto-reproduce. Limpia timers al salir. */
   useEffect(() => {
     if (!open || view !== "demo") return;
-    setSendLabel("Enviar ▷");
-    const t = setTimeout(
+    setSendLabel(t.journey.send);
+    const timer = setTimeout(
       () => {
         layout();
         play();
@@ -307,11 +310,11 @@ export function MessageJourney() {
       reducedRef.current ? 60 : 280,
     );
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       stopPeek();
       runningRef.current = false;
     };
-  }, [open, view, layout, play, stopPeek]);
+  }, [open, view, layout, play, stopPeek, t]);
 
   /* Recolocar en resize y al conmutar .onion (cambia el layout de la vía). */
   useEffect(() => {
@@ -370,19 +373,20 @@ export function MessageJourney() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Cómo viaja tu mensaje en Aegis"
+        aria-label={t.journey.dialogLabel}
         className="w-full bg-surface border border-line rounded-lg shadow-2xl my-auto"
         style={{ maxWidth: view === "demo" ? 660 : 460 }}
       >
         {view === "invite" ? (
           <div className="p-7 sm:p-8">
-            <p className="label text-accent-dim mb-3">Primera visita</p>
+            <p className="label text-accent-dim mb-3">{t.journey.inviteEyebrow}</p>
             <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-text text-balance">
-              Antes de entrar, ¿te enseñamos algo?
+              {t.journey.inviteTitle}
             </h2>
             <p className="mt-3 text-[15px] leading-relaxed text-muted">
-              Aegis no usa cookies. Pero sí queremos que veas una cosa: qué ve —y qué{" "}
-              <span className="text-text">no</span> ve— cada actor cuando envías un mensaje.
+              {t.journey.inviteBodyStart}
+              <span className="text-text">{t.journey.inviteBodyNot}</span>
+              {t.journey.inviteBodyEnd}
             </p>
             <div className="mt-6 flex flex-col gap-2.5">
               <button
@@ -390,14 +394,14 @@ export function MessageJourney() {
                 onClick={() => setView("demo")}
                 className="w-full bg-accent text-bg font-semibold font-mono text-sm rounded-md px-5 py-3 hover:brightness-110 transition"
               >
-                Ver cómo viaja un mensaje →
+                {t.journey.inviteCta}
               </button>
               <button
                 type="button"
                 onClick={close}
                 className="w-full border border-line text-muted hover:text-text hover:border-muted-2 font-mono text-sm rounded-md px-5 py-3 transition-colors"
               >
-                Entrar directo
+                {t.journey.inviteSkip}
               </button>
             </div>
             <label className="mt-5 flex items-center gap-2.5 text-[13px] text-muted-2 cursor-pointer select-none">
@@ -407,25 +411,25 @@ export function MessageJourney() {
                 onChange={(e) => persistHide(e.target.checked)}
                 style={{ accentColor: colors.accent, width: 15, height: 15 }}
               />
-              No volver a mostrar
+              {t.journey.dontShowAgain}
             </label>
-            <p className="mt-4 label text-muted-2 text-center">
-              Sin cookies · Sin rastreo · Analítica anónima
-            </p>
+            <p className="mt-4 label text-muted-2 text-center">{t.journey.noCookies}</p>
           </div>
         ) : (
           <div className="p-5 sm:p-7">
             <div className="flex items-start justify-between gap-4 mb-5">
               <div>
-                <p className="label text-accent-dim mb-2">Transparencia</p>
+                <p className="label text-accent-dim mb-2">{t.journey.demoEyebrow}</p>
                 <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-text">
-                  Mira lo que el servidor <span className="text-accent">no</span> ve
+                  {t.journey.demoTitleStart}
+                  <span className="text-accent">{t.journey.demoTitleNot}</span>
+                  {t.journey.demoTitleEnd}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={close}
-                aria-label="Cerrar"
+                aria-label={t.common.close}
                 className="shrink-0 text-muted-2 hover:text-text transition-colors font-mono text-lg leading-none px-1"
               >
                 ✕
@@ -434,17 +438,17 @@ export function MessageJourney() {
 
             <div className="flex flex-wrap items-end gap-3 sm:gap-4">
               <label className="flex-1 min-w-0 flex flex-col gap-1.5">
-                <span className="label text-muted-2">Tu mensaje</span>
+                <span className="label text-muted-2">{t.journey.yourMessage}</span>
                 <input
                   ref={msgRef}
                   type="text"
-                  defaultValue="Hola"
+                  defaultValue={t.journey.defaultMessage}
                   maxLength={40}
                   autoComplete="off"
                   spellCheck={false}
                   onInput={() => {
                     if (!runningRef.current) {
-                      setText((msgRef.current?.value || "Hola").slice(0, 40));
+                      setText((msgRef.current?.value || t.journey.defaultMessage).slice(0, 40));
                       moveTo(currentRef.current, 0);
                     }
                   }}
@@ -458,7 +462,7 @@ export function MessageJourney() {
                   onChange={(e) => setOnionOn(e.target.checked)}
                   style={{ accentColor: colors.secondary, width: 15, height: 15 }}
                 />
-                Por .onion (Tor)
+                {t.journey.viaOnion}
               </label>
               <button
                 type="button"
@@ -473,11 +477,11 @@ export function MessageJourney() {
             <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 font-mono text-[12px] text-muted">
               <span className="inline-flex items-center gap-2">
                 <i className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: colors.accent, boxShadow: `0 0 0 4px ${colors.accent}22` }} />
-                tu mensaje (legible)
+                {t.journey.legendPlain}
               </span>
               <span className="inline-flex items-center gap-2">
                 <i className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: colors["muted-2"], boxShadow: `0 0 0 4px ${colors["muted-2"]}22` }} />
-                ruido cifrado
+                {t.journey.legendNoise}
               </span>
             </div>
 
@@ -497,15 +501,25 @@ export function MessageJourney() {
                   className="absolute left-0 z-[4] font-mono text-[12px] sm:text-[13px] whitespace-nowrap px-2.5 py-1.5 rounded-md border bg-surface"
                   style={{ top: 15, transitionProperty: "transform", transitionTimingFunction: "cubic-bezier(.5,.05,.2,1)", ...packetStyle }}
                 >
-                  <span ref={packetTextRef}>Hola</span>
+                  <span ref={packetTextRef}>{t.journey.defaultMessage}</span>
                 </div>
 
                 {(
                   [
-                    { k: "a" as NodeKey, icon: IconUser, label: "Tú", sub: null },
-                    { k: "o" as NodeKey, icon: IconOnion, label: ".onion", sub: "Tor" },
-                    { k: "r" as NodeKey, icon: IconServer, label: "Servidor", sub: "relay" },
-                    { k: "b" as NodeKey, icon: IconUser, label: "Tu contacto", sub: null },
+                    { k: "a" as NodeKey, icon: IconUser, label: t.journey.nodeYou, sub: null },
+                    {
+                      k: "o" as NodeKey,
+                      icon: IconOnion,
+                      label: t.journey.nodeOnion,
+                      sub: t.journey.nodeOnionSub,
+                    },
+                    {
+                      k: "r" as NodeKey,
+                      icon: IconServer,
+                      label: t.journey.nodeServer,
+                      sub: t.journey.nodeServerSub,
+                    },
+                    { k: "b" as NodeKey, icon: IconUser, label: t.journey.nodePeer, sub: null },
                   ] as const
                 ).map(({ k, icon, label, sub }) => (
                   <div
@@ -548,13 +562,18 @@ export function MessageJourney() {
             >
               <div className="flex items-center gap-2 label mb-2" style={{ color: colors["muted-2"] }}>
                 <span className="w-3.5 h-3.5 block">{IconLock}</span>
-                Lo que ve el servidor
+                {t.journey.serverSees}
               </div>
               <div className="font-mono text-[12px] break-all leading-relaxed" style={{ color: colors["muted-2"] }}>
                 {peekText || " "}
               </div>
               <div className="font-mono text-[11px] mt-2 text-muted-2">
-                texto: <s>—</s> · remitente: <s>—</s> · solo <span className="text-muted">ruido con TTL</span>
+                {t.journey.serverSeesDetailStart}
+                <s>—</s>
+                {t.journey.serverSeesDetailMiddle}
+                <s>—</s>
+                {t.journey.serverSeesDetailEnd}
+                <span className="text-muted">{t.journey.serverSeesNoise}</span>
               </div>
             </div>
 
@@ -570,10 +589,10 @@ export function MessageJourney() {
                   onChange={(e) => persistHide(e.target.checked)}
                   style={{ accentColor: colors.accent, width: 14, height: 14 }}
                 />
-                No volver a mostrar
+                {t.journey.dontShowAgain}
               </label>
               <button type="button" onClick={close} className="label text-muted hover:text-text transition-colors">
-                Cerrar
+                {t.common.close}
               </button>
             </div>
           </div>

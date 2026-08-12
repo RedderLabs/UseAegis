@@ -18,6 +18,7 @@
 import type { PrivateKey } from "@libp2p/interface";
 import { fingerprint16, fromBase64Url, publicKeyFromSeed, signWithSeed, toBase64Url } from "./ed25519";
 import { openSeed, sealSeed, type VaultBlob } from "./vault";
+import { dict } from "../i18n/runtime";
 import { buildSignedPrekey as buildPrekey, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
 import {
   openEnvelope,
@@ -108,7 +109,7 @@ function setUnlocked(seed: Uint8Array): void {
 }
 
 function requireSeed(): Uint8Array {
-  if (!unlockedSeed) throw new Error("Identidad bloqueada. Desbloquea con tu passphrase.");
+  if (!unlockedSeed) throw new Error(dict().errors.identityLocked);
   return unlockedSeed;
 }
 
@@ -130,7 +131,7 @@ export function isUnlocked(): boolean {
 
 /** Crea un keystore nuevo: sella la semilla con la passphrase, la persiste y la deja desbloqueada. */
 export async function createKeystore(seed: Uint8Array, passphrase: string): Promise<IdentityInfo> {
-  if (seed.length !== 32) throw new Error("Semilla inválida (se esperan 32 bytes).");
+  if (seed.length !== 32) throw new Error(dict().errors.invalidSeed);
   const publicKey = await publicKeyFromSeed(seed);
   const vault = await sealSeed(seed, passphrase);
   await tx("readwrite", (s) => s.put({ vault, publicKey } satisfies KeystoreRecord, KEY));
@@ -141,12 +142,12 @@ export async function createKeystore(seed: Uint8Array, passphrase: string): Prom
 /** Desbloquea el keystore con la passphrase: descifra la semilla y la deja en memoria. */
 export async function unlockKeystore(passphrase: string): Promise<IdentityInfo> {
   const rec = await loadRecord();
-  if (!rec || isLegacy(rec)) throw new Error("No hay un keystore cifrado en este dispositivo.");
+  if (!rec || isLegacy(rec)) throw new Error(dict().errors.noKeystore);
   const seed = await openSeed(rec.vault, passphrase); // lanza si la passphrase es incorrecta
   const publicKey = await publicKeyFromSeed(seed);
   // Coherencia: la semilla descifrada debe reproducir la clave pública almacenada.
   if (toBase64Url(publicKey) !== toBase64Url(rec.publicKey)) {
-    throw new Error("El keystore está corrupto (la clave no coincide).");
+    throw new Error(dict().errors.keystoreCorrupt);
   }
   setUnlocked(seed);
   return info(publicKey);
@@ -155,14 +156,14 @@ export async function unlockKeystore(passphrase: string): Promise<IdentityInfo> 
 /** Migra un keystore antiguo sin cifrar: lo sella con una passphrase y lo deja desbloqueado. */
 export async function migrateLegacy(passphrase: string): Promise<IdentityInfo> {
   const rec = await loadRecord();
-  if (!rec || !isLegacy(rec)) throw new Error("No hay una identidad sin cifrar que migrar.");
+  if (!rec || !isLegacy(rec)) throw new Error(dict().errors.noLegacyIdentity);
   return createKeystore(rec.seed, passphrase);
 }
 
 /** Importa una identidad desde su código de recuperación y la protege con una passphrase. */
 export async function importKeystore(recoveryB64: string, passphrase: string): Promise<IdentityInfo> {
   const seed = fromBase64Url(recoveryB64.trim());
-  if (seed.length !== 32) throw new Error("Código de recuperación inválido (se esperan 32 bytes).");
+  if (seed.length !== 32) throw new Error(dict().errors.invalidRecoveryCodeBytes);
   return createKeystore(seed, passphrase);
 }
 
@@ -262,23 +263,23 @@ function parse(json: string): KeystoreRecord {
   try {
     raw = JSON.parse(json) as PortableKeystore;
   } catch {
-    throw new Error("El fichero no es un keystore de Aegis válido.");
+    throw new Error(dict().errors.notAKeystore);
   }
   if (raw?.format !== PORTABLE_FORMAT || !raw.vault || !raw.publicKey) {
-    throw new Error("El fichero no es un keystore de Aegis válido.");
+    throw new Error(dict().errors.notAKeystore);
   }
   const publicKey = fromBase64Url(raw.publicKey);
   const salt = fromBase64Url(raw.vault.salt);
   const iv = fromBase64Url(raw.vault.iv);
   const ct = fromBase64Url(raw.vault.ct);
-  if (publicKey.length !== 32) throw new Error("Keystore corrupto (clave pública inválida).");
+  if (publicKey.length !== 32) throw new Error(dict().errors.keystoreCorruptKey);
   return { vault: { v: 1, kdf: raw.vault.kdf, salt, iv, ct }, publicKey };
 }
 
 /** Serializa el keystore de este dispositivo a texto para guardarlo en un fichero (USB). */
 export async function exportKeystore(): Promise<string> {
   const rec = await loadRecord();
-  if (!rec || isLegacy(rec)) throw new Error("No hay un keystore cifrado que exportar.");
+  if (!rec || isLegacy(rec)) throw new Error(dict().errors.noKeystoreToExport);
   return serialize(rec);
 }
 
@@ -296,7 +297,7 @@ export async function unlockFromFile(
   const seed = await openSeed(rec.vault, passphrase); // lanza si la passphrase es incorrecta
   const publicKey = await publicKeyFromSeed(seed);
   if (toBase64Url(publicKey) !== toBase64Url(rec.publicKey)) {
-    throw new Error("El keystore está corrupto (la clave no coincide).");
+    throw new Error(dict().errors.keystoreCorrupt);
   }
   if (opts.persist) {
     await tx("readwrite", (s) => s.put(rec satisfies KeystoreRecord, KEY));

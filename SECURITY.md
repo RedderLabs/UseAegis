@@ -12,7 +12,7 @@ con la máxima prioridad.
 Usa uno de estos canales privados:
 
 1. **GitHub Security Advisories** (preferido): pestaña *Security → Report a vulnerability*
-   en <https://github.com/RedderLabs/Aegis/security/advisories/new>.
+   en <https://github.com/RedderLabs/UseAegis/security/advisories/new>.
 2. **Correo cifrado**: `RedderLabs@proton.me`.
 
 Incluye, si puedes:

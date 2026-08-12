@@ -10,6 +10,7 @@
  * NEXT_PUBLIC_API_BASE con una URL absoluta para apuntar a un relay real en los tests.
  */
 import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
+import { dict } from "./i18n/runtime";
 
 // Base de la API. Relativa por defecto (mismo origen); override absoluto para tests en Node.
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "/api").replace(/\/$/, "");
@@ -46,17 +47,13 @@ export function isOnionSession(): boolean {
  * usar la .onion (si se conoce) para anonimato o ante censura; en .onion confirma el modo protegido.
  */
 export function gatewayNotice(): { onion: boolean; text: string } {
+  const t = dict().errors;
   if (isOnionSession()) {
-    return {
-      onion: true,
-      text: "Estás en la conexión protegida (Tor): el tráfico va por Tor y tu IP no es visible para el servidor.",
-    };
+    return { onion: true, text: t.gatewayOnion };
   }
   return {
     onion: false,
-    text: WEB_ONION_URL
-      ? "Estás en la conexión normal. Si hay censura o quieres anonimato, abre nuestra .onion en el Navegador Tor."
-      : "Estás en la conexión normal. Tu IP es visible para el servidor.",
+    text: WEB_ONION_URL ? t.gatewayClearnetWithOnion : t.gatewayClearnet,
   };
 }
 
@@ -73,9 +70,8 @@ export class RelayError extends Error {
 
 /** Mensaje accionable cuando `fetch` al relay lanza (no responde), según la puerta actual. */
 function relayUnreachableMessage(): string {
-  return isOnionSession()
-    ? "No se pudo contactar con el servidor por Tor. El circuito .onion puede tardar unos segundos en abrir; reintenta. Un bloqueador del navegador también puede estar cortando la petición."
-    : "No se pudo contactar con el servidor. Comprueba tu conexión y que ningún bloqueador del navegador corta la petición.";
+  const t = dict().errors;
+  return isOnionSession() ? t.relayUnreachableOnion : t.relayUnreachableClearnet;
 }
 
 async function request<T>(
@@ -101,7 +97,7 @@ async function request<T>(
   const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new RelayError(
-      (data as { error?: string }).error ?? `Error ${res.status}`,
+      (data as { error?: string }).error ?? dict().errors.genericStatus(res.status),
       res.status,
       (data as { error?: string }).error,
     );
@@ -130,7 +126,7 @@ export async function fetchHealth(): Promise<HealthResult> {
   } catch {
     throw new RelayError(relayUnreachableMessage(), 0);
   }
-  if (!res.ok) throw new RelayError(`El servidor respondió ${res.status}.`, res.status);
+  if (!res.ok) throw new RelayError(dict().errors.serverStatus(res.status), res.status);
   return res.json() as Promise<HealthResult>;
 }
 
@@ -344,23 +340,25 @@ export function openMessageStream(
 // por .onion, el tráfico de adjuntos sigue yendo por la puerta y no filtra metadatos a un tercero.
 // Se mueve como `application/octet-stream` (no base64) para no inflar un 33% adjuntos grandes.
 
-/** Bytes → texto corto para mensajes de usuario (1,5 GB / 240 MB). */
+/** Bytes → texto corto para mensajes de usuario ("1,5 GB" en es, "1.5 GB" en en / 240 MB). */
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) return `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1).replace(".", ",")} GB`;
+  if (mb >= 1024) {
+    return `${(mb / 1024)
+      .toFixed(mb % 1024 === 0 ? 0 : 1)
+      .replace(".", dict().quota.decimalSeparator)} GB`;
+  }
   return `${Math.round(mb)} MB`;
 }
 
-/** "2026-09-12" → "el 12 de septiembre". Si no se puede parsear, se omite la fecha. */
+/** "2026-09-12" → "el 12 de septiembre" / "on 12 September". null si no se puede parsear. */
 function formatDay(iso: string): string | null {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return null;
-  return `el ${date.getUTCDate()} de ${
-    [
-      "enero", "febrero", "marzo", "abril", "mayo", "junio",
-      "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-    ][date.getUTCMonth()]
-  }`;
+  const q = dict().quota;
+  const month = q.months[date.getUTCMonth()];
+  if (!month) return null;
+  return q.day(date.getUTCDate(), month);
 }
 
 interface RelayErrorBody {
@@ -381,31 +379,33 @@ interface RelayErrorBody {
  * lo segundo, la salida gratuita con fecha. Nunca se amenaza con borrar la cuenta.
  */
 function humanRelayError(status: number, data: RelayErrorBody): string | null {
+  const t = dict();
   switch (data.error) {
     case "quota_exceeded": {
       const cap = typeof data.quota === "number" ? ` (${formatBytes(data.quota)})` : "";
-      const base =
-        `Has llenado tu espacio de adjuntos${cap}. Tus mensajes de texto siguen funcionando ` +
-        `con normalidad: esto solo afecta a archivos y notas de voz.`;
+      const base = t.quota.exceeded(cap);
       const day = data.freesAt ? formatDay(data.freesAt) : null;
       if (day && typeof data.freesBytes === "number" && data.freesBytes > 0) {
-        return `${base} Recuperas ${formatBytes(data.freesBytes)} ${day}, cuando expiren tus adjuntos más antiguos.`;
+        return t.quota.recovers(base, formatBytes(data.freesBytes), day);
       }
-      return `${base} El espacio se libera solo según van expirando tus adjuntos más antiguos.`;
+      return t.quota.recoversGeneric(base);
     }
     case "daily_limit": {
-      const cap = typeof data.dailyLimit === "number" ? ` de hoy (${formatBytes(data.dailyLimit)})` : " de hoy";
-      return `Has alcanzado el límite de subida${cap}. Puedes seguir enviando texto; los adjuntos se reanudan mañana.`;
+      const cap =
+        typeof data.dailyLimit === "number"
+          ? t.quota.dailyCapToday(formatBytes(data.dailyLimit))
+          : t.quota.dailyCapTodayPlain;
+      return t.quota.dailyLimit(cap);
     }
     case "media_too_large":
-      return "El archivo es demasiado grande para enviarlo por el relay.";
+      return t.errors.mediaTooLarge;
     case "media_unconfigured":
-      return "Este servidor no tiene los adjuntos habilitados; solo admite mensajes de texto.";
+      return t.errors.mediaUnconfigured;
     case "storage_upload_failed":
     case "storage_download_failed":
-      return "El almacén de adjuntos no respondió. Vuelve a intentarlo en unos segundos.";
+      return t.errors.storageUnavailable;
     default:
-      return status === 429 ? "Demasiadas peticiones seguidas. Espera unos segundos y reintenta." : null;
+      return status === 429 ? t.errors.rateLimited : null;
   }
 }
 

@@ -12,6 +12,7 @@
  * (docs/PLANTILLA.md §5). Solo se ejecuta en navegador (Web Crypto).
  */
 import { argon2id } from "@noble/hashes/argon2";
+import { dict } from "../i18n/runtime";
 
 // Parámetros Argon2id. Se guardan DENTRO del blob para poder endurecerlos en el futuro
 // sin invalidar los vaults ya creados. OWASP: mínimo m=19 MiB, t=2, p=1.
@@ -81,6 +82,6 @@ export async function openSeed(blob: VaultBlob, passphrase: string): Promise<Uin
     );
     return new Uint8Array(pt);
   } catch {
-    throw new Error("Passphrase incorrecta.");
+    throw new Error(dict().errors.wrongPassphrase);
   }
 }
