@@ -10,8 +10,9 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      // Zona autenticada y API: fuera del índice.
-      disallow: ["/panel", "/api/"],
+      // Zona autenticada y API: fuera del índice. El panel se excluye en TODOS los idiomas —
+      // `/en/panel` es la misma zona privada bajo otro prefijo.
+      disallow: ["/panel", "/en/panel", "/api/"],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
     host: SITE_URL,

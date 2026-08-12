@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseContactUri, type ContactUri } from "@/lib/contact-uri";
 import { IconImage } from "@/components/Icons";
+import { useT } from "@/lib/i18n/provider";
 
 // `qrcode` (~generar) y `jsqr` (~decodificar imagen) se cargan BAJO DEMANDA: no entran en el
 // bundle inicial del dashboard, solo cuando de verdad se pinta/escanea un QR (importa por Tor).
@@ -24,6 +25,7 @@ import { IconImage } from "@/components/Icons";
 
 /** Pinta `uri` como QR SVG dentro de una caja blanca (contraste garantizado para el lector). */
 export function ContactQR({ uri, size = 208 }: { uri: string; size?: number }) {
+  const t = useT();
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -52,7 +54,7 @@ export function ContactQR({ uri, size = 208 }: { uri: string; size?: number }) {
   }, [uri]);
 
   if (failed) {
-    return <p className="font-mono text-[11px] text-error">No se pudo generar el QR.</p>;
+    return <p className="font-mono text-[11px] text-error">{t.qr.generateFailed}</p>;
   }
   return (
     <div
@@ -61,7 +63,7 @@ export function ContactQR({ uri, size = 208 }: { uri: string; size?: number }) {
       // El SVG lo genera qrcode a partir de datos locales; no hay HTML de usuario aquí.
       dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
     >
-      {svg ? undefined : <span className="sr-only">Generando QR…</span>}
+      {svg ? undefined : <span className="sr-only">{t.qr.generating}</span>}
     </div>
   );
 }
@@ -97,6 +99,7 @@ export function AddByQr({
   onAdd: (contact: ContactUri) => Promise<void>;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [pasted, setPasted] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +107,7 @@ export function AddByQr({
 
   async function submit(contact: ContactUri | null) {
     if (!contact) {
-      setError("Ese código no es un QR de contacto de Aegis válido.");
+      setError(t.qr.invalidCode);
       return;
     }
     setBusy(true);
@@ -113,7 +116,7 @@ export function AddByQr({
       await onAdd(contact);
       setPasted("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo añadir el contacto.");
+      setError(err instanceof Error ? err.message : t.qr.addFailed);
     } finally {
       setBusy(false);
     }
@@ -128,13 +131,13 @@ export function AddByQr({
     try {
       const decoded = await decodeImageFile(file);
       if (!decoded) {
-        setError("No encontramos ningún QR legible en esa imagen.");
+        setError(t.qr.noQrInImage);
         setBusy(false);
         return;
       }
       await submit(parseContactUri(decoded));
     } catch {
-      setError("No pudimos leer esa imagen.");
+      setError(t.qr.unreadableImage);
       setBusy(false);
     }
   }
@@ -148,7 +151,7 @@ export function AddByQr({
           value={pasted}
           onChange={(e) => setPasted(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !locked && void submit(parseContactUri(pasted))}
-          placeholder="Pega el código del QR (aegis://contact…)"
+          placeholder={t.qr.pastePlaceholder}
           className="flex-1 bg-surface-2 border border-line rounded-sm px-3 py-2 font-mono text-[12px] text-text placeholder:text-muted-2 focus:outline-none focus:border-accent/50"
         />
         <button
@@ -156,7 +159,7 @@ export function AddByQr({
           disabled={!pasted.trim() || locked}
           className="label text-bg bg-accent rounded-sm px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
         >
-          {busy ? "…" : "Añadir"}
+          {busy ? "…" : t.common.add}
         </button>
       </div>
 
@@ -165,14 +168,13 @@ export function AddByQr({
         disabled={locked}
         className="inline-flex items-center justify-center gap-1.5 label py-2 border border-line text-muted hover:text-text hover:border-accent-dim rounded-sm transition-colors disabled:opacity-40"
       >
-        <IconImage className="w-4 h-4" /> Subir una imagen del QR
+        <IconImage className="w-4 h-4" /> {t.qr.uploadImage}
       </button>
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
 
       {error && <p className="text-[12px] text-error">{error}</p>}
       <p className="font-mono text-[10px] text-muted-2 leading-relaxed">
-        La imagen se lee en tu dispositivo (no se sube a ningún sitio). Comprobamos su llave de
-        cifrado antes de guardar.
+        {t.qr.note}
       </p>
     </div>
   );

@@ -10,6 +10,8 @@ import {
   type HealthResult,
   type RelayGateway,
 } from "@/lib/relay-client";
+import { useT } from "@/lib/i18n/provider";
+import type { Dictionary } from "@/lib/i18n";
 
 type Phase = "probing" | "ok" | "down";
 
@@ -31,8 +33,8 @@ function clock(): string {
 }
 
 /** TTL restante en formato compacto: "29d 23h" o "12:04:59" en la última hora. */
-function formatTtl(ms: number): string {
-  if (ms <= 0) return "expirada";
+function formatTtl(ms: number, t: Dictionary): string {
+  if (ms <= 0) return t.transportPage.expired;
   const s = Math.floor(ms / 1000);
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
@@ -46,6 +48,7 @@ function formatTtl(ms: number): string {
 
 function Transport() {
   const session = useDashboardSession();
+  const t = useT();
   // La puerta (transporte) se deriva del origen; se fija en un effect para no romper la
   // hidratación (en SSR window no existe → arranca en clearnet/"").
   const [gateway, setGateway] = useState<RelayGateway>({ kind: "clearnet", host: "" });
@@ -76,13 +79,13 @@ function Transport() {
         phase: "down",
         health: null,
         latencyMs: null,
-        error: err instanceof RelayError ? err : new RelayError("Error desconocido.", -1),
+        error: err instanceof RelayError ? err : new RelayError(t.errors.unknown, -1),
         at: clock(),
       });
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [t]);
 
   // Sondeo inicial + periódico.
   useEffect(() => {
@@ -107,7 +110,11 @@ function Transport() {
   const statusColor =
     probe.phase === "ok" ? "#c3f400" : probe.phase === "down" ? "#f87171" : "#fbbf24";
   const statusLabel =
-    probe.phase === "ok" ? "Operativo" : probe.phase === "down" ? "Inalcanzable" : "Sondeando…";
+    probe.phase === "ok"
+      ? t.transportPage.statusOk
+      : probe.phase === "down"
+        ? t.transportPage.statusDown
+        : t.transportPage.statusProbing;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-5 md:p-8">
@@ -116,7 +123,7 @@ function Transport() {
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 border-b border-line pb-4">
           <div>
             <h1 className="font-sans text-2xl md:text-3xl font-bold tracking-tight text-text">
-              Estado del transporte
+              {t.transportPage.title}
             </h1>
             <div className="flex items-center gap-2 mt-2">
               <span
@@ -125,7 +132,7 @@ function Transport() {
               />
               <span className="font-mono text-[11px] text-muted">
                 {statusLabel}
-                {probe.at && ` · comprobado ${probe.at}`}
+                {probe.at && t.transportPage.checkedAt(probe.at)}
               </span>
             </div>
           </div>
@@ -135,13 +142,13 @@ function Transport() {
             disabled={probe.phase === "probing"}
             className="self-start md:self-auto label px-4 py-2 border border-line rounded-sm text-muted hover:text-text hover:border-accent/40 transition-colors disabled:opacity-40 disabled:pointer-events-none"
           >
-            Reintentar
+            {t.common.retry}
           </button>
         </header>
 
         {/* Tiles de estado */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Tile label="Puerta">
+          <Tile label={t.transportPage.tileGateway}>
             <span className="flex items-center gap-2">
               <span
                 className="w-1.5 h-1.5 rounded-full"
@@ -156,7 +163,7 @@ function Transport() {
             </span>
           </Tile>
 
-          <Tile label="Relay">
+          <Tile label={t.transportPage.tileRelay}>
             <span className="font-mono text-sm" style={{ color: statusColor }}>
               {statusLabel}
             </span>
@@ -167,7 +174,7 @@ function Transport() {
             )}
           </Tile>
 
-          <Tile label="Base de datos">
+          <Tile label={t.transportPage.tileDb}>
             <span
               className="font-mono text-sm"
               style={{ color: probe.health?.db === "up" ? "#c3f400" : "#8e9379" }}
@@ -176,8 +183,8 @@ function Transport() {
             </span>
           </Tile>
 
-          <Tile label="Sesión expira en">
-            <span className="font-mono text-sm text-text">{formatTtl(ttl)}</span>
+          <Tile label={t.transportPage.tileTtl}>
+            <span className="font-mono text-sm text-text">{formatTtl(ttl, t)}</span>
             <span className="font-mono text-[10px] text-muted-2 mt-1 block">
               {groupIdentity(session.id)}
             </span>
@@ -186,38 +193,41 @@ function Transport() {
 
         {/* Aviso: puerta .onion pero el circuito aún no responde */}
         {onionUnreachable && (
-          <Alert tone="warn" title="Circuito .onion no disponible">
-            Estás en la puerta <code className="text-text">.onion</code> pero el relay no responde
-            por Tor. El circuito puede tardar unos segundos en abrir tras cargar la página: reintenta.
-            Si abriste esta <code>.onion</code> fuera del Navegador Tor, no habrá circuito. No es que
-            el relay esté caído.
+          <Alert tone="warn" title={t.transportPage.onionUnreachableTitle}>
+            {t.transportPage.onionUnreachableBodyStart}
+            <code className="text-text">.onion</code>
+            {t.transportPage.onionUnreachableBodyMiddle}
+            <code>.onion</code>
+            {t.transportPage.onionUnreachableBodyEnd}
           </Alert>
         )}
 
         {/* Fallo genérico (relay caído, o error no-red) */}
         {probe.phase === "down" && !onionUnreachable && (
-          <Alert tone="error" title="Relay inalcanzable">
+          <Alert tone="error" title={t.transportPage.relayDownTitle}>
             {probe.error?.status === 0
-              ? "No hubo respuesta del relay por esta puerta. Reintenta; si persiste, comprueba que el nodo está levantado."
-              : probe.error?.message ?? "Error contactando con el relay."}
+              ? t.transportPage.relayDownNoResponse
+              : probe.error?.message ?? t.transportPage.relayDownGeneric}
           </Alert>
         )}
 
         {/* Disclosure honesto */}
         <div className="mt-4 bg-surface border border-line rounded-sm p-4">
           <p className="text-[13px] leading-relaxed text-muted">
-            <span className="text-accent font-mono text-[11px] mr-1.5">[transporte]</span>
-            El contenido viaja cifrado extremo a extremo (XChaCha20-Poly1305) y el relay no conoce
-            remitente ni destinatario (sealed sender).{" "}
+            <span className="text-accent font-mono text-[11px] mr-1.5">[transport]</span>
+            {t.transportPage.disclosureStart}
             {onion ? (
               <>
-                Tu conexión va por <b className="text-text">Tor</b>: tu IP no es visible para el
-                relay.
+                {t.transportPage.disclosureOnionStart}
+                <b className="text-text">Tor</b>
+                {t.transportPage.disclosureOnionEnd}
               </>
             ) : (
               <>
-                <b className="text-text">Tu IP sí es visible para el relay</b> salvo que uses la
-                puerta <code>.onion</code> bajo Tor.
+                <b className="text-text">{t.transportPage.disclosureClearStart}</b>
+                {t.transportPage.disclosureClearEnd}
+                <code>.onion</code>
+                {t.transportPage.disclosureClearTail}
               </>
             )}
           </p>
@@ -226,22 +236,16 @@ function Transport() {
         {/* Contexto del modelo */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           {[
+            { title: t.transportPage.cards.contentTitle, body: t.transportPage.cards.contentBody },
+            { title: t.transportPage.cards.senderTitle, body: t.transportPage.cards.senderBody },
             {
-              t: "Contenido",
-              b: "Payload cifrado indistinguible de bytes aleatorios; el transporte solo mueve ruido.",
-            },
-            {
-              t: "Remitente",
-              b: "Sealed sender: el relay entrega el blob sin saber quién lo originó.",
-            },
-            {
-              t: "Destinatario",
-              b: "El destino es una clave de sesión efímera (X25519), no una cuenta ni un directorio.",
+              title: t.transportPage.cards.recipientTitle,
+              body: t.transportPage.cards.recipientBody,
             },
           ].map((c) => (
-            <div key={c.t} className="bg-surface border border-line rounded-sm p-4">
-              <h3 className="label text-accent mb-2">{c.t}</h3>
-              <p className="text-[13px] leading-relaxed text-muted">{c.b}</p>
+            <div key={c.title} className="bg-surface border border-line rounded-sm p-4">
+              <h3 className="label text-accent mb-2">{c.title}</h3>
+              <p className="text-[13px] leading-relaxed text-muted">{c.body}</p>
             </div>
           ))}
         </div>

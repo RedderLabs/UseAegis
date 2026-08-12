@@ -6,6 +6,8 @@ import { getSession, type Session } from "@/lib/session";
 import { setFaviconSecure } from "@/lib/favicon";
 import { LogoMark } from "./Logo";
 import { IconCheck } from "./Icons";
+import { useLocalePath, useT } from "@/lib/i18n/provider";
+import type { Dictionary } from "@/lib/i18n";
 
 type Check = {
   label: string;
@@ -36,90 +38,85 @@ function validIdentity(id: string): boolean {
   return /^[A-Z]{16}$/.test(id);
 }
 
-function buildChecks(variant: "acceso" | "canal", s: Session | null): Check[] {
+function buildChecks(variant: "acceso" | "canal", s: Session | null, t: Dictionary): Check[] {
+  const c = t.gate.checks;
   if (variant === "acceso") {
     return [
-      { label: "Sesión iniciada en este dispositivo", ok: !!s, required: true },
-      {
-        label: "Identidad de 16 caracteres válida",
-        ok: !!s && validIdentity(s.id),
-        required: true,
-      },
-      { label: "Guardado local disponible", ok: storageOk(), required: true },
+      { label: c.sessionStarted, ok: !!s, required: true },
+      { label: c.validIdentity, ok: !!s && validIdentity(s.id), required: true },
+      { label: c.localStorage, ok: storageOk(), required: true },
     ];
   }
   return [
-    { label: "Generador seguro de aleatoriedad disponible", ok: cryptoOk(), required: true },
+    { label: c.csprng, ok: cryptoOk(), required: true },
+    { label: c.e2e, ok: true, required: false },
+    { label: c.sealedSender, ok: true, required: false },
     {
-      label: "Cifrado de extremo a extremo · X25519 / XChaCha20-Poly1305",
-      ok: true,
-      required: false,
-    },
-    { label: "Remitente oculto activo", ok: true, required: false },
-    {
-      label: "Sesión protegida · sin rastro al cerrar",
+      label: c.protectedSession,
       ok: !!s && s.secure,
       required: false,
-      detail: s && !s.secure ? "Se activa entrando por Tor" : undefined,
+      detail: s && !s.secure ? c.protectedSessionHint : undefined,
     },
   ];
 }
 
+/**
+ * Puerta de verificación. El copy (fase, título, subtítulo) sale del diccionario a partir de
+ * `variant`: así las páginas que la usan no tienen que acarrear texto traducido como props.
+ */
 export function SecurityGate({
-  phase,
-  title,
-  subtitle,
   variant,
   nextHref,
 }: {
-  phase: string;
-  title: string;
-  subtitle: string;
   variant: "acceso" | "canal";
+  /** Ruta SIN prefijo de idioma; se le añade el del usuario para no devolverlo al castellano. */
   nextHref: string;
 }) {
   const router = useRouter();
+  const t = useT();
+  const href = useLocalePath();
+  const { phase, title, subtitle } = t.gate[variant];
   const [session, setSession] = useState<Session | null>(null);
   const [ok, setOk] = useState(false);
   const [done, setDone] = useState(0);
 
   const checks = useMemo(
-    () => (ok ? buildChecks(variant, session) : []),
-    [ok, variant, session],
+    () => (ok ? buildChecks(variant, session, t) : []),
+    [ok, variant, session, t],
   );
 
   useEffect(() => {
     const s = getSession();
     if (!s) {
-      router.replace("/login");
+      router.replace(href("/login"));
       return;
     }
     // Requisitos duros: si alguno falla, la sesión no es válida → volver a login.
-    const required = buildChecks(variant, s).filter((c) => c.required);
+    const required = buildChecks(variant, s, t).filter((c) => c.required);
     if (required.some((c) => !c.ok)) {
-      router.replace("/login");
+      router.replace(href("/login"));
       return;
     }
     setSession(s);
     setFaviconSecure(s.secure); // el favicon refleja el estado real de la sesión
     setOk(true);
-  }, [router, variant]);
+  }, [router, variant, t, href]);
 
   useEffect(() => {
     if (!ok) return;
     setDone(0);
-    const total = buildChecks(variant, session).length;
+    const total = buildChecks(variant, session, t).length;
     let i = 0;
     const iv = window.setInterval(() => {
       i += 1;
       setDone(i);
       if (i >= total) {
         window.clearInterval(iv);
-        window.setTimeout(() => router.replace(nextHref), 800);
+        window.setTimeout(() => router.replace(href(nextHref)), 800);
       }
     }, 600);
     return () => window.clearInterval(iv);
-  }, [ok, variant, session, router, nextHref]);
+  }, [ok, variant, session, router, nextHref, t, href]);
 
   if (!ok) return null;
 
@@ -212,9 +209,9 @@ export function SecurityGate({
                 >
                   {complete
                     ? warnings
-                      ? "Verificado · sin conexión protegida"
-                      : "Verificado"
-                    : "Comprobando…"}
+                      ? t.gate.verifiedWithWarnings
+                      : t.gate.verified
+                    : t.gate.verifying}
                 </span>
                 <span className="text-accent">{pct}%</span>
               </div>

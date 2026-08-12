@@ -28,6 +28,7 @@ import {
 import { fingerprint16, fromBase64Url } from "@/lib/crypto/ed25519";
 import { groupIdentity } from "@/lib/identity";
 import { IconSend, IconUsers } from "@/components/Icons";
+import { useLocalePath, useT } from "@/lib/i18n/provider";
 
 const BASE = "/panel/seguro/dashboard";
 
@@ -61,6 +62,8 @@ function initials(row: Row): string {
 
 function Contactos() {
   const session = useDashboardSession();
+  const t = useT();
+  const href = useLocalePath();
   const ownPub = session.publicKey;
 
   const [contacts, setContacts] = useState<Row[]>([]);
@@ -131,12 +134,12 @@ function Contactos() {
         await fn();
         await reload();
       } catch (err) {
-        setError(err instanceof RelayError ? err.message : "No se pudo completar la acción.");
+        setError(err instanceof RelayError ? err.message : t.contacts.actionFailed);
       } finally {
         setBusy(null);
       }
     },
-    [reload],
+    [reload, t],
   );
 
   /** Purga del buzón los sobres ya recibidos de un peer (al bloquear) para que no reaparezcan. */
@@ -158,7 +161,7 @@ function Contactos() {
   function blockAction(pub: string) {
     return run(pub, async () => {
       const token = getToken();
-      if (!token) throw new Error("Sesión no disponible.");
+      if (!token) throw new Error(t.contacts.noSession);
       await purgeInbox(pub);
       await blockUser(token, pub);
       await removeContact(pub); // si era contacto, deja de serlo
@@ -169,7 +172,7 @@ function Contactos() {
   function acceptAction(pub: string) {
     return run(pub, async () => {
       const token = getToken();
-      if (!token) throw new Error("Sesión no disponible.");
+      if (!token) throw new Error(t.contacts.noSession);
       const entry = await fetchBundle(token, pub);
       await addContactFromDirectory(entry); // verifica la prekey antes de guardar
       // Ya es contacto: su mensaje pendiente pasa a contar como no leído (badge del Canal).
@@ -180,7 +183,7 @@ function Contactos() {
   function unblockAction(pub: string) {
     return run(pub, async () => {
       const token = getToken();
-      if (!token) throw new Error("Sesión no disponible.");
+      if (!token) throw new Error(t.contacts.noSession);
       await unblockUser(token, pub);
     });
   }
@@ -188,11 +191,10 @@ function Contactos() {
   return (
     <div className="flex-1 overflow-y-auto p-5 md:p-8">
       <div className="max-w-[900px] mx-auto">
-        <h1 className="font-sans text-3xl font-bold tracking-tight text-text mb-1">Contactos</h1>
-        <p className="font-mono text-[11px] text-muted-2 mb-6">
-          Tu libreta es local a este dispositivo; los bloqueos los impone el servidor (valen por
-          conexión normal y protegida).
-        </p>
+        <h1 className="font-sans text-3xl font-bold tracking-tight text-text mb-1">
+          {t.contacts.title}
+        </h1>
+        <p className="font-mono text-[11px] text-muted-2 mb-6">{t.contacts.subtitle}</p>
 
         {error && (
           <div className="mb-4 bg-error/10 border border-error/30 rounded-sm px-3 py-2">
@@ -203,11 +205,8 @@ function Contactos() {
         {/* Solicitudes */}
         {requests.length > 0 && (
           <section className="mb-6 bg-surface border border-accent/30 rounded-sm p-5">
-            <p className="label text-accent mb-1">Solicitudes de contacto · {requests.length}</p>
-            <p className="font-mono text-[11px] text-muted-2 mb-4">
-              Estas personas te han escrito y aún no las tienes en contactos. Acéptalas para poder
-              responder, o bloquéalas.
-            </p>
+            <p className="label text-accent mb-1">{t.contacts.requests(requests.length)}</p>
+            <p className="font-mono text-[11px] text-muted-2 mb-4">{t.contacts.requestsHint}</p>
             <ul className="space-y-2">
               {requests.map((r) => (
                 <li key={r.pub} className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3">
@@ -225,14 +224,14 @@ function Contactos() {
                       disabled={busy === r.pub}
                       className="label py-1.5 px-3 bg-accent text-bg font-bold rounded-sm hover:brightness-110 transition disabled:opacity-40"
                     >
-                      {busy === r.pub ? "…" : "Aceptar"}
+                      {busy === r.pub ? "…" : t.contacts.accept}
                     </button>
                     <button
                       onClick={() => void blockAction(r.pub)}
                       disabled={busy === r.pub}
                       className="label py-1.5 px-3 border border-line text-muted hover:text-error hover:border-error/40 rounded-sm transition-colors disabled:opacity-40"
                     >
-                      Bloquear
+                      {t.contacts.block}
                     </button>
                   </div>
                 </li>
@@ -243,16 +242,14 @@ function Contactos() {
 
         {/* Contactos */}
         <section className="mb-6 bg-surface border border-line rounded-sm p-5">
-          <p className="label text-text mb-4">Mis contactos · {contacts.length}</p>
+          <p className="label text-text mb-4">{t.contacts.mine(contacts.length)}</p>
           {!loaded ? (
-            <p className="font-mono text-[13px] text-muted-2">Cargando…</p>
+            <p className="font-mono text-[13px] text-muted-2">{t.common.loading}</p>
           ) : contacts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
               <IconUsers className="w-7 h-7 text-muted-2" />
-              <p className="text-[14px] text-muted">No tienes contactos todavía.</p>
-              <p className="font-mono text-[11px] text-muted-2">
-                Añade a alguien desde el Canal por su nombre de usuario, o acepta una solicitud.
-              </p>
+              <p className="text-[14px] text-muted">{t.contacts.emptyTitle}</p>
+              <p className="font-mono text-[11px] text-muted-2">{t.contacts.emptyHint}</p>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -267,24 +264,24 @@ function Contactos() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <Link
-                      href={`${BASE}?peer=${encodeURIComponent(c.pub)}`}
+                      href={href(`${BASE}?peer=${encodeURIComponent(c.pub)}`)}
                       className="inline-flex items-center gap-1 label py-1.5 px-3 bg-accent/10 text-accent border border-accent/30 rounded-sm hover:bg-accent/15 transition-colors"
                     >
-                      <IconSend className="w-3.5 h-3.5" /> Escribir
+                      <IconSend className="w-3.5 h-3.5" /> {t.contacts.write}
                     </Link>
                     <button
                       onClick={() => void removeAction(c.pub)}
                       disabled={busy === c.pub}
                       className="label py-1.5 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40"
                     >
-                      Eliminar
+                      {t.contacts.remove}
                     </button>
                     <button
                       onClick={() => void blockAction(c.pub)}
                       disabled={busy === c.pub}
                       className="label py-1.5 px-3 border border-line text-muted hover:text-error hover:border-error/40 rounded-sm transition-colors disabled:opacity-40"
                     >
-                      Bloquear
+                      {t.contacts.block}
                     </button>
                   </div>
                 </li>
@@ -296,10 +293,8 @@ function Contactos() {
         {/* Bloqueados */}
         {blocked.length > 0 && (
           <section className="bg-surface border border-line rounded-sm p-5">
-            <p className="label text-muted mb-1">Bloqueados · {blocked.length}</p>
-            <p className="font-mono text-[11px] text-muted-2 mb-4">
-              No pueden dejarte mensajes. Ellos no saben que están bloqueados.
-            </p>
+            <p className="label text-muted mb-1">{t.contacts.blockedTitle(blocked.length)}</p>
+            <p className="font-mono text-[11px] text-muted-2 mb-4">{t.contacts.blockedHint}</p>
             <ul className="space-y-2">
               {blocked.map((b) => (
                 <li key={b.pub} className="flex items-center gap-3 bg-bg border border-line rounded-sm p-3">
@@ -312,7 +307,7 @@ function Contactos() {
                     disabled={busy === b.pub}
                     className="label py-1.5 px-3 border border-line text-muted hover:text-text rounded-sm transition-colors disabled:opacity-40 shrink-0"
                   >
-                    {busy === b.pub ? "…" : "Desbloquear"}
+                    {busy === b.pub ? "…" : t.contacts.unblock}
                   </button>
                 </li>
               ))}

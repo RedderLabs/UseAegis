@@ -1,22 +1,20 @@
-export function Handshake() {
+import { getDictionary, type Locale } from "@/lib/i18n";
+
+export function Handshake({ locale }: { locale: Locale }) {
+  const t = getDictionary(locale);
+
   return (
     <section className="max-w-shell mx-auto px-5 md:px-8 py-24">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         <div>
-          <p className="label text-accent-dim mb-3">Handshake</p>
+          <p className="label text-accent-dim mb-3">{t.handshake.eyebrow}</p>
           <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-text">
-            Nada que no puedas verificar
+            {t.handshake.title}
           </h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-muted">{t.handshake.body1}</p>
           <p className="mt-4 text-[15px] leading-relaxed text-muted">
-            El cliente es de código abierto y el build es reproducible: cualquiera
-            puede compilar desde el código y comparar hashes contra el binario
-            publicado. Un hook de escaneo insertado en silencio sería detectable
-            en el siguiente release.
-          </p>
-          <p className="mt-4 text-[15px] leading-relaxed text-muted">
-            Aún no existe un informe de auditoría externa independiente. Cuando lo
-            haya, se cita aquí. Hasta entonces, el estado honesto es:{" "}
-            <span className="text-text">pendiente</span>.
+            {t.handshake.body2Start}
+            <span className="text-text">{t.handshake.body2Status}</span>.
           </p>
         </div>
         <div className="bg-surface border border-line rounded-md p-4 font-mono text-[13px]">
@@ -24,31 +22,23 @@ export function Handshake() {
             <span className="w-2.5 h-2.5 rounded-full bg-muted-2" />
             <span className="w-2.5 h-2.5 rounded-full bg-muted-2" />
             <span className="w-2.5 h-2.5 rounded-full bg-accent-dim" />
-            <span className="ml-2 label text-muted-2">
-              aegis handshake --verbose
-            </span>
+            <span className="ml-2 label text-muted-2">{t.handshake.terminal.command}</span>
           </div>
           <div className="space-y-1.5 text-muted leading-relaxed">
             <p>
-              <span className="text-accent-dim">[KEX ]</span> Acuerdo de claves:
-              X25519 (ECDH efímero por sesión)
+              <span className="text-accent-dim">[KEX ]</span> {t.handshake.terminal.kex}
             </p>
             <p>
-              <span className="text-accent-dim">[AEAD]</span> Payload:
-              XChaCha20-Poly1305
+              <span className="text-accent-dim">[AEAD]</span> {t.handshake.terminal.aead}
             </p>
             <p>
-              <span className="text-accent-dim">[ID&nbsp;&nbsp;]</span> Fingerprint
-              Ed25519: 4F9A·22C1·88E0·B301·7D6F·12AA
+              <span className="text-accent-dim">[ID&nbsp;&nbsp;]</span> {t.handshake.terminal.id}
             </p>
             <p>
-              <span className="text-accent-dim">[SEAL]</span> Sealed sender: relay
-              sin identidad de remitente
+              <span className="text-accent-dim">[SEAL]</span> {t.handshake.terminal.seal}
             </p>
-            <p className="text-accent">&gt; Cifrado activo — transporte: relay</p>
-            <p className="text-muted-2">
-              &gt; Verificación fuera de banda: pendiente de tu acción
-            </p>
+            <p className="text-accent">{t.handshake.terminal.active}</p>
+            <p className="text-muted-2">{t.handshake.terminal.oob}</p>
             <p className="caret text-muted" />
           </div>
         </div>

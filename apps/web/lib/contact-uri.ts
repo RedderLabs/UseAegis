@@ -13,6 +13,7 @@
  * Módulo PURO (solo strings + base64url): se ejecuta igual en el navegador y en Node (tests).
  */
 import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
+import { dict } from "./i18n/runtime";
 
 /** Prefijo de esquema + versión. Cambiar la versión si el formato deja de ser compatible. */
 export const CONTACT_URI_PREFIX = "aegis://contact/v1";
@@ -48,7 +49,7 @@ function cleanHandle(raw: string | null | undefined): string | null {
 /** Construye la URI de contacto para MI identidad (la que se pinta como QR y se copia). */
 export function encodeContactUri({ pub, handle }: ContactUri): string {
   if (!isEd25519PublicKey(pub)) {
-    throw new Error("Clave pública inválida: no es una identidad Ed25519 de 32 bytes.");
+    throw new Error(dict().errors.invalidPublicKey);
   }
   let uri = `${CONTACT_URI_PREFIX}?k=${pub}`;
   const h = cleanHandle(handle);

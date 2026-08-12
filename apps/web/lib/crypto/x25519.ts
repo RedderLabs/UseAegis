@@ -15,6 +15,7 @@
  */
 import { x25519 } from "@noble/curves/ed25519";
 import { signWithSeed } from "./ed25519";
+import { dict } from "../i18n/runtime";
 
 /** Debe coincidir byte a byte con `PREKEY_DOMAIN` del relay (apps/relay/src/directory/prekey.ts). */
 const PREKEY_DOMAIN = new TextEncoder().encode("aegis-prekey:v1:");
@@ -78,7 +79,7 @@ export async function sharedSecretWith(
   peerX25519PublicKey: Uint8Array,
 ): Promise<Uint8Array> {
   if (peerX25519PublicKey.length !== X25519_PUBLIC_BYTES) {
-    throw new Error("Clave pública X25519 del peer inválida (se esperan 32 bytes).");
+    throw new Error(dict().errors.invalidPeerKey);
   }
   const priv = await x25519PrivateFromSeed(seed);
   return x25519.getSharedSecret(priv, peerX25519PublicKey);
