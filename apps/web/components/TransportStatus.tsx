@@ -19,7 +19,8 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { colors, transportStatus } from "@aegis/ui-kit/tokens";
-import type { ModeStatus, TransportMode } from "@aegis/transport";
+import type { TransportMode } from "@aegis/transport";
+import type { Dictionary } from "@/lib/i18n";
 import { currentGateway, type RelayGateway } from "@/lib/relay-client";
 import {
   getServerTransportSnapshot,
@@ -27,39 +28,26 @@ import {
   startAmbientProbe,
   subscribeTransportStatus,
 } from "@/lib/transport-status";
+import { useT } from "@/lib/i18n/provider";
+import { localePath } from "@/lib/i18n";
+import { useLocale } from "@/lib/i18n/provider";
 
 /** Clave de color del punto: los tres modos, más la ausencia de ruta. */
 type DotKey = TransportMode | "offline";
 
-const MODE_LABEL: Record<TransportMode, string> = {
-  relay: "Relay",
-  p2p: "P2P",
-  mesh: "Malla",
-};
-
-/** Qué es cada modo, en una línea, sin jerga de red. */
-const MODE_BLURB: Record<TransportMode, string> = {
-  relay: "Buzón cifrado del servidor. Guarda el sobre hasta que el otro se conecta.",
-  p2p: "Entrega directa entre navegadores. No pasa por el buzón: el otro tiene que estar conectado.",
-  mesh: "Malla local por radio, sin internet.",
-};
-
-const STATE_LABEL: Record<ModeStatus["state"], string> = {
-  up: "con ruta",
-  down: "sin ruta",
-  unknown: "sin datos",
-};
-
-/** "hace 40 s" / "hace 12 min" / "hace 3 h". Para el detalle, nunca para el header. */
-function ago(at: number, now: number): string {
+/** "hace 40 s" / "12 min ago". Para el detalle, nunca para el header. */
+function ago(at: number, now: number, t: Dictionary): string {
   const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 60) return `hace ${s} s`;
+  if (s < 60) return t.failover.agoSeconds(s);
   const m = Math.round(s / 60);
-  if (m < 60) return `hace ${m} min`;
-  return `hace ${Math.round(m / 60)} h`;
+  if (m < 60) return t.failover.agoMinutes(m);
+  return t.failover.agoHours(Math.round(m / 60));
 }
 
 export function TransportStatus({ secure }: { secure: boolean }) {
+  const t = useT();
+  const locale = useLocale();
+  const MODE_LABEL = t.failover.modeLabel;
   const snapshot = useSyncExternalStore(
     subscribeTransportStatus,
     getTransportSnapshot,
@@ -111,12 +99,12 @@ export function TransportStatus({ secure }: { secure: boolean }) {
   let route: string;
   if (live && status) {
     dot = status.reachable ? status.activeMode : "offline";
-    route = status.reachable ? MODE_LABEL[status.activeMode] : "Sin ruta";
+    route = status.reachable ? MODE_LABEL[status.activeMode] : t.failover.noRoute;
   } else if (ambient) {
     dot = ambient.up ? "relay" : "offline";
-    route = ambient.up ? MODE_LABEL.relay : "Sin ruta";
+    route = ambient.up ? MODE_LABEL.relay : t.failover.noRoute;
   } else {
-    route = "Sondeando";
+    route = t.failover.probing;
   }
 
   const color = dot ? transportStatus[dot] : colors["muted-2"];
@@ -131,9 +119,11 @@ export function TransportStatus({ secure }: { secure: boolean }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={`Transporte: ${route}. Puerta: ${secure ? "Tor" : "sin proteger"}. ${
-          open ? "Ocultar" : "Ver"
-        } detalle`}
+        aria-label={t.failover.buttonLabel(
+          route,
+          secure ? t.failover.torFull : t.failover.unprotectedFull,
+          open ? t.failover.hide : t.failover.show,
+        )}
         className="flex items-center gap-2 -mx-2 px-2 min-h-[2.75rem] sm:min-h-0 sm:py-2 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-accent/60 hover:bg-surface-2/60 transition-colors"
       >
         <span className="relative flex items-center justify-center w-2.5 h-2.5">
@@ -167,14 +157,14 @@ export function TransportStatus({ secure }: { secure: boolean }) {
             ·
           </span>
           <span className={secure ? "text-muted-2" : "text-status-p2p"}>
-            {secure ? "Tor" : "Sin proteger"}
+            {secure ? t.failover.tor : t.failover.unprotected}
           </span>
         </span>
       </button>
 
       {/* Un cambio de ruta es un cambio de garantías: se anuncia, no solo se colorea. */}
       <span className="sr-only" role="status" aria-live="polite">
-        {measured ? `Transporte: ${route}` : ""}
+        {measured ? t.failover.announce(route) : ""}
       </span>
 
       {/*
@@ -190,12 +180,12 @@ export function TransportStatus({ secure }: { secure: boolean }) {
           // header y bloquear el tabulado por un panel informativo sería peor que no tenerlo).
           // El lector de pantalla llega al panel justo después del botón, en orden de DOM.
           role="group"
-          aria-label="Detalle del transporte"
+          aria-label={t.failover.panelLabel}
           className="status-panel fixed left-3 right-3 top-[3.75rem] sm:absolute sm:left-0 sm:right-auto sm:top-full sm:mt-2 sm:w-[19rem] rounded-sm border border-line bg-surface shadow-[0_16px_40px_-16px_rgba(0,0,0,0.9)] z-50"
         >
           {/* Cabecera: la ruta, en grande y con su color */}
           <div className="px-4 pt-3.5 pb-3 border-b border-line">
-            <p className="label text-muted-2">Ruta activa</p>
+            <p className="label text-muted-2">{t.failover.activeRoute}</p>
             <p
               className={`font-sans text-lg font-bold tracking-tight mt-0.5 ${measured ? "" : "text-muted"}`}
               style={measured ? { color } : undefined}
@@ -204,12 +194,12 @@ export function TransportStatus({ secure }: { secure: boolean }) {
             </p>
             <p className="text-[12px] leading-relaxed text-muted mt-1">
               {live && status?.reachable
-                ? MODE_BLURB[status.activeMode]
+                ? t.failover.modeBlurb[status.activeMode]
                 : offline
-                  ? "Ningún modo responde ahora mismo. Lo que envíes fallará hasta que vuelva alguno."
+                  ? t.failover.blurbOffline
                   : live
-                    ? "Comprobando qué modos tienen ruta…"
-                    : "Fuera del Canal solo se comprueba el relay. La ruta real (con P2P) se decide al abrir el Canal."}
+                    ? t.failover.blurbChecking
+                    : t.failover.blurbAmbient}
             </p>
           </div>
 
@@ -228,14 +218,18 @@ export function TransportStatus({ secure }: { secure: boolean }) {
                   />
                   <span className="label text-text">{MODE_LABEL[m.mode]}</span>
                   <span className="font-mono text-[11px] text-muted-2 ml-auto tabular-nums">
-                    {STATE_LABEL[m.state]}
+                    {m.state === "up"
+                      ? t.failover.stateUp
+                      : m.state === "down"
+                        ? t.failover.stateDown
+                        : t.failover.stateUnknown}
                     {m.state === "up" && m.latencyMs !== null && ` · ${m.latencyMs} ms`}
                   </span>
                 </li>
               ))}
               {status.modes.length === 1 && (
                 <li className="text-[12px] leading-relaxed text-muted-2 pt-0.5">
-                  El modo P2P no está configurado para esta puerta: solo hay relay.
+                  {t.failover.p2pNotConfigured}
                 </li>
               )}
             </ul>
@@ -244,10 +238,10 @@ export function TransportStatus({ secure }: { secure: boolean }) {
           {/* Puerta + última conmutación */}
           <dl className="px-4 py-3 space-y-2 border-b border-line">
             <div className="flex items-baseline gap-3">
-              <dt className="label text-muted-2 shrink-0">Puerta</dt>
+              <dt className="label text-muted-2 shrink-0">{t.failover.gate}</dt>
               <dd className="ml-auto text-right min-w-0">
                 <span className="font-mono text-[11px] text-text">
-                  {gateway.kind === "onion" ? ".onion (Tor)" : "clearnet"}
+                  {gateway.kind === "onion" ? t.failover.gateOnion : t.failover.gateClearnet}
                 </span>
                 <span className="block font-mono text-[10px] text-muted-2 break-all">
                   {gateway.host || "—"}
@@ -256,14 +250,14 @@ export function TransportStatus({ secure }: { secure: boolean }) {
             </div>
             {!secure && (
               <div className="text-[12px] leading-relaxed text-status-p2p">
-                Tu IP es visible para el relay. El contenido sigue cifrado extremo a extremo.
+                {t.failover.ipVisible}
               </div>
             )}
             {live && status?.lastSwitch && (
               <div className="flex items-baseline gap-3">
-                <dt className="label text-muted-2 shrink-0">Conmutó</dt>
+                <dt className="label text-muted-2 shrink-0">{t.failover.switched}</dt>
                 <dd className="ml-auto font-mono text-[11px] text-muted text-right">
-                  {MODE_LABEL[status.lastSwitch.to]} · {ago(status.lastSwitch.at, Date.now())}
+                  {MODE_LABEL[status.lastSwitch.to]} · {ago(status.lastSwitch.at, Date.now(), t)}
                 </dd>
               </div>
             )}
@@ -271,11 +265,11 @@ export function TransportStatus({ secure }: { secure: boolean }) {
 
           <div className="px-4 py-2.5">
             <Link
-              href="/panel/seguro/dashboard/logs"
+              href={localePath(locale, "/panel/seguro/dashboard/logs")}
               onClick={() => close(false)}
               className="label text-muted-2 hover:text-accent transition-colors"
             >
-              Estado completo →
+              {t.failover.fullStatus}
             </Link>
           </div>
         </div>

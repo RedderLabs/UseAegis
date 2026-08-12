@@ -19,6 +19,7 @@
 import { entropyToMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { fromBase64Url } from "./ed25519";
+import { dict } from "../i18n/runtime";
 
 /** Tamaño de la semilla de identidad (256 bits). */
 const SEED_BYTES = 32;
@@ -34,7 +35,7 @@ function normalizePhrase(input: string): string {
 /** Codifica una semilla de 32 bytes como frase BIP39 de 24 palabras. */
 export function seedToPhrase(seed: Uint8Array): string {
   if (seed.length !== SEED_BYTES) {
-    throw new Error(`Semilla inválida: se esperan ${SEED_BYTES} bytes.`);
+    throw new Error(dict().errors.invalidSeed);
   }
   return entropyToMnemonic(seed, wordlist);
 }
@@ -52,14 +53,14 @@ export function isValidRecoveryPhrase(input: string): boolean {
 export function phraseToSeed(input: string): Uint8Array {
   const phrase = normalizePhrase(input);
   if (phrase.split(" ").length !== RECOVERY_PHRASE_WORDS) {
-    throw new Error(`Una frase de recuperación de Aegis tiene ${RECOVERY_PHRASE_WORDS} palabras.`);
+    throw new Error(dict().errors.phraseWrongLength(RECOVERY_PHRASE_WORDS));
   }
   if (!validateMnemonic(phrase, wordlist)) {
-    throw new Error("La frase de recuperación no es válida. Revisa las palabras y su orden.");
+    throw new Error(dict().errors.invalidPhrase);
   }
   const seed = mnemonicToEntropy(phrase, wordlist);
   if (seed.length !== SEED_BYTES) {
-    throw new Error("La frase no corresponde a una identidad de Aegis.");
+    throw new Error(dict().errors.phraseNotAegis);
   }
   return seed;
 }
@@ -79,10 +80,10 @@ export function decodeRecovery(input: string): Uint8Array {
   try {
     seed = fromBase64Url(trimmed);
   } catch {
-    throw new Error("Código de recuperación inválido.");
+    throw new Error(dict().errors.invalidRecoveryCode);
   }
   if (seed.length !== SEED_BYTES) {
-    throw new Error("Código de recuperación inválido (se esperan 32 bytes).");
+    throw new Error(dict().errors.invalidRecoveryCodeBytes);
   }
   return seed;
 }
@@ -131,10 +132,7 @@ export function extractRecoveryFromText(text: string): string {
     if (isValidRecoveryPhrase(phrase)) return phrase;
   }
 
-  throw new Error(
-    "No se encontró una frase de recuperación en el fichero. Pega tus 24 palabras o adjunta tu " +
-      "fichero de recuperación (aegis-recuperacion-*.txt).",
-  );
+  throw new Error(dict().errors.phraseNotFoundInFile);
 }
 
 /**

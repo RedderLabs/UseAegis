@@ -26,16 +26,20 @@ import {
   IconLogout,
   IconCopy,
 } from "./Icons";
+import { LocaleSwitcher } from "./LocaleSwitcher";
+import { splitLocale } from "@/lib/i18n";
+import { useLocalePath, useT } from "@/lib/i18n/provider";
 
+/** Rutas SIN prefijo de idioma: el prefijo lo pone `useLocalePath` al pintar. */
 const BASE = "/panel/seguro/dashboard";
 
 const NAV = [
-  { href: BASE, label: "Canal", Icon: IconChat },
-  { href: `${BASE}/contactos`, label: "Contactos", Icon: IconUsers },
-  { href: `${BASE}/vault`, label: "Bóveda", Icon: IconKey },
-  { href: `${BASE}/logs`, label: "Transporte", Icon: IconTerminal },
-  { href: `${BASE}/settings`, label: "Ajustes", Icon: IconSettings },
-];
+  { path: BASE, key: "channel", Icon: IconChat },
+  { path: `${BASE}/contactos`, key: "contacts", Icon: IconUsers },
+  { path: `${BASE}/vault`, key: "vault", Icon: IconKey },
+  { path: `${BASE}/logs`, key: "transport", Icon: IconTerminal },
+  { path: `${BASE}/settings`, key: "settings", Icon: IconSettings },
+] as const;
 
 const SessionCtx = createContext<Session | null>(null);
 
@@ -48,7 +52,11 @@ export function useDashboardSession(): Session {
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
+  const t = useT();
+  const href = useLocalePath();
+  // La ruta que da Next lleva el prefijo de idioma (`/en/panel/...`); se quita para comparar
+  // contra las rutas del menú, que se declaran sin él.
+  const pathname = splitLocale(usePathname() ?? "/").path;
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -66,7 +74,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const s = getSession();
     if (!s) {
-      router.replace("/login");
+      router.replace(href("/login"));
       return;
     }
     // El token persiste en localStorage, pero la semilla vive SOLO en memoria: al recargar la
@@ -74,13 +82,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     // recibir fallaría). Volvemos a /login para re-desbloquear con la contraseña (como una
     // pantalla de bloqueo). Es coherente con el modelo de equipo compartido de identity-store.
     if (!isUnlocked()) {
-      router.replace("/login");
+      router.replace(href("/login"));
       return;
     }
     setSession(s);
     setFaviconSecure(s.secure); // el favicon refleja el estado real de la sesión
     setReady(true);
-  }, [router]);
+  }, [router, href]);
 
   async function lock() {
     // Apaga el transporte ANTES de nada: con el Modo B, bloquear la sesión sin parar el nodo
@@ -98,7 +106,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
     endSession();
     lockKeystore(); // borra la semilla descifrada de memoria: hay que re-desbloquear para volver
-    router.push("/login");
+    router.push(href("/login"));
   }
 
   async function copyId() {
@@ -126,15 +134,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-3">
             <LogoMark className="h-6 w-6" />
             <span className="font-mono font-semibold tracking-[0.14em] text-sm">
-              AEGIS
+              USE AEGIS
             </span>
             <span className="block h-4 w-px bg-line" />
             {/* Punto de estado de transporte: el color dice la ruta, el resto se abre al pulsarlo */}
             <TransportStatus secure={session.secure} />
           </div>
-          <span className="font-mono text-[11px] text-secondary truncate max-w-[45%]">
-            {grouped}
-          </span>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="font-mono text-[11px] text-secondary truncate">{grouped}</span>
+            <LocaleSwitcher className="shrink-0" />
+          </div>
         </header>
 
         <div className="relative z-10 flex flex-1 min-h-0">
@@ -143,27 +152,24 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             <div className="p-4 border-b border-line">
               {session.secure ? (
                 <>
-                  <p className="label text-muted mb-1">Sesión segura</p>
-                  <p className="label text-accent">Cifrado verificado</p>
+                  <p className="label text-muted mb-1">{t.shell.secureSession}</p>
+                  <p className="label text-accent">{t.shell.encryptionVerified}</p>
                 </>
               ) : (
                 <>
-                  <p className="label text-muted mb-1">Sesión sin proteger</p>
-                  <p className="label text-status-p2p">Sin borrado automático</p>
+                  <p className="label text-muted mb-1">{t.shell.sessionUnprotected}</p>
+                  <p className="label text-status-p2p">{t.shell.noAutoWipe}</p>
                 </>
               )}
             </div>
 
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-              {NAV.map(({ href, label, Icon }) => {
-                const active =
-                  href === BASE
-                    ? pathname === BASE
-                    : pathname.startsWith(href);
+              {NAV.map(({ path, key, Icon }) => {
+                const active = path === BASE ? pathname === BASE : pathname.startsWith(path);
                 return (
                   <Link
-                    key={href}
-                    href={href}
+                    key={path}
+                    href={href(path)}
                     className={`flex items-center gap-2.5 px-2.5 py-2.5 rounded-sm text-sm transition-colors ${
                       active
                         ? "text-accent bg-accent/5 border-r-2 border-accent"
@@ -171,8 +177,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    <span className="label">{label}</span>
-                    {href === BASE && unread > 0 && (
+                    <span className="label">{t.shell.nav[key]}</span>
+                    {path === BASE && unread > 0 && (
                       <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center">
                         {unread}
                       </span>
@@ -183,7 +189,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             </nav>
 
             <div className="p-4 border-t border-line">
-              <p className="label text-muted-2 mb-2">Tu identidad</p>
+              <p className="label text-muted-2 mb-2">{t.shell.yourIdentity}</p>
               <div className="bg-bg border border-line rounded-sm p-3">
                 <p className="font-mono text-[12px] text-accent tracking-wide break-all leading-relaxed">
                   {grouped}
@@ -193,7 +199,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   className="mt-2.5 inline-flex items-center gap-1.5 label text-muted-2 hover:text-text transition-colors"
                 >
                   <IconCopy className="w-3.5 h-3.5" />
-                  {copied ? "Copiada" : "Copiar id"}
+                  {copied ? t.common.copied : t.shell.copyId}
                 </button>
               </div>
             </div>
@@ -204,7 +210,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                 className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-sm text-error/90 hover:bg-error/10 transition-colors label"
               >
                 <IconLogout className="w-4 h-4" />
-                Bloquear sesión
+                {t.shell.lockSession}
               </button>
             </div>
           </aside>
@@ -215,24 +221,23 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
         {/* Nav inferior móvil */}
         <nav className="md:hidden shrink-0 h-14 border-t border-line bg-surface/90 backdrop-blur-md flex items-center justify-around z-20">
-          {NAV.map(({ href, label, Icon }) => {
-            const active =
-              href === BASE ? pathname === BASE : pathname.startsWith(href);
+          {NAV.map(({ path, key, Icon }) => {
+            const active = path === BASE ? pathname === BASE : pathname.startsWith(path);
             return (
               <Link
-                key={href}
-                href={href}
+                key={path}
+                href={href(path)}
                 className={`relative flex flex-col items-center gap-1 ${
                   active ? "text-accent" : "text-muted-2"
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                {href === BASE && unread > 0 && (
+                {path === BASE && unread > 0 && (
                   <span className="absolute -top-1 right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center">
                     {unread}
                   </span>
                 )}
-                <span className="label text-[9px]">{label}</span>
+                <span className="label text-[9px]">{t.shell.nav[key]}</span>
               </Link>
             );
           })}
