@@ -3,6 +3,14 @@
 > Estimación honesta, no un compromiso de fechas. Los números reflejan un escenario
 > concreto (**1 desarrollador + Claude como par**) en semanas de desarrollo, no en
 > fechas de calendario. Se revisa al cerrar cada fase, igual que `THREAT_MODEL.md`.
+>
+> **Nota para quien lea esto desde el repo público:** este documento cita algunos ficheros
+> que **no están publicados** (`PLANTILLA.md`, `DISENO.md`, `stitch-aegis/DESIGN.md` y las
+> guías `docs/aegis-*-deploy.md` / `aegis-fase3-libp2p-spike.md` / `aegis-node-proxmox-setup.md`).
+> Son documentación **interna de operación** —describen cómo está montada la infraestructura
+> real— y se sacaron del repo a propósito (commit `8c91eaf`). Se citan por trazabilidad, no
+> como enlaces: los tres documentos públicos son `ARQUITECTURA.md`, `ROADMAP.md` y
+> `THREAT_MODEL.md`.
 
 ## Supuestos de la estimación
 
@@ -235,7 +243,7 @@ El failover deja de ser "prueba y reza" y pasa a **conmutar solo**, con el estad
 | Bloque **«Failover de transporte»** en la vista Transporte, con el orden de preferencia y el estado de cada candidato                                                                                                       | ✅     |
 | **Arrastre de Fase 3** — `node.stop()` atado al bloqueo del keystore (`stopActiveChatTransports()` antes de `lockKeystore()`): bloquear ya no deja el nodo libp2p anunciado en la red                                       | ✅     |
 | **Arrastre de Fase 3** — **ICE/TURN configurable** (`NEXT_PUBLIC_P2P_ICE_SERVERS` + credenciales) para el WebRTC de clearnet. Sin STUN público de terceros por defecto: se autoaloja                                        | ✅     |
-| **Arrastre de Fase 3** — **coturn autoalojado** empaquetado: servicio del compose de Coolify, config endurecida (credenciales obligatorias, `denied-peer-ip` contra pivote a la red interna, cuotas) y guía de despliegue `docs/aegis-coturn-deploy.md`                                                                  | ✅     |
+| **Arrastre de Fase 3** — **coturn autoalojado** empaquetado: servicio del compose de Coolify, config endurecida (credenciales obligatorias, `denied-peer-ip` contra pivote a la red interna, cuotas) y guía de despliegue (`docs/aegis-coturn-deploy.md`, **interna**, ver nota de cabecera)                                                                  | ✅     |
 | **Arrastre de Fase 3** — **desplegar** ese coturn en el host y rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS`                                                                                                                       | ⬜ humano |
 | **Arrastre de Fase 3** — validar **NAT-a-NAT entre dos redes distintas** (dos ISP, no la misma LAN) con el TURN autoalojado                                                                                                 | ⬜ humano |
 
@@ -244,9 +252,36 @@ sonda, publicación de estado, "sin ruta" sin dejar de intentar), `tsc` limpio e
 `next build` OK.
 
 **Resta para cerrar M2 (trabajo humano, no de código):** desplegar el coturn ya empaquetado
-(`docs/aegis-coturn-deploy.md`), rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS` y probar el Modo B entre
-**dos redes distintas** — ahí vive el riesgo residual del Modo B, y ningún test automático lo cubre.
-**Hito → M2 (beta resistente a censura).**
+(guía interna `docs/aegis-coturn-deploy.md`), rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS` y probar el
+Modo B entre **dos redes distintas** (dos ISP, no la misma LAN) — ahí vive el riesgo residual del
+Modo B, y ningún test automático lo cubre. **Hito → M2 (beta resistente a censura).**
+
+> **Gotcha de despliegue, a propósito:** el servicio `coturn` del compose **aborta al arrancar**
+> si faltan `TURN_USER`, `TURN_PASSWORD` o `TURN_EXTERNAL_IP` (un TURN sin credenciales es un
+> relevo abierto; sin IP externa los candidatos ICE salen con la `172.x` del contenedor). Por eso
+> la rama de despliegue **no puede ser `main` tal cual** hasta que esas variables estén puestas en
+> el panel: quien haga deploy sin ellas se lleva el servicio en bucle de reinicio. Si no se quiere
+> TURN, se borra el servicio del compose y el Modo B se queda como hoy (NAT permisiva); el failover
+> a Modo A no depende de él. Además, `NEXT_PUBLIC_P2P_ICE_SERVERS` es **build-time**: tras el
+> primer deploy del coturn hay que **redesplegar la web** para que el cliente lo use.
+
+### Producción — endurecimiento y producto, fuera de las fases · ✅ hecho (2026-08)
+
+Trabajo **ya desplegado** que no pertenece a ninguna fase numerada: salió de operar el
+servicio de verdad (abuso, distribución, exposición legal), no del plan. No cambia la
+estimación restante —es tiempo ya gastado— pero sí el estado real de producción, y por eso
+figura aquí: este documento es el registro visible.
+
+| Entregable                                                                                                                                                                                                                                                                                                                                                        | Fecha      | Estado |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ |
+| **Cuota de almacenamiento por identidad que madura con la edad** (`apps/relay/src/media/quota.ts`): antes NO había techo por identidad —`media_objects` no tiene columna de propietario, a propósito, por sealed-sender— y el tamaño por objeto × rate-limit por IP dejaba subir ~8 TiB/día a una sola identidad. Ahora se miden **bytes en reposo** en cubos `(identidad, día)`: el relay sabe **cuánto** ocupa alguien, nunca **qué** objetos son suyos. Resistencia sybil **sin pedir identidad**: 100 MB → 1 GB en 30 días, así que crear claves (barato) ya no sustituye al tiempo (caro). Tests 44/44 contra BBDD y bucket reales | 2026-08-11 | ✅     |
+| **i18n ES/EN en TODO el producto** (landing, legales, login/registro, panel y chat) + selector, **sin dependencias nuevas** (~200 líneas auditables en `apps/web/lib/i18n`): `es.ts` es la fuente del tipo `Dictionary` y `en.ts` va `satisfies`, así que una clave sin traducir **rompe el typecheck** en vez de llegar a producción. Rutas: `es` por defecto sin prefijo, `en` prefijado con los **mismos slugs** (no se rompe ningún enlace ya publicado). Detonante: AlternativeTo rechazó la publicación por no estar en inglés. Marca **Use Aegis** | 2026-08-12 | ✅     |
+| **Exención de responsabilidad por contenido de usuarios** en `/terminos` (ES y EN): contenido y conducta, **transporte no editor** (no se puede moderar lo que no se puede leer), instancias propias y `.onion`, limitación de responsabilidad, y qué se puede entregar de verdad ante un requerimiento (casi nada) — posibilidad, no voluntad                                                                                            | 2026-08-13 | ✅     |
+
+> Coste de metadatos asumido por la cuota, **ya documentado en `THREAT_MODEL.md` §3 y §4.1**: se
+> filtra el volumen agregado por identidad y día (ventana móvil de 30 días), lo que frente al
+> directorio público de handles equivale a un perfil de actividad. La alternativa sin ese coste
+> (Privacy Pass / firma ciega) queda para Fase 6/7; el esquema actual es compatible con migrar a ella.
 
 ### Track paralelo — `apps/mobile` (React Native / Expo) · **4 sd**
 
@@ -278,6 +313,7 @@ Dockerfile determinista, hash publicado por release, instrucciones de reproducci
 | 2.5 · `.onion`                                                                           | ✅ hecha      | 4,5 sd    |
 | 3 · libp2p (Modo B validado en red real)                                                 | ✅ hecha      | 4,5 sd    |
 | 4 · Failover + UI                                                                        | ✅ hecha      | 4,5 sd    |
+| — · Producción: cuotas, i18n ES/EN, descargo legal (fuera de fases)                      | ✅ hecho      | 4,5 sd    |
 | — · Móvil (track paralelo)                                                               | 4 sd          | 8,5 sd    |
 | 5 · Mesh (BLE / Wi-Fi Aware)                                                             | 6 sd          | 14,5 sd   |
 | 6 · Archivos                                                                             | 1 sd          | 15,5 sd   |
@@ -292,7 +328,7 @@ rápido, pero el único humano y las fases de investigación (la 3, ya cerrada, 
 ### Milestones (en semanas relativas desde ahora)
 
 - **M1 — MVP privado** (fin Fase 1): **✅ alcanzado en código**. Texto, archivos y audio se intercambian cifrados E2E entre identidades verificadas (pendiente solo prueba manual del micro en navegador). El **acceso** y el **`.onion`** ya están. Resta pulido (QR, BullMQ, backup).
-- **M2 — Beta resistente a censura** (fin Fase 4): **alcanzado en código**. Relay + `.onion` (✅) + **P2P validado en red real (✅ Fase 3)** + **failover automático con umbrales e indicador de estado (✅ Fase 4)**. Resta **trabajo humano**: desplegar el coturn ya empaquetado (`docs/aegis-coturn-deploy.md`) y la prueba NAT-a-NAT entre dos redes distintas.
+- **M2 — Beta resistente a censura** (fin Fase 4): **alcanzado en código**. Relay + `.onion` (✅) + **P2P validado en red real (✅ Fase 3)** + **failover automático con umbrales e indicador de estado (✅ Fase 4)**. Resta **trabajo humano**: desplegar el coturn ya empaquetado (guía interna `docs/aegis-coturn-deploy.md`, con sus variables obligatorias) y la prueba NAT-a-NAT entre dos redes distintas.
 - **M3 — v1 auditable** (fin Fase 7): **~17,5 sd ≈ 4,3 meses** de ingeniería, **+4–8 semanas** de calendario para la auditoría externa (tercero, en paralelo al cierre).
 
 > La Fase 5 (mesh) es ya la que más puede mover el total: es investigación, no
