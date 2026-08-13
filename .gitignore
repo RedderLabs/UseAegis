@@ -31,3 +31,11 @@ Thumbs.db
 # editor
 .vscode/
 .idea/
+
+# Documentación INTERNA (operativa/infra) y maquetas de diseño: fuera del repo público.
+# Se quedan solo los 3 que la web (Footer, /privacidad), el README y SECURITY.md enlazan.
+docs/*
+!docs/ARQUITECTURA.md
+!docs/ROADMAP.md
+!docs/THREAT_MODEL.md
+stitch-aegis/
