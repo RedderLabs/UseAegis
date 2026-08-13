@@ -25,6 +25,7 @@
 
 - **Metadata de conexión con el relay (Modo A)**: el operador del relay ve la IP de origen y el momento de conexión, aunque no sepa a quién va dirigido el mensaje (mitigable por el usuario con Tor, no integrado por defecto en Modo A todavía).
 - **Tamaño y timing de los mensajes**: un observador de red puede inferir patrones de actividad (cuándo hay conversación, aproximadamente cuánto se envía) aunque no el contenido. Sin padding de tamaño en v1.
+- **Volumen de almacenamiento por identidad y día, frente al propio relay** (desde 2026-08-11): la cuota de almacenamiento obliga a llevar una contabilidad, y esa contabilidad es metadata. El relay guarda una tabla `storage_usage` con cubos `(identidad, día) → bytes`: sabe **cuánto** ocupa una identidad y **qué días** subió, en una ventana móvil de 30 días (`MEDIA_TTL_SECONDS`, los cubos vencidos se barren solos). Lo que **no** guarda: `object_key`, destinatario ni hora exacta — la correlación subida↔descarga sigue rota y sealed sender no se ve afectado. El coste real es un **perfil de actividad**: como el directorio de nombres de usuario es público (handle → clave pública), quien tenga ambas cosas puede decir «este handle estuvo activo estos días», no solo «esta clave opaca». Se asume a sabiendas: sin techo por identidad, el tope por objeto y el rate-limit por IP dejaban subir del orden de 8 TiB/día a una sola identidad, y un servicio que cualquiera puede llenar no está disponible para nadie. La alternativa sin este coste es Privacy Pass / firma ciega —el relay emite tokens de subida contra la identidad y el cliente los gasta anónimamente—, prevista para las fases 6/7 del roadmap; el esquema actual es compatible con migrar a ella.
 - **Compromiso del dispositivo del usuario**: si el dispositivo tiene malware, keylogger, o el atacante tiene acceso físico desbloqueado, el cifrado en tránsito no ayuda — el atacante lee el mensaje donde y cuando está en claro, en pantalla.
 - **Coerción del usuario**: ningún esquema criptográfico protege contra que a alguien lo obliguen a desbloquear su propio dispositivo o entregar su clave bajo amenaza.
 - **Correlación de tráfico por adversario global pasivo**: un atacante capaz de observar tráfico en múltiples puntos de la red simultáneamente (nivel estado-nación con capacidad de vigilancia masiva de backbone) puede, en teoría, correlacionar timing de conexiones incluso con Tor. Esto es un límite conocido de cualquier sistema de anonimato basado en mezcla de tráfico, no específico de Aegis.
@@ -36,6 +37,8 @@
 ### 4.1 Orden judicial exige al relay entregar mensajes de un usuario
 
 El relay entrega lo que tiene: blobs cifrados sin metadata de remitente (sealed sender) y sin capacidad de descifrarlos. No hay clave privada en el servidor. Resultado: cumplimiento técnico de la orden sin exposición real de contenido.
+
+Conviene ser preciso sobre qué es «lo que tiene», porque no es solo contenido cifrado. Si la orden pregunta por una identidad concreta, el relay también puede entregar: la **contabilidad de cuota** de esa identidad (cuántos bytes subió y qué días, ventana de 30 días — ver sección 3), su **entrada de directorio** (handle público y prekeys firmadas, que de todas formas son públicas) y los **metadatos de conexión** que estén en los logs vivos (IP y momento, salvo que el usuario entre por `.onion`). Lo que **no** puede entregar en ningún caso: contenido en claro, qué objeto de media pertenece a quién, ni quién habla con quién. La diferencia importa en la respuesta honesta a un requerimiento: no es «no tengo nada», es «no tengo contenido, y lo que tengo es un perfil de actividad grosero que no dice con quién».
 
 ### 4.2 Bloqueo estatal del dominio/IP del relay (tipo Chat Control 2.0 a nivel de infraestructura)
 
@@ -75,3 +78,5 @@ La landing de conceptos (`redderlabs.com/casos`) muestra Aegis con la etiqueta `
 ## 7. Revisión de este documento
 
 Este documento se actualiza en cada fase del roadmap técnico (ver ARQUITECTURA.md sección 9) que introduzca un cambio de superficie de amenaza: nuevo transporte, nuevo tipo de contenido soportado, o hallazgo de auditoría externa.
+
+**También fuera de las fases.** La cuota de almacenamiento (agosto de 2026) no pertenecía a ninguna fase —salió de operar el servicio de verdad— y aun así añadió metadata persistente. La regla práctica es más simple que la lista de arriba: **si un cambio hace que el relay guarde algo nuevo sobre una identidad, entra aquí antes de desplegarse**, sea o no parte de una fase del roadmap.
