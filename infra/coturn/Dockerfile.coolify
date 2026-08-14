@@ -1,0 +1,24 @@
+# coturn (STUN/TURN) para el WebRTC del Modo B en COOLIFY.
+#
+# Mismo criterio que infra/tor/Dockerfile.coolify: la configuración y el entrypoint se HORNEAN en
+# la imagen (Coolify clona el repo y construye; sus bind-mounts de ficheros del repo son frágiles).
+# Aquí NO hay volumen: coturn no tiene estado que preservar — el único usuario es estático y llega
+# por variables de entorno.
+FROM alpine:3.21
+
+# coturn del repositorio de Alpine: la versión empaquetada trae ya el soporte TLS/DTLS necesario.
+RUN apk add --no-cache coturn
+
+COPY turnserver.conf.template /etc/coturn/turnserver.conf.template
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# STUN/TURN: 3478 (plano) y 5349 (TLS, solo si se monta certificado). El rango de relevo
+# 49160-49200/udp se publica desde el compose y debe coincidir con min-port/max-port.
+EXPOSE 3478/udp 3478/tcp 5349/tcp
+
+# El entrypoint valida credenciales + external-ip, rellena la plantilla y arranca turnserver.
+# El proceso corre como root DENTRO del contenedor (sin `proc-user`): la contención real la ponen
+# el aislamiento del contenedor y los mem_limit/pids_limit del compose, y la configuración —que
+# lleva la contraseña— queda en modo 600.
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]

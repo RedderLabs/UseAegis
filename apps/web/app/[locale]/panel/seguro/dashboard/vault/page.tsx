@@ -3,6 +3,7 @@
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { groupIdentity } from "@/lib/identity";
 import { IconDownload, IconShield, IconKey } from "@/components/Icons";
+import { StorageQuota } from "@/components/StorageQuota";
 import { useT } from "@/lib/i18n/provider";
 
 function Vault() {
@@ -106,6 +107,10 @@ function Vault() {
               {t.vault.backupNote}
             </p>
           </div>
+
+          {/* Espacio de adjuntos: lo ÚNICO que el relay guarda de ti con un techo (y cifrado).
+              Se pinta solo si este despliegue tiene cuota; si no, la tarjeta no existe. */}
+          <StorageQuota className="md:col-span-3" />
 
           {/* Claves activas */}
           <div className="md:col-span-3 bg-surface border border-line rounded-sm p-5">

@@ -46,6 +46,61 @@ export interface Transport {
   stop(): void;
 }
 
+// --- Observabilidad del failover (Fase 4) ---------------------------------------------
+//
+// El failover deja de ser una caja negra: publica QUÉ modo está entregando ahora y en qué
+// estado está cada candidato, para que la UI pueda pintar el punto de estado del header
+// (DISENO.md §6) sin conocer la mecánica interna. Es SOLO lectura: nadie fuerza un modo.
+
+/** Estado de un candidato. `unknown` = aún sin evidencia (ni sonda ni envío). */
+export type ModeState = "up" | "down" | "unknown";
+
+/** Salud observada de un modo concreto dentro del failover. */
+export interface ModeStatus {
+  mode: TransportMode;
+  state: ModeState;
+  /** ms de la última sonda con éxito (`isAvailable`), o null si nunca se midió. */
+  latencyMs: number | null;
+  /** Fallos consecutivos (envío o sonda) desde el último éxito. */
+  failures: number;
+  /** Epoch ms en que `state` tomó su valor actual. */
+  since: number;
+}
+
+/**
+ * Última conmutación de modo activo. `cause`:
+ *   - `delivery`  — un envío se entregó por otro modo (fallo real en caliente),
+ *   - `recovery`  — una sonda devolvió a un modo preferente (p. ej. vuelve el relay),
+ *   - `exhausted` — ningún candidato quedó disponible.
+ */
+export interface FailoverSwitch {
+  from: TransportMode | null;
+  to: TransportMode;
+  at: number;
+  cause: "delivery" | "recovery" | "exhausted";
+}
+
+/** Foto completa del failover. Inmutable: cada cambio produce un objeto nuevo. */
+export interface FailoverStatus {
+  /** Modo por el que saldría un envío AHORA (el primer candidato no caído). */
+  activeMode: TransportMode;
+  /** ¿Hay al menos un candidato con ruta viable? */
+  reachable: boolean;
+  /** Estado de cada candidato, en orden de preferencia. */
+  modes: readonly ModeStatus[];
+  lastSwitch: FailoverSwitch | null;
+  /** Epoch ms de la última ronda de sondas, o null si aún no hubo ninguna. */
+  probedAt: number | null;
+}
+
+/** `Transport` que además publica su estado interno (lo devuelve `createFailoverTransport`). */
+export interface ObservableTransport extends Transport {
+  /** Foto actual del failover. */
+  status(): FailoverStatus;
+  /** Suscribe a los cambios de estado. Devuelve la baja. */
+  onStatus(cb: (status: FailoverStatus) => void): () => void;
+}
+
 /** Programador de temporizadores, inyectable para poder testear el polling de forma determinista. */
 export interface Scheduler {
   setInterval(handler: () => void | Promise<void>, ms: number): number;

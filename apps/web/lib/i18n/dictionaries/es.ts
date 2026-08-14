@@ -838,6 +838,66 @@ const es = {
     noPrekey: "Ese usuario aún no ha publicado su llave de cifrado; no se puede añadir.",
   },
 
+  /** Indicador de transporte del header y panel de failover (Fase 4, DISENO §6). */
+  failover: {
+    modeLabel: { relay: "Relay", p2p: "P2P", mesh: "Malla" },
+    modeBlurb: {
+      relay: "Buzón cifrado del servidor. Guarda el sobre hasta que el otro se conecta.",
+      p2p: "Entrega directa entre navegadores. No pasa por el buzón: el otro tiene que estar conectado.",
+      mesh: "Malla local por radio, sin internet.",
+    },
+    modeRole: {
+      relay: "Modo A · buzón cifrado, retiene para quien está desconectado",
+      p2p: "Modo B · entrega directa, sin pasar por el buzón",
+      mesh: "Modo C · malla local por radio, sin internet",
+    },
+    stateUp: "con ruta",
+    stateDown: "sin ruta",
+    stateUnknown: "sin datos",
+    noRoute: "Sin ruta",
+    probing: "Sondeando",
+    agoSeconds: (n: number) => `hace ${n} s`,
+    agoMinutes: (n: number) => `hace ${n} min`,
+    agoHours: (n: number) => `hace ${n} h`,
+    tor: "Tor",
+    unprotected: "Sin proteger",
+    torFull: "Tor",
+    unprotectedFull: "sin proteger",
+    buttonLabel: (route: string, gate: string, action: string) =>
+      `Transporte: ${route}. Puerta: ${gate}. ${action} detalle`,
+    show: "Ver",
+    hide: "Ocultar",
+    announce: (route: string) => `Transporte: ${route}`,
+    panelLabel: "Detalle del transporte",
+    activeRoute: "Ruta activa",
+    blurbOffline: "Ningún modo responde ahora mismo. Lo que envíes fallará hasta que vuelva alguno.",
+    blurbChecking: "Comprobando qué modos tienen ruta…",
+    blurbAmbient:
+      "Fuera del Canal solo se comprueba el relay. La ruta real (con P2P) se decide al abrir el Canal.",
+    p2pNotConfigured: "El modo P2P no está configurado para esta puerta: solo hay relay.",
+    gate: "Puerta",
+    gateOnion: ".onion (Tor)",
+    gateClearnet: "clearnet",
+    ipVisible: "Tu IP es visible para el relay. El contenido sigue cifrado extremo a extremo.",
+    switched: "Conmutó",
+    fullStatus: "Estado completo →",
+    sectionTitle: "Failover de transporte",
+    liveNow: "en vivo",
+    lastRead: "última lectura del Canal",
+    noReadings: "sin lecturas",
+    active: "· activo",
+    failures: (n: number) => `${n} fallos`,
+    preference: (n: number) => `Preferencia ${n}`,
+    orderNote:
+      "El envío prueba los modos en este orden y se queda con el primero que entrega. Si el " +
+      "preferente vuelve, la ruta regresa sola a él en la siguiente comprobación.",
+    oneCandidate: " Ahora mismo solo hay un candidato: el Modo B no está configurado para esta puerta.",
+    notMeasuredStart: "El failover se mide mientras el ",
+    notMeasuredChannel: "Canal",
+    notMeasuredEnd:
+      " está abierto: es donde vive el transporte. Abre el Canal y vuelve para ver el estado de cada modo.",
+  },
+
   /**
    * Cuota de almacenamiento de adjuntos. Regla de producto (§2 y §8 del diseño de cuotas): lo
    * PRIMERO que se dice es que la mensajería no está rota —el límite solo afecta a los adjuntos—
@@ -873,6 +933,30 @@ const es = {
       `Has alcanzado el límite de subida${cap}. Puedes seguir enviando texto; los adjuntos se reanudan mañana.`,
     dailyCapToday: (size: string) => ` de hoy (${size})`,
     dailyCapTodayPlain: " de hoy",
+
+    /** Tarjeta de espacio en Bóveda: el número que hoy no se ve en ningún sitio. */
+    card: {
+      title: "Espacio de adjuntos",
+      loading: "Leyendo tu espacio…",
+      usedOf: (used: string, quota: string) => `${used} de ${quota}`,
+      percent: (n: number) => `${n}% ocupado`,
+      todayLabel: "Subido hoy",
+      todayOf: (used: string, limit: string) => `${used} de ${limit}`,
+      /** Salida gratuita CON FECHA: lo segundo que hay que decir al que ha llenado (§8). */
+      freesOn: (amount: string, day: string) =>
+        `Recuperas ${amount} ${day}, cuando expiren tus adjuntos más antiguos. No tienes que hacer nada.`,
+      freesNothing: "Ahora mismo no ocupas nada.",
+      /** La cuota MADURA con la edad de la identidad (§4): decirlo evita que parezca arbitraria. */
+      maturing: (current: string, max: string, days: number) =>
+        `Tu espacio crece con la antigüedad de tu identidad: ${current} hoy, ${max} a los ${days} días.`,
+      mature: (max: string) => `Tu identidad ya tiene el espacio máximo: ${max}.`,
+      /** Lo PRIMERO: el texto no se toca. Es lo que de verdad teme el usuario (§8). */
+      textNote:
+        "El texto no ocupa espacio aquí y nunca se corta: este límite solo afecta a archivos y notas de voz.",
+      ttlNote: (days: number) =>
+        `Todo adjunto se borra del servidor a los ${days} días, así que el espacio se libera solo.`,
+      perFileNote: (size: string) => `Un archivo suelto no puede pasar de ${size}.`,
+    },
   },
 
   metadata: {

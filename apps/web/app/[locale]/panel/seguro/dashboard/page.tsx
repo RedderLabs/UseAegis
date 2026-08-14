@@ -5,7 +5,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { DashboardShell, useDashboardSession } from "@/components/DashboardShell";
 import { getToken } from "@/lib/session";
-import { listBlocks, RelayError, resolveUsername } from "@/lib/relay-client";
+import {
+  fetchQuota,
+  listBlocks,
+  quotaPreflight,
+  RelayError,
+  resolveUsername,
+  type QuotaStatus,
+} from "@/lib/relay-client";
 import {
   addContactByPublicKey,
   addContactFromDirectory,
@@ -61,7 +68,8 @@ function isAudio(file: FileAttachment): boolean {
   return file.mime.startsWith("audio/");
 }
 
-// Tope de subida acorde con el límite del relay (MEDIA_MAX_BYTES por defecto = 50 MiB).
+// Tope de subida acorde con el límite del relay (MEDIA_MAX_BYTES por defecto = 50 MiB). Es solo
+// el valor de reserva: si el relay dice el suyo en GET /media/quota, manda el del servidor.
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 /** Burbuja de nota de voz: descarga+descifra bajo demanda y reproduce con controles nativos. */
@@ -199,6 +207,11 @@ function Channel() {
 
   const [attaching, setAttaching] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Última lectura de la cuota de adjuntos. Sirve para avisar ANTES de cifrar y subir 40 MB que
+  // el relay va a rechazar igual. En un ref y no en estado: no pinta nada, solo decide. Puede
+  // quedarse obsoleta (otra pestaña, otro dispositivo) y no pasa nada: el 507/429 del relay es
+  // el que manda, y dice exactamente el mismo mensaje.
+  const quotaRef = useRef<QuotaStatus | null>(null);
 
   const threadRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<Contact | null>(null);
@@ -216,6 +229,17 @@ function Channel() {
     ).length;
     setPending(count);
   }, [ownPub]);
+
+  /** Relee la cuota de adjuntos (silenciosa: si el relay no la da, se sigue sin preflight). */
+  const refreshQuota = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+    quotaRef.current = await fetchQuota(token);
+  }, []);
+
+  useEffect(() => {
+    void refreshQuota();
+  }, [refreshQuota]);
 
   // Carga inicial: libreta + lista de bloqueados; selecciona contacto (?peer= o el primero).
   useEffect(() => {
@@ -319,19 +343,35 @@ function Channel() {
     async (file: File, kind: "file" | "audio" = "file", durationMs?: number) => {
       const transport = transportRef.current;
       if (!file || !selected || !transport || attaching) return;
-      if (file.size > MAX_ATTACHMENT_BYTES) {
+
+      /** Aviso local, sin viajar: el que se pinta cuando ni merece la pena intentarlo. */
+      const refuse = (body: string) =>
         setMessages((prev) => [
           ...prev,
           {
             id: `err-${Date.now()}`,
             dir: "out",
-            body: t.channel.errors.tooLarge(file.name, formatSize(MAX_ATTACHMENT_BYTES)),
+            body,
             sentAt: new Date().toISOString(),
             peerPub: selected.pub,
           },
         ]);
+
+      // 1) Tope de UN objeto (el relay responde 413). El suyo si lo conocemos, si no el de reserva.
+      const maxUpload = quotaRef.current?.maxUploadBytes || MAX_ATTACHMENT_BYTES;
+      if (file.size > maxUpload) {
+        refuse(t.channel.errors.tooLarge(file.name, formatSize(maxUpload)));
         return;
       }
+      // 2) Techo acumulado y ráfaga del día (507 / 429). Se comprueba aquí para no hacerle grabar
+      //    y cifrar una nota de voz entera antes de decirle que no cabe.
+      const noRoom = quotaPreflight(quotaRef.current, file.size);
+      if (noRoom) {
+        refuse(`⚠️ ${noRoom}`);
+        void refreshQuota(); // por si la copia local iba desfasada y en realidad sí cabía
+        return;
+      }
+
       setAttaching(true);
       try {
         const sent = await transport.sendFile(selected, file, kind, durationMs);
@@ -340,6 +380,7 @@ function Channel() {
           saveHistory(ownPub, selected.pub, next);
           return next;
         });
+        void refreshQuota(); // el adjunto ya cuenta: que la barra de Bóveda no mienta
       } catch (err) {
         const msg = err instanceof Error ? err.message : t.channel.errors.sendFile;
         setMessages((prev) => [
@@ -356,7 +397,7 @@ function Channel() {
         setAttaching(false);
       }
     },
-    [selected, attaching, ownPub, t],
+    [selected, attaching, ownPub, t, refreshQuota],
   );
 
   /** Refresca la lista, selecciona el contacto recién añadido y cierra el panel de alta. */
@@ -631,6 +672,10 @@ function Channel() {
             ) : (
               <VoiceRecorder
                 disabled={!selected || attaching}
+                // "¿Cabe siquiera un byte más?" — con 1 solo salta cuando de verdad no queda
+                // sitio (o se agotó la ráfaga del día), que es cuando no tiene sentido ni pedir
+                // el micrófono. Si cabe algo, se graba y el tamaño real se comprueba al enviar.
+                blockedReason={() => quotaPreflight(quotaRef.current, 1)}
                 onRecorded={(file, durationMs) => void sendAttachment(file, "audio", durationMs)}
               />
             )}

@@ -832,6 +832,66 @@ const en = {
     noPrekey: "That user hasn't published their encryption key yet; they can't be added.",
   },
 
+  failover: {
+    modeLabel: { relay: "Relay", p2p: "P2P", mesh: "Mesh" },
+    modeBlurb: {
+      relay: "The server's encrypted mailbox. It holds the envelope until the other person connects.",
+      p2p: "Direct delivery between browsers. It skips the mailbox: the other person has to be online.",
+      mesh: "Local radio mesh, no internet.",
+    },
+    modeRole: {
+      relay: "Mode A · encrypted mailbox, holds messages for whoever is offline",
+      p2p: "Mode B · direct delivery, no mailbox in between",
+      mesh: "Mode C · local radio mesh, no internet",
+    },
+    stateUp: "route up",
+    stateDown: "no route",
+    stateUnknown: "no data",
+    noRoute: "No route",
+    probing: "Probing",
+    agoSeconds: (n: number) => `${n} s ago`,
+    agoMinutes: (n: number) => `${n} min ago`,
+    agoHours: (n: number) => `${n} h ago`,
+    tor: "Tor",
+    unprotected: "Unprotected",
+    torFull: "Tor",
+    unprotectedFull: "unprotected",
+    buttonLabel: (route: string, gate: string, action: string) =>
+      `Transport: ${route}. Door: ${gate}. ${action} detail`,
+    show: "Show",
+    hide: "Hide",
+    announce: (route: string) => `Transport: ${route}`,
+    panelLabel: "Transport detail",
+    activeRoute: "Active route",
+    blurbOffline:
+      "No mode is responding right now. Anything you send will fail until one comes back.",
+    blurbChecking: "Checking which modes have a route…",
+    blurbAmbient:
+      "Outside the Channel only the relay is checked. The real route (including P2P) is decided when you open the Channel.",
+    p2pNotConfigured: "P2P mode isn't configured for this door: relay only.",
+    gate: "Door",
+    gateOnion: ".onion (Tor)",
+    gateClearnet: "clearnet",
+    ipVisible: "Your IP is visible to the relay. The content is still end-to-end encrypted.",
+    switched: "Switched",
+    fullStatus: "Full status →",
+    sectionTitle: "Transport failover",
+    liveNow: "live",
+    lastRead: "last reading from the Channel",
+    noReadings: "no readings",
+    active: "· active",
+    failures: (n: number) => `${n} failures`,
+    preference: (n: number) => `Preference ${n}`,
+    orderNote:
+      "Sending tries the modes in this order and sticks with the first one that delivers. If the " +
+      "preferred one comes back, the route returns to it on its own at the next check.",
+    oneCandidate: " Right now there's only one candidate: Mode B isn't configured for this door.",
+    notMeasuredStart: "Failover is measured while the ",
+    notMeasuredChannel: "Channel",
+    notMeasuredEnd:
+      " is open: that's where the transport lives. Open the Channel and come back to see each mode's state.",
+  },
+
   quota: {
     decimalSeparator: ".",
     months: [
@@ -861,6 +921,26 @@ const en = {
       `You've hit the upload limit${cap}. You can keep sending text; attachments resume tomorrow.`,
     dailyCapToday: (size: string) => ` for today (${size})`,
     dailyCapTodayPlain: " for today",
+
+    card: {
+      title: "Attachment space",
+      loading: "Reading your space…",
+      usedOf: (used: string, quota: string) => `${used} of ${quota}`,
+      percent: (n: number) => `${n}% used`,
+      todayLabel: "Uploaded today",
+      todayOf: (used: string, limit: string) => `${used} of ${limit}`,
+      freesOn: (amount: string, day: string) =>
+        `You get ${amount} back ${day}, when your oldest attachments expire. You don't have to do anything.`,
+      freesNothing: "You're not using any space right now.",
+      maturing: (current: string, max: string, days: number) =>
+        `Your space grows with the age of your identity: ${current} today, ${max} after ${days} days.`,
+      mature: (max: string) => `Your identity already has the maximum space: ${max}.`,
+      textNote:
+        "Text takes up no space here and is never cut off: this limit only affects files and voice notes.",
+      ttlNote: (days: number) =>
+        `Every attachment is deleted from the server after ${days} days, so space frees itself up.`,
+      perFileNote: (size: string) => `A single file can't be larger than ${size}.`,
+    },
   },
 
   metadata: {
