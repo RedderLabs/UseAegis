@@ -248,6 +248,25 @@ sonda, publicación de estado, "sin ruta" sin dejar de intentar), `tsc` limpio e
 **dos redes distintas** — ahí vive el riesgo residual del Modo B, y ningún test automático lo cubre.
 **Hito → M2 (beta resistente a censura).**
 
+### Entre fases — Cuota de almacenamiento por identidad · ✅ **HECHA** (relay 2026-08-11 · UI 2026-08-14)
+
+No es una fase del roadmap original: es el agujero que se vio al mirar los números. `media_objects`
+no tiene columna de propietario (a propósito, por sealed-sender), así que no existía **ningún** techo
+por identidad — solo el tamaño por objeto y el rate-limit por IP, que multiplicados dejaban subir del
+orden de **8 TiB/día** a una sola identidad autenticada.
+
+| Entregable                                                                                                                                                                     | Estado |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| `storage_usage(identity, day, bytes)`: **cubos por día**, no un contador plano (un contador no se puede decrementar: el barrido TTL borra filas sin propietario)                | ✅     |
+| Cuota que **madura con la edad** de la identidad (100 MB → 1 GB en 30 días) + ráfaga diaria. Anti-sybil **sin pedir identidad**: cambia el recurso barato (claves) por el caro (tiempo) | ✅     |
+| Débito atómico en `POST /media` contra la sesión, reembolso si el bucket falla, barrido de cubos vencidos. `507` (techo) / `429` (ráfaga), cabeceras `x-aegis-quota-*`          | ✅     |
+| **Barra de uso en Bóveda** con fecha exacta de liberación, y `GET /media/quota` devolviendo también la FORMA de la política (`maxQuota`, `rampDays`, `ttlDays`, `maxUploadBytes`) | ✅     |
+| **Aviso antes de subir**: el Canal comprueba el hueco antes de cifrar, y el grabador de voz no pide el micrófono si no cabe nada. Mismo mensaje que el del relay                | ✅     |
+
+Regla de producto que manda sobre todo lo anterior: **el texto nunca se corta** — la cuota solo
+degrada la ruta de adjuntos — y al topar siempre hay una salida gratuita **con fecha**. Verificado:
+relay **44/44 tests**, `tsc` limpio en web y relay, `next build` OK.
+
 ### Track paralelo — `apps/mobile` (React Native / Expo) · **4 sd**
 
 No es una fase suelta: es el cliente donde de verdad viven el audio de campo y el mesh (BLE no es viable en web). Paridad de mensajería con la web. Claude reaprovecha mucha lógica y UI ya escritas para web. Conviene arrancarlo durante las Fases 3–4 para llegar listo a la Fase 5.

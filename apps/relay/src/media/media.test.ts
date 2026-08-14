@@ -212,6 +212,13 @@ test("GET /media/quota devuelve el estado de la identidad", async (t) => {
   assert.equal(body.used, 0);
   assert.equal(body.freesAt, null, "sin nada almacenado no hay fecha de liberación");
   assert.equal(res.headers["x-aegis-quota-bytes"], String(config.quota!.maxBytes));
+  // La FORMA de la política, no solo el estado: la barra de uso del cliente la necesita para
+  // explicar el número («crece hasta X en N días», «todo expira a los D días»). Si esto deja de
+  // viajar, la UI no falla — miente en silencio, que es peor.
+  assert.equal(body.maxQuota, config.quota!.maxBytes);
+  assert.equal(body.rampDays, config.quota!.rampDays);
+  assert.equal(body.maxUploadBytes, config.mediaMaxBytes);
+  assert.ok(body.ttlDays > 0, "debe decir a cuántos días expiran los adjuntos");
 });
 
 test("superar el techo en reposo → 507 y NO se sube nada al bucket", async (t) => {

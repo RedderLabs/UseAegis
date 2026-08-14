@@ -341,7 +341,7 @@ export function openMessageStream(
 // Se mueve como `application/octet-stream` (no base64) para no inflar un 33% adjuntos grandes.
 
 /** Bytes → texto corto para mensajes de usuario ("1,5 GB" en es, "1.5 GB" en en / 240 MB). */
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) {
     return `${(mb / 1024)
@@ -352,7 +352,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** "2026-09-12" → "el 12 de septiembre" / "on 12 September". null si no se puede parsear. */
-function formatDay(iso: string): string | null {
+export function formatDay(iso: string): string | null {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return null;
   const q = dict().quota;
@@ -446,6 +446,104 @@ export async function downloadMedia(token: string, key: string): Promise<Uint8Ar
   }
   if (!res.ok) await throwRelay(res);
   return new Uint8Array(await res.arrayBuffer());
+}
+
+// --- Cuota de adjuntos ----------------------------------------------------------------
+//
+// El techo por identidad vive en el relay (docs/aegis-cuotas-almacenamiento.md): se mide lo
+// ALMACENADO AHORA, no un acumulado de por vida, y madura con la edad de la identidad. Aquí solo
+// se lee para (a) pintar la barra de uso y (b) avisar ANTES de cifrar y subir un audio de 40 MB
+// que el relay va a rechazar igualmente. El relay sigue siendo la autoridad: este preflight es un
+// atajo de cortesía, nunca el control (el 507/429 de `POST /media` es el que manda).
+
+/** Estado de cuota tal como lo devuelve `GET /media/quota`. */
+export interface QuotaStatus {
+  /** Tope en reposo que le corresponde a la identidad por su edad, en bytes. */
+  quota: number;
+  /** Bytes vivos ahora mismo. */
+  used: number;
+  /** Bytes subidos hoy. */
+  dailyUsed: number;
+  /** Tope de ráfaga del día. */
+  dailyLimit: number;
+  /** Edad de la identidad en días (la cuota madura con ella). */
+  ageDays: number;
+  /** Día (YYYY-MM-DD) en que expiran los adjuntos más antiguos, o null si no ocupa nada. */
+  freesAt: string | null;
+  /** Cuántos bytes se liberan ese día. */
+  freesBytes: number;
+  /** Cuota de una identidad ya madura: hacia dónde crece `quota`. */
+  maxQuota: number;
+  /** Días que tarda la cuota en llegar a `maxQuota`. */
+  rampDays: number;
+  /** Días que se retienen los adjuntos antes de expirar (es lo que libera espacio solo). */
+  ttlDays: number;
+  /** Tope de UN objeto suelto, que es un límite distinto del techo acumulado. */
+  maxUploadBytes: number;
+}
+
+/**
+ * Lee la cuota de la sesión. Devuelve `null` cuando este despliegue NO tiene cuota que enseñar:
+ * relay sin media (`503`), cuota desactivada (`QUOTA_MAX_BYTES=0` → `{enabled:false}`) o relay
+ * inalcanzable. En los tres casos la UI simplemente no pinta la tarjeta, que es lo honesto: no
+ * hay número que mostrar. No lanza nunca — es información ambiental, no una acción del usuario.
+ */
+export async function fetchQuota(token: string): Promise<QuotaStatus | null> {
+  try {
+    const res = await fetch(apiUrl("/media/quota"), {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { enabled?: boolean } & Partial<QuotaStatus>;
+    if (data.enabled === false || typeof data.quota !== "number") return null;
+    return {
+      quota: data.quota,
+      used: data.used ?? 0,
+      dailyUsed: data.dailyUsed ?? 0,
+      dailyLimit: data.dailyLimit ?? 0,
+      ageDays: data.ageDays ?? 0,
+      freesAt: data.freesAt ?? null,
+      freesBytes: data.freesBytes ?? 0,
+      maxQuota: data.maxQuota ?? data.quota,
+      rampDays: data.rampDays ?? 0,
+      ttlDays: data.ttlDays ?? 0,
+      maxUploadBytes: data.maxUploadBytes ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ¿Cabe un adjunto de `bytes` con el estado que se leyó por última vez? Devuelve el mensaje que
+ * el usuario vería —el MISMO que devolvería el relay, porque se genera con el mismo traductor— o
+ * `null` si cabe (o si no hay estado que consultar, en cuyo caso se deja intentar).
+ *
+ * Se compara con la MISMA regla que `debitStorage`: rechaza cuando el total resultante SUPERA el
+ * tope, no cuando lo iguala. Sobre el tamaño en claro; el ciphertext añade unos bytes de AEAD por
+ * chunk, así que un adjunto justo al borde puede pasar aquí y toparse arriba: correcto, porque el
+ * relay manda y su respuesta dice exactamente lo mismo.
+ */
+export function quotaPreflight(status: QuotaStatus | null, bytes: number): string | null {
+  if (!status) return null;
+  if (status.used + bytes > status.quota) {
+    return humanRelayError(507, {
+      error: "quota_exceeded",
+      quota: status.quota,
+      used: status.used,
+      freesAt: status.freesAt,
+      freesBytes: status.freesBytes,
+    });
+  }
+  if (status.dailyUsed + bytes > status.dailyLimit) {
+    return humanRelayError(429, {
+      error: "daily_limit",
+      dailyLimit: status.dailyLimit,
+      dailyUsed: status.dailyUsed,
+    });
+  }
+  return null;
 }
 
 // --- Bloqueos -------------------------------------------------------------------------

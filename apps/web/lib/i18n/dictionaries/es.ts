@@ -838,11 +838,6 @@ const es = {
     noPrekey: "Ese usuario aún no ha publicado su llave de cifrado; no se puede añadir.",
   },
 
-  /**
-   * Cuota de almacenamiento de adjuntos. Regla de producto (§2 y §8 del diseño de cuotas): lo
-   * PRIMERO que se dice es que la mensajería no está rota —el límite solo afecta a los adjuntos—
-   * y lo segundo, la salida gratuita con fecha. Nunca se amenaza con borrar la cuenta.
-   */
   /** Indicador de transporte del header y panel de failover (Fase 4, DISENO §6). */
   failover: {
     modeLabel: { relay: "Relay", p2p: "P2P", mesh: "Malla" },
@@ -903,6 +898,11 @@ const es = {
       " está abierto: es donde vive el transporte. Abre el Canal y vuelve para ver el estado de cada modo.",
   },
 
+  /**
+   * Cuota de almacenamiento de adjuntos. Regla de producto (§2 y §8 del diseño de cuotas): lo
+   * PRIMERO que se dice es que la mensajería no está rota —el límite solo afecta a los adjuntos—
+   * y lo segundo, la salida gratuita con fecha. Nunca se amenaza con borrar la cuenta.
+   */
   quota: {
     /** Separador decimal para tamaños ("1,5 GB" en español, "1.5 GB" en inglés). */
     decimalSeparator: ",",
@@ -933,6 +933,30 @@ const es = {
       `Has alcanzado el límite de subida${cap}. Puedes seguir enviando texto; los adjuntos se reanudan mañana.`,
     dailyCapToday: (size: string) => ` de hoy (${size})`,
     dailyCapTodayPlain: " de hoy",
+
+    /** Tarjeta de espacio en Bóveda: el número que hoy no se ve en ningún sitio. */
+    card: {
+      title: "Espacio de adjuntos",
+      loading: "Leyendo tu espacio…",
+      usedOf: (used: string, quota: string) => `${used} de ${quota}`,
+      percent: (n: number) => `${n}% ocupado`,
+      todayLabel: "Subido hoy",
+      todayOf: (used: string, limit: string) => `${used} de ${limit}`,
+      /** Salida gratuita CON FECHA: lo segundo que hay que decir al que ha llenado (§8). */
+      freesOn: (amount: string, day: string) =>
+        `Recuperas ${amount} ${day}, cuando expiren tus adjuntos más antiguos. No tienes que hacer nada.`,
+      freesNothing: "Ahora mismo no ocupas nada.",
+      /** La cuota MADURA con la edad de la identidad (§4): decirlo evita que parezca arbitraria. */
+      maturing: (current: string, max: string, days: number) =>
+        `Tu espacio crece con la antigüedad de tu identidad: ${current} hoy, ${max} a los ${days} días.`,
+      mature: (max: string) => `Tu identidad ya tiene el espacio máximo: ${max}.`,
+      /** Lo PRIMERO: el texto no se toca. Es lo que de verdad teme el usuario (§8). */
+      textNote:
+        "El texto no ocupa espacio aquí y nunca se corta: este límite solo afecta a archivos y notas de voz.",
+      ttlNote: (days: number) =>
+        `Todo adjunto se borra del servidor a los ${days} días, así que el espacio se libera solo.`,
+      perFileNote: (size: string) => `Un archivo suelto no puede pasar de ${size}.`,
+    },
   },
 
   metadata: {

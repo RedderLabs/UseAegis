@@ -921,6 +921,26 @@ const en = {
       `You've hit the upload limit${cap}. You can keep sending text; attachments resume tomorrow.`,
     dailyCapToday: (size: string) => ` for today (${size})`,
     dailyCapTodayPlain: " for today",
+
+    card: {
+      title: "Attachment space",
+      loading: "Reading your space…",
+      usedOf: (used: string, quota: string) => `${used} of ${quota}`,
+      percent: (n: number) => `${n}% used`,
+      todayLabel: "Uploaded today",
+      todayOf: (used: string, limit: string) => `${used} of ${limit}`,
+      freesOn: (amount: string, day: string) =>
+        `You get ${amount} back ${day}, when your oldest attachments expire. You don't have to do anything.`,
+      freesNothing: "You're not using any space right now.",
+      maturing: (current: string, max: string, days: number) =>
+        `Your space grows with the age of your identity: ${current} today, ${max} after ${days} days.`,
+      mature: (max: string) => `Your identity already has the maximum space: ${max}.`,
+      textNote:
+        "Text takes up no space here and is never cut off: this limit only affects files and voice notes.",
+      ttlNote: (days: number) =>
+        `Every attachment is deleted from the server after ${days} days, so space frees itself up.`,
+      perFileNote: (size: string) => `A single file can't be larger than ${size}.`,
+    },
   },
 
   metadata: {

@@ -144,7 +144,17 @@ export const mediaRoutes: FastifyPluginAsync<MediaRoutesOptions> = async (
       if (!opts.quota) return reply.send({ enabled: false });
       const state = await getQuotaState(request.identity!.publicKey, opts.quota, ttlDays);
       applyQuotaHeaders(reply, state);
-      return reply.send({ enabled: true, ...state });
+      // Además del estado, la FORMA de la política: la cuota madura (`maxQuota`/`rampDays`), todo
+      // caduca a los `ttlDays` y un objeto no puede pasar de `maxUploadBytes`. Sin estos números el
+      // cliente tendría que hardcodearlos —y mentiría en cuanto un despliegue los cambiara.
+      return reply.send({
+        enabled: true,
+        ...state,
+        maxQuota: opts.quota.maxBytes,
+        rampDays: opts.quota.rampDays,
+        ttlDays,
+        maxUploadBytes: opts.maxBytes,
+      });
     },
   );
 

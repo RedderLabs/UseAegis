@@ -37,9 +37,16 @@ function fmt(sec: number): string {
 export function VoiceRecorder({
   onRecorded,
   disabled,
+  blockedReason,
 }: {
   onRecorded: (file: File, durationMs: number) => void;
   disabled?: boolean;
+  /**
+   * Motivo por el que hoy no se puede enviar una nota de voz (típicamente: no queda cuota de
+   * adjuntos). Se consulta AL PULSAR grabar y, si devuelve texto, ni se pide el micrófono: es
+   * la diferencia entre avisar y dejar que grabe dos minutos para rechazárselos después.
+   */
+  blockedReason?: () => string | null;
 }) {
   const t = useT();
   const [recording, setRecording] = useState(false);
@@ -67,6 +74,11 @@ export function VoiceRecorder({
   const start = useCallback(async () => {
     if (disabled || recording) return;
     setError(null);
+    const blocked = blockedReason?.();
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setError(t.voice.noRecording);
       return;
@@ -113,7 +125,7 @@ export function VoiceRecorder({
     timerRef.current = window.setInterval(() => {
       setElapsed((performance.now() - startRef.current) / 1000);
     }, 200);
-  }, [disabled, recording, cleanup, onRecorded, t]);
+  }, [disabled, recording, cleanup, onRecorded, blockedReason, t]);
 
   const stopAndSend = useCallback(() => {
     if (!recorderRef.current) return;
@@ -162,8 +174,9 @@ export function VoiceRecorder({
       >
         <IconMic className="w-5 h-5" />
       </button>
+      {/* Ancho acotado: el aviso de cuota es una frase entera, no un "micro denegado". */}
       {error && (
-        <span className="absolute bottom-full right-0 mb-1 whitespace-nowrap text-[10px] text-error bg-surface border border-line rounded-sm px-2 py-1">
+        <span className="absolute bottom-full right-0 mb-1 z-10 max-w-[min(20rem,70vw)] w-max text-[10px] leading-relaxed text-error bg-surface border border-line rounded-sm px-2 py-1">
           {error}
         </span>
       )}
