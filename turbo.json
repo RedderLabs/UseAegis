@@ -1,5 +1,10 @@
 {
   "$schema": "https://v2-10-5.turborepo.dev/schema.json",
+  // Las variables viven en UN solo `.env` en la raíz (ver README). Como los builds lo leen
+  // (`dotenv -e ../../.env`) y las NEXT_PUBLIC_* se hornean en el bundle, ese fichero es una
+  // ENTRADA del build: sin declararlo, cambiar una variable devolvería un build cacheado con la
+  // anterior ya incrustada.
+  "globalDependencies": [".env"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

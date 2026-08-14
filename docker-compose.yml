@@ -84,8 +84,23 @@ services:
       # REDIS_URL: redis://aegis-dragonfly:6379   # se re-activa cuando entre BullMQ (perfil "queue")
       HOST: 0.0.0.0
       PORT: "8443"
-      LOG_LEVEL: info
-      # CORS_ORIGINS: define aquí el/los origen(es) de la web (coma-separado) cuando la sirvas.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Almacén de adjuntos y TECHO por identidad: los MISMOS valores del .env raíz que usa el relay
+      # corriendo en el host. Sin este passthrough, el relay del compose se quedaba sin media (503) y
+      # con la cuota en sus defaults compilados — dos comportamientos distintos para el mismo código.
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      BLOB_TTL_SECONDS: ${BLOB_TTL_SECONDS:-2592000}
+      MEDIA_TTL_SECONDS: ${MEDIA_TTL_SECONDS:-2592000}
+      MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-52428800}
+      QUOTA_BASE_BYTES: ${QUOTA_BASE_BYTES:-104857600}
+      QUOTA_MAX_BYTES: ${QUOTA_MAX_BYTES:-1073741824}
+      QUOTA_RAMP_DAYS: ${QUOTA_RAMP_DAYS:-30}
+      QUOTA_DAILY_MIN_BYTES: ${QUOTA_DAILY_MIN_BYTES:-104857600}
     ports:
       # Loopback del host, solo para probar con curl. En clearnet real irá detrás de Caddy (sin
       # este puerto público); Tor tampoco lo necesita (alcanza aegis-relay:8443 por la red interna).

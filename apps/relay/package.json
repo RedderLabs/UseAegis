@@ -7,16 +7,16 @@
     "infra:up": "docker compose -f ../../docker-compose.yml up -d --wait aegis-db",
     "infra:down": "docker compose -f ../../docker-compose.yml down",
     "infra:reset": "docker compose -f ../../docker-compose.yml down -v && pnpm infra:up && pnpm migrate",
-    "migrate": "dotenv -e .env -- node-pg-migrate up",
-    "migrate:down": "dotenv -e .env -- node-pg-migrate down",
+    "migrate": "dotenv -e ../../.env -- node-pg-migrate up",
+    "migrate:down": "dotenv -e ../../.env -- node-pg-migrate down",
     "migrate:create": "node-pg-migrate create -j sql",
-    "dev": "pnpm infra:up && pnpm migrate && dotenv -e .env -- tsx watch src/index.ts",
-    "serve": "dotenv -e .env -- tsx src/index.ts",
+    "dev": "pnpm infra:up && pnpm migrate && dotenv -e ../../.env -- tsx watch src/index.ts",
+    "serve": "dotenv -e ../../.env -- tsx src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm infra:up && pnpm migrate && dotenv -e .env -v LOG_LEVEL=silent -- tsx --test src/auth/auth.test.ts src/directory/directory.test.ts src/messaging/messaging.test.ts src/blocks/blocks.test.ts src/media/media.test.ts"
+    "test": "pnpm infra:up && pnpm migrate && dotenv -e ../../.env -v LOG_LEVEL=silent -- tsx --test src/auth/auth.test.ts src/directory/directory.test.ts src/messaging/messaging.test.ts src/blocks/blocks.test.ts src/media/media.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

@@ -23,8 +23,12 @@ El script `dev` **levanta la BBDD por sí solo**: hace `docker compose up -d --w
 aplica las migraciones y arranca Fastify con recarga en caliente (`tsx watch`). No hace
 falta arrancar Postgres a mano.
 
-Requiere Docker Desktop en marcha. Copia `.env.example` → `.env` (ya incluido con
-credenciales de dev).
+Requiere Docker Desktop en marcha. La configuración **no vive aquí**: hay un único `.env` en la
+**raíz del repo** (copia `../../.env.example` → `../../.env`) y los scripts de este paquete lo leen
+con `dotenv -e ../../.env`. Es a propósito: la contraseña de Postgres la usan tanto
+`docker-compose.yml` (para crear el contenedor) como el relay (para conectarse), y cuando vivía en
+dos ficheros se desincronizó. La `DATABASE_URL` se **deriva** allí de `POSTGRES_*`, así que no se
+puede volver a desincronizar. Lo que significa cada variable sigue documentado en `src/config.ts`.
 
 ### Scripts
 

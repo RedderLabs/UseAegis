@@ -77,10 +77,16 @@ de forma aislada. (Consolidar la cripto de `apps/web/lib/crypto` a `packages/cry
 ## Puesta en marcha
 
 ```bash
+cp .env.example .env           # ÚNICO fichero de variables: no hay .env dentro de apps/
 pnpm install
 pnpm dev                       # levanta web + relay en modo dev (turbo)
 pnpm --filter @aegis/web dev   # solo la web (la landing no necesita el relay)
 ```
+
+Las variables están **centralizadas en el `.env` de la raíz**: lo carga `docker-compose.yml` por sí
+solo, y los scripts de `apps/relay` y `apps/web` lo leen con `dotenv -e ../../.env`. La
+`DATABASE_URL` se **deriva** de `POSTGRES_*` en ese mismo fichero, así que las credenciales que usa
+Docker para crear la BBDD y las que usa el relay para conectarse no pueden desincronizarse.
 
 Otros scripts: `pnpm build`, `pnpm lint`, `pnpm typecheck`, y `pnpm --filter @aegis/transport test`.
 
