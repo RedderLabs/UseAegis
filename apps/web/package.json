@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aegis/crypto-core": "workspace:*",
+    "@aegis/protocol": "workspace:*",
     "@aegis/transport": "workspace:*",
     "@aegis/ui-kit": "workspace:*",
     "@chainsafe/libp2p-noise": "^17.0.0",

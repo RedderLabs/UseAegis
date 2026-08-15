@@ -10,6 +10,11 @@
  *
  * Argon2id lo aporta `@noble/hashes` (auditado); no implementamos KDFs propios
  * (docs/PLANTILLA.md §5). Solo se ejecuta en navegador (Web Crypto).
+ *
+ * Se queda en la app y NO baja a `@aegis/crypto-core` a propósito: AES-GCM aquí lo pone Web
+ * Crypto, que no existe en React Native, y el sitio donde se guarda una identidad es justo lo
+ * que cambia por plataforma (IndexedDB aquí, keychain del sistema en el móvil). Lo que sí es
+ * común —la semilla y todo lo que se deriva de ella— ya vive en el paquete.
  */
 import { argon2id } from "@noble/hashes/argon2";
 import { dict } from "../i18n/runtime";

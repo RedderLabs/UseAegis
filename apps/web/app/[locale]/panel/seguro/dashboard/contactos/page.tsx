@@ -25,7 +25,7 @@ import {
   loadHistory,
   markUnread,
 } from "@/lib/chat";
-import { fingerprint16, fromBase64Url } from "@/lib/crypto/ed25519";
+import { fingerprint16, fromBase64Url } from "@/lib/crypto";
 import { groupIdentity } from "@/lib/identity";
 import { IconSend, IconUsers } from "@/components/Icons";
 import { useLocalePath, useT } from "@/lib/i18n/provider";
@@ -43,7 +43,7 @@ interface Row {
 /** Huella legible (16 letras agrupadas) derivada de la clave pública. Nunca muestra la clave. */
 async function readableFp(pub: string): Promise<string> {
   try {
-    return groupIdentity(await fingerprint16(fromBase64Url(pub)));
+    return groupIdentity(fingerprint16(fromBase64Url(pub)));
   } catch {
     return "—";
   }

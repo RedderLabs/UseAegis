@@ -123,5 +123,6 @@ pnpm --filter @aegis/web dev     # web en :3000
 
 - Redis + BullMQ y los endpoints de cola de blobs sealed-sender (el Redis ya está listo).
 - Mover el store de rate-limit a Redis cuando haya más de una instancia de relay.
-- Migrar la cripto del cliente (`apps/web/lib/crypto`) a `@aegis/crypto-core` (libsodium)
-  cuando ese paquete se implemente.
+- ~~Migrar la cripto del cliente a `@aegis/crypto-core`~~ **hecho (2026-08-15)**: la cripto y el
+  sobre viven en `packages/crypto-core` y `packages/protocol`; en `apps/web/lib/crypto` solo
+  queda el almacén de la semilla (IndexedDB + Argon2id).

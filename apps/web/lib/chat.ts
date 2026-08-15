@@ -1,6 +1,6 @@
 /**
  * Servicio de chat de la Fase 1 (Modo A, texto E2E). Une tres piezas ya construidas:
- *   - cripto de sobre sealed-sender (lib/crypto/messaging.ts, vía identity-store)
+ *   - cripto de sobre sealed-sender (@aegis/protocol, vía identity-store)
  *   - buzón del relay same-origin (/api, lib/relay-client.ts)
  *   - contactos verificados locales (lib/contacts.ts)
  *
@@ -30,8 +30,13 @@ import {
 } from "./transport-status";
 import { createLazyP2pNode } from "./p2p/lazy-node";
 import { openMessageBlob, sealForSelf, sealMessageFor } from "./crypto/identity-store";
-import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
-import { decryptMedia, encryptMedia, randomMediaKey } from "./crypto/aead-stream";
+import {
+  decryptMedia,
+  encryptMedia,
+  fromBase64Url,
+  randomMediaKey,
+  toBase64Url,
+} from "./crypto";
 import {
   deleteMessage,
   downloadMedia,

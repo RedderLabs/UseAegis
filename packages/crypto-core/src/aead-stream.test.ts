@@ -1,21 +1,14 @@
-// Round-trip y pruebas negativas del cifrado por chunks de media. Ejecutable en Node (@noble +
-// Web Crypto). Corre con: pnpm --filter @aegis/web exec tsx --test lib/crypto/aead-stream.test.ts
+// Round-trip y pruebas negativas del cifrado por chunks de media.
+// Corre con: pnpm --filter @aegis/crypto-core test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_CHUNK_BYTES, decryptMedia, encryptMedia, randomMediaKey } from "./aead-stream";
-
-function randomBytes(n: number): Uint8Array {
-  // getRandomValues rechaza > 65536 B por llamada → rellenar por trozos.
-  const b = new Uint8Array(n);
-  for (let off = 0; off < n; off += 65536) {
-    crypto.getRandomValues(b.subarray(off, Math.min(off + 65536, n)));
-  }
-  return b;
-}
+import { randomBytes } from "./random";
+import { utf8 } from "./bytes";
 
 test("round-trip: un solo chunk (pequeño)", () => {
   const key = randomMediaKey();
-  const plain = new TextEncoder().encode("un archivo pequeño 📎");
+  const plain = utf8("un archivo pequeño 📎");
   const blob = encryptMedia(key, plain);
   assert.deepEqual(decryptMedia(key, blob), plain);
 });
@@ -85,4 +78,13 @@ test("reordenar chunks → falla (nonce por índice)", () => {
   swapped.set(frame0, HEADER + frame1.length);
   swapped.set(rest, HEADER + frame1.length + frame0.length);
   assert.throws(() => decryptMedia(key, swapped));
+});
+
+test("una clave que no mide 32 bytes se rechaza por código, no por texto", () => {
+  try {
+    encryptMedia(new Uint8Array(16), utf8("x"));
+    assert.fail("debería haber lanzado");
+  } catch (err) {
+    assert.equal((err as { code?: string }).code, "invalidMediaKey");
+  }
 });

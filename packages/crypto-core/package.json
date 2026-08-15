@@ -2,10 +2,29 @@
   "name": "@aegis/crypto-core",
   "version": "0.0.0",
   "private": true,
-  "description": "Wrapper de libsodium: Ed25519, X25519, XChaCha20-Poly1305, Argon2id.",
+  "description": "Cripto compartida web/móvil: Ed25519, X25519, XChaCha20-Poly1305, AEAD por chunks y frase BIP39.",
   "type": "module",
+  "sideEffects": false,
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./errors": "./src/errors.ts",
+    "./recovery-phrase": "./src/recovery-phrase.ts"
+  },
+  "scripts": {
+    "test": "tsx --test src/bytes.test.ts src/kdf.test.ts src/aead-stream.test.ts src/recovery-phrase.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.2.1",
+    "@noble/curves": "^1.8.1",
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.7.1",
+    "@scure/bip39": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
   }
 }

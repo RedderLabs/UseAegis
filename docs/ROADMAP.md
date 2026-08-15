@@ -82,8 +82,8 @@ Primera rebanada vertical de la mensajería, **verificada end-to-end contra el r
 
 > **Resta de la Fase 1 (mensajería):** ~~cola BullMQ~~ **push en tiempo real ✅** (SSE +
 > DragonflyDB pub/sub; el polling queda como red de seguridad), **audio** ✅ y **archivos** ✅,
-> **QR** de contacto ✅, **frase de recuperación BIP39** ✅. **Resta**: consolidar cripto/protocolo a
-> `packages/crypto-core` + `packages/protocol` (hoy en `apps/web/lib/crypto`), y el push a usuarios
+> **QR** de contacto ✅, **frase de recuperación BIP39** ✅, **cripto/protocolo consolidados a
+> `packages/crypto-core` + `packages/protocol` ✅** (2026-08-15). **Resta**: el push a usuarios
 > **offline** (ahí sí BullMQ + web push/VAPID) — movido a tarea futura, no bloquea M1.
 
 ---
@@ -95,13 +95,14 @@ Primera rebanada vertical de la mensajería, **verificada end-to-end contra el r
 El grueso del proyecto. Hechos el bloque de relay/acceso, el **TEXTO**, los **ARCHIVOS** y el
 **AUDIO** E2E, más el pulido de M1: **QR de contacto ✅**, **frase de recuperación BIP39 ✅** y
 **push en tiempo real ✅** (SSE + DragonflyDB pub/sub; el polling queda de respaldo). **M1 alcanzado
-en código.** Resta a futuro, no bloqueante: consolidar cripto a `packages/crypto-core`+`protocol`,
-push a usuarios **offline** (BullMQ + web push) y la prueba manual del micro en navegador real.
+en código.** La cripto y el protocolo ya están **consolidados en sus paquetes ✅** (2026-08-15).
+Resta a futuro, no bloqueante: push a usuarios **offline** (BullMQ + web push) y la prueba manual
+del micro en navegador real.
 
 | Bloque                    | Tareas                                                                                                                                                                                                                                                                                                | Estado     | Resta  |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ |
-| `crypto-core`             | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅**. **AEAD por chunks (streaming, audio/archivos) ✅** (`aead-stream.ts`, pdte. revisión humana)                                                                                                               | 🟢 casi    | 0,2 sd |
-| `protocol`                | Formato de sobre + sealed sender **✅ implementado** (en `apps/web`). **Resta**: subirlo a `packages/protocol` (versión, serialización compartida con móvil)                                                                                                                                          | 🟡 parcial | 0,3 sd |
+| `crypto-core`             | Ed25519 / X25519 / Argon2id + almacén ✅. **XChaCha20-Poly1305 + sobre sealed-sender ✅**. **AEAD por chunks (streaming, audio/archivos) ✅** (`aead-stream.ts`, pdte. revisión humana). **Consolidado en `packages/crypto-core` ✅** (2026-08-15)                                                    | ✅         | —      |
+| `protocol`                | Formato de sobre + sealed sender ✅. **Consolidado en `packages/protocol` ✅** (2026-08-15): `ENVELOPE_VERSION`, contrato de cable y vector congelado para el móvil                                                                                                                                  | ✅         | —      |
 | `apps/relay`              | Fastify + PG + auth/directorio ✅. **Buzón sealed-sender + TTL ✅**. **Almacén de media (proxy a S3/B2, SigV4 propio) ✅**. **Push en tiempo real ✅** (SSE `GET /messages/stream` + pub/sub sobre DragonflyDB; polling como fallback). Cola BullMQ durable → solo para push a offline (tarea futura) | ✅         | —      |
 | `transport` (Modo A)      | `send/onMessage/start/stop` formalizados en `packages/transport` **y ADOPTADOS** por `apps/web/lib/chat.ts` (`createChatTransport` → `createFailoverTransport([createRelayTransport])`): el Canal envía y recibe **a través** de la abstracción, sin sondeo manual. ✅ (ver Fase 2)                   | ✅         | —      |
 | Cliente chat (`apps/web`) | **Texto E2E ✅** + **archivos E2E ✅** + **audio E2E ✅** + **QR de contacto ✅** (URI `aegis://contact`, alta por imagen/pegado, verificación del bundle) + **recepción en tiempo real ✅** (SSE, polling de respaldo)                                                                               | ✅         | —      |
@@ -117,7 +118,7 @@ rastrearlos. **Ninguno bloquea M1.**
 
 | #   | Qué queda                                                                                                                                                                 | Tipo                         | Referencia                       |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------- |
-| 1   | **Consolidar cripto/protocolo a `packages/crypto-core` + `packages/protocol`** (hoy en `apps/web/lib/crypto`): versionar y serializar el sobre para compartirlo con móvil | ~0,5 sd de código            | filas `crypto-core` / `protocol` |
+| 1   | ~~Consolidar cripto/protocolo a `packages/crypto-core` + `packages/protocol`~~ **✅ HECHO (2026-08-15)** — ver la sección de abajo                                        | hecho                        | filas `crypto-core` / `protocol` |
 | 2   | **Revisión humana de cripto** (`PLANTILLA §5`): `aead-stream.ts` (AEAD por chunks) y el backup BIP39                                                                      | trabajo humano, no de código | filas `crypto-core` / Backup     |
 | 3   | **Push a usuarios _offline_** (BullMQ durable + web push/VAPID): el push en tiempo real por SSE ✅ ya cubre a los conectados                                              | tarea futura                 | fila `apps/relay`                |
 | 4   | **Prueba manual del micrófono** en navegador real (captura + reproducción): el pipeline cripto ya está verificado E2E                                                     | trabajo humano               | Riesgo humano                    |
@@ -267,9 +268,41 @@ Regla de producto que manda sobre todo lo anterior: **el texto nunca se corta** 
 degrada la ruta de adjuntos — y al topar siempre hay una salida gratuita **con fecha**. Verificado:
 relay **44/44 tests**, `tsc` limpio en web y relay, `next build` OK.
 
+### Entre fases — Cripto y protocolo consolidados en paquetes · ✅ **HECHO** (2026-08-15)
+
+Era el **prerrequisito del track móvil** (resta #1 de la Fase 1): la cripto vivía dentro de
+`apps/web/lib/crypto`, así que el cliente móvil habría tenido que **reimplementarla**. Reimplementar
+cripto no es duplicar código: es arriesgarse a derivar una clave distinta y que la misma identidad
+deje de ser la misma persona al cambiar de dispositivo.
+
+| Entregable                                                                                                                                                                                       | Estado |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `@aegis/crypto-core`: Ed25519, X25519, XChaCha20-Poly1305, AEAD por chunks, HKDF, base64url y BIP39 — puros y portables                                                                          | ✅     |
+| `@aegis/protocol`: el sobre sealed-sender como **contrato de cable** (`ENVELOPE_VERSION`, sellar/abrir, verificación de prekey)                                                                  | ✅     |
+| **Tres ataduras al navegador retiradas**: `crypto.subtle` (HKDF/SHA-256) → `@noble/hashes`; `btoa`/`atob` → base64url en JS puro; `dict()` del i18n → **códigos de error** con traductor inyectable | ✅     |
+| `crypto.getRandomValues` concentrado en un solo módulo (`random.ts`): en RN es importar un polyfill, y si falta el fallo es explícito                                                            | ✅     |
+| El **almacén** de la semilla se queda en la app (IndexedDB + Argon2id + AES-GCM): es lo único que de verdad cambia por plataforma                                                                | ✅     |
+
+**Lo que hace segura la mudanza** (es cripto: mover no basta, hay que demostrar que no cambió nada):
+
+- `kdf.test.ts` compara HKDF-SHA256 y SHA-256 de `@noble/hashes` **contra Web Crypto**, con las
+  mismas llamadas que hacen la derivación X25519, la clave del sobre y la huella de 16 letras.
+- `bytes.test.ts` compara base64url **contra `btoa`/`atob`** en todas las longitudes de resto.
+- `envelope.test.ts` guarda un **vector congelado**: un sobre sellado por la implementación
+  ANTERIOR, que el paquete tiene que seguir abriendo. Es también el vector que el móvil deberá
+  satisfacer.
+
+Verificado: **crypto-core 38/38**, **protocol 8/8**, transport 15/15, relay 44/44, `tsc` limpio en
+todo el monorepo y `next build` OK (con el wordlist BIP39 todavía en su chunk perezoso, no en el
+paquete compartido de todas las páginas).
+
 ### Track paralelo — `apps/mobile` (React Native / Expo) · **4 sd**
 
 No es una fase suelta: es el cliente donde de verdad viven el audio de campo y el mesh (BLE no es viable en web). Paridad de mensajería con la web. Claude reaprovecha mucha lógica y UI ya escritas para web. Conviene arrancarlo durante las Fases 3–4 para llegar listo a la Fase 5.
+
+**Prerrequisito ya resuelto:** la cripto y el sobre son paquetes compartidos (sección anterior), así
+que el móvil los consume en vez de reimplementarlos. Lo que le queda propio: el almacén de la
+semilla en el keychain del sistema, el polyfill del CSPRNG y su propio traductor de errores.
 
 ### Fase 5 — Modo C: mesh local (BLE / Wi-Fi Aware) · **6 sd** · _la más difícil de comprimir_
 

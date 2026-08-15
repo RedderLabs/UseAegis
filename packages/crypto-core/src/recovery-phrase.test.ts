@@ -1,5 +1,5 @@
 // Round-trip semilla↔frase, checksum y compatibilidad con el código base64url antiguo.
-// Corre con: pnpm --filter @aegis/web exec tsx --test lib/crypto/recovery-phrase.test.ts
+// Corre con: pnpm --filter @aegis/crypto-core test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -11,7 +11,8 @@ import {
   phraseToSeed,
   seedToPhrase,
 } from "./recovery-phrase";
-import { toBase64Url } from "./ed25519";
+import { toBase64Url } from "./bytes";
+import { setCryptoErrorTranslator } from "./errors";
 
 /** Vector estándar BIP39: 32 bytes a cero → 23×"abandon" + "art" (checksum conocido). */
 const ZERO_SEED = new Uint8Array(32);
@@ -124,4 +125,28 @@ test("extractRecoveryFromText: lanza si no hay ninguna frase válida", () => {
 test("decodeAnyRecovery: funciona con palabras pegadas Y con el fichero entero", () => {
   assert.deepEqual(decodeAnyRecovery(ZERO_PHRASE), ZERO_SEED); // pegado
   assert.deepEqual(decodeAnyRecovery(registerTxt(ZERO_PHRASE)), ZERO_SEED); // fichero completo
+});
+
+// --- Errores por código, no por texto ---------------------------------------------------
+
+test("el error lleva su código y el traductor de la app manda sobre el mensaje", () => {
+  try {
+    phraseToSeed("abandon abandon abandon");
+    assert.fail("debería haber lanzado");
+  } catch (err) {
+    assert.equal((err as { code?: string }).code, "phraseWrongLength");
+    assert.deepEqual((err as { params?: unknown }).params, { n: 24 });
+  }
+
+  // Una app con idioma instala su traductor; el paquete no sabe de diccionarios.
+  setCryptoErrorTranslator((code, params) =>
+    code === "phraseWrongLength" ? `A Use Aegis recovery phrase has ${params.n} words.` : undefined,
+  );
+  try {
+    assert.throws(() => phraseToSeed("abandon abandon abandon"), /24 words/);
+    // Un código sin traducción cae al mensaje por defecto, no a un hueco vacío.
+    assert.throws(() => phraseToSeed(`${"abandon ".repeat(23)}zoo`), /no es válida/);
+  } finally {
+    setCryptoErrorTranslator(null);
+  }
 });

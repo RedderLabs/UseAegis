@@ -3,8 +3,8 @@
  *
  * Usa el CSPRNG del navegador (Web Crypto `getRandomValues`), NUNCA `Math.random`.
  * En el cliente real, la identidad se deriva de un par de claves Ed25519 dentro de
- * `@aegis/crypto-core` (libsodium); este string alfabético de 12 caracteres es la
- * representación legible que el usuario teclea para iniciar sesión.
+ * `@aegis/crypto-core`; este string alfabético de 16 letras es la representación
+ * legible que el usuario reconoce (la huella, no una contraseña que se teclee).
  */
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";

@@ -30,7 +30,7 @@ import type { PrivateKey, Stream } from "@libp2p/interface";
 import { concat as concatBytes } from "uint8arrays/concat";
 import type { P2pNode, WireEnvelope } from "@aegis/transport";
 import { libp2pPeerIdFromEd25519 } from "./peer-id";
-import { fromBase64Url } from "../crypto/ed25519";
+import { fromBase64Url } from "../crypto";
 
 /**
  * Protocolo de aplicación: UN sobre opaco por stream. El emisor abre un stream, manda el blob y lo

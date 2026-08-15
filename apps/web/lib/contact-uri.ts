@@ -12,7 +12,7 @@
  *
  * Módulo PURO (solo strings + base64url): se ejecuta igual en el navegador y en Node (tests).
  */
-import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
+import { fromBase64Url, toBase64Url } from "./crypto";
 import { dict } from "./i18n/runtime";
 
 /** Prefijo de esquema + versión. Cambiar la versión si el formato deja de ser compatible. */
