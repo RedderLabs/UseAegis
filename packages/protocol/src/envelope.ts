@@ -1,6 +1,6 @@
 /**
- * Sobre sealed-sender de un mensaje E2E (Modo A). Ata la cripto de contenido (aead.ts) al
- * acuerdo de clave X25519 (x25519.ts) y a la identidad Ed25519 (ed25519.ts).
+ * Sobre sealed-sender de un mensaje E2E (Modo A). Ata la cripto de contenido al acuerdo de clave
+ * X25519 y a la identidad Ed25519, todo de `@aegis/crypto-core`.
  *
  * Modelo (ver docs/aegis-messaging-mvp.md §2-3):
  *  - El remitente genera un par X25519 EFÍMERO por mensaje; hace ECDH con la prekey X25519 del
@@ -9,19 +9,32 @@
  *  - blob (opaco para el relay) = version(1) ‖ ephPub(32) ‖ nonce(24) ‖ ciphertext.
  *  - El destinatario descifra con su clave X25519 (de su semilla) y VERIFICA la firma del remitente.
  *
+ * Este fichero es el CONTRATO DE CABLE, y por eso vive en su propio paquete: el móvil tiene que
+ * producir y consumir exactamente estos bytes para que una conversación siga funcionando cuando
+ * alguien cambia de dispositivo. Cualquier cambio aquí es un cambio de `ENVELOPE_VERSION`.
+ *
  * ⚠️ Código criptográfico — pendiente de REVISIÓN HUMANA (docs/PLANTILLA.md §5).
  */
 import { x25519 } from "@noble/curves/ed25519";
 import {
+  AEAD_NONCE_BYTES,
+  aeadDecrypt,
+  aeadEncrypt,
+  concatBytes,
+  cryptoError,
+  deriveAeadKey,
   fromBase64Url,
+  fromUtf8,
+  prekeyMessage,
   publicKeyFromSeed,
+  randomNonce,
+  sharedSecretWith,
   signWithSeed,
   toBase64Url,
+  utf8,
   verifyWithPublicKey,
-} from "./ed25519";
-import { prekeyMessage, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
-import { dict } from "../i18n/runtime";
-import { AEAD_NONCE_BYTES, aeadDecrypt, aeadEncrypt, deriveAeadKey, randomNonce } from "./aead";
+  x25519PublicFromSeed,
+} from "@aegis/crypto-core";
 
 export const ENVELOPE_VERSION = 1;
 const EPH_PUB_BYTES = 32;
@@ -29,7 +42,7 @@ const POLY1305_TAG_BYTES = 16;
 const HEADER_BYTES = 1 + EPH_PUB_BYTES + AEAD_NONCE_BYTES; // version ‖ ephPub ‖ nonce
 
 /** Separación de dominio de la clave de mensaje (no reutilizar con otros usos del ECDH). */
-const MSG_INFO = new TextEncoder().encode("aegis-msg:v1");
+const MSG_INFO = utf8("aegis-msg:v1");
 
 export type MessageKind = "text" | "file" | "audio";
 
@@ -52,17 +65,6 @@ interface InnerEnvelope {
   senderPub: string; // base64url
   body: string;
   sig: string; // base64url, Ed25519 sobre el mensaje de autenticación
-}
-
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) {
-    out.set(p, off);
-    off += p.length;
-  }
-  return out;
 }
 
 /**
@@ -88,7 +90,7 @@ function senderAuthMessage(
   sentAt: string,
   body: string,
 ): Uint8Array {
-  return new TextEncoder().encode(
+  return utf8(
     `aegis-msg-auth:v1:${toBase64Url(recipientEd25519Pub)}:${toBase64Url(ephPub)}:${kind}:${sentAt}:${body}`,
   );
 }
@@ -106,7 +108,7 @@ export async function sealEnvelope(params: {
   const ephPriv = x25519.utils.randomPrivateKey();
   const ephPub = x25519.getPublicKey(ephPriv);
   const shared = x25519.getSharedSecret(ephPriv, recipientX25519Pub);
-  const key = await deriveAeadKey(shared, concat(ephPub, recipientX25519Pub), MSG_INFO);
+  const key = deriveAeadKey(shared, concatBytes(ephPub, recipientX25519Pub), MSG_INFO);
 
   // 2) Payload interno: identidad del remitente + firma que autentica el contenido.
   const sentAt = new Date().toISOString();
@@ -123,15 +125,15 @@ export async function sealEnvelope(params: {
     body: message.body,
     sig: toBase64Url(sig),
   };
-  const innerBytes = new TextEncoder().encode(JSON.stringify(inner));
+  const innerBytes = utf8(JSON.stringify(inner));
 
   // 3) Cifrar. AAD = version ‖ ephPub (autenticadas, no cifradas).
   const nonce = randomNonce();
   const version = Uint8Array.of(ENVELOPE_VERSION);
-  const aad = concat(version, ephPub);
+  const aad = concatBytes(version, ephPub);
   const ciphertext = aeadEncrypt(key, nonce, innerBytes, aad);
 
-  return concat(version, ephPub, nonce, ciphertext);
+  return concatBytes(version, ephPub, nonce, ciphertext);
 }
 
 /** Abre un blob recibido: descifra, VERIFICA la firma del remitente y devuelve el mensaje. */
@@ -143,28 +145,28 @@ export async function openEnvelope(params: {
   const { recipientSeed, recipientEd25519Pub, blob } = params;
 
   if (blob.length < HEADER_BYTES + POLY1305_TAG_BYTES) {
-    throw new Error("Sobre demasiado corto.");
+    throw cryptoError("envelopeTooShort");
   }
   const version = blob[0]!;
   if (version !== ENVELOPE_VERSION) {
-    throw new Error(`Versión de sobre no soportada: ${version}.`);
+    throw cryptoError("unsupportedEnvelopeVersion", { version });
   }
   const ephPub = blob.slice(1, 1 + EPH_PUB_BYTES);
   const nonce = blob.slice(1 + EPH_PUB_BYTES, HEADER_BYTES);
   const ciphertext = blob.slice(HEADER_BYTES);
 
   // 1) ECDH con nuestra clave X25519 (de la semilla) ↔ efímera del remitente → misma clave AEAD.
-  const shared = await sharedSecretWith(recipientSeed, ephPub);
-  const ownX25519Pub = await x25519PublicFromSeed(recipientSeed);
-  const key = await deriveAeadKey(shared, concat(ephPub, ownX25519Pub), MSG_INFO);
+  const shared = sharedSecretWith(recipientSeed, ephPub);
+  const ownX25519Pub = x25519PublicFromSeed(recipientSeed);
+  const key = deriveAeadKey(shared, concatBytes(ephPub, ownX25519Pub), MSG_INFO);
 
   // 2) Descifrar (lanza si la etiqueta/AAD no cuadran).
-  const aad = concat(Uint8Array.of(version), ephPub);
+  const aad = concatBytes(Uint8Array.of(version), ephPub);
   const innerBytes = aeadDecrypt(key, nonce, ciphertext, aad);
-  const inner = JSON.parse(new TextDecoder().decode(innerBytes)) as InnerEnvelope;
+  const inner = JSON.parse(fromUtf8(innerBytes)) as InnerEnvelope;
 
   if (inner.kind !== "text" && inner.kind !== "file" && inner.kind !== "audio") {
-    throw new Error("Tipo de mensaje desconocido.");
+    throw cryptoError("unknownMessageKind");
   }
 
   // 3) Verificar la firma del remitente sobre el mensaje canónico (autenticación + anti-reenvío).
@@ -175,7 +177,7 @@ export async function openEnvelope(params: {
     senderAuthMessage(recipientEd25519Pub, ephPub, inner.kind, inner.sentAt, inner.body),
     sig,
   );
-  if (!ok) throw new Error(dict().errors.invalidSenderSignature);
+  if (!ok) throw cryptoError("invalidSenderSignature");
 
   return { senderPub: inner.senderPub, kind: inner.kind, sentAt: inner.sentAt, body: inner.body };
 }

@@ -23,8 +23,12 @@ El script `dev` **levanta la BBDD por sí solo**: hace `docker compose up -d --w
 aplica las migraciones y arranca Fastify con recarga en caliente (`tsx watch`). No hace
 falta arrancar Postgres a mano.
 
-Requiere Docker Desktop en marcha. Copia `.env.example` → `.env` (ya incluido con
-credenciales de dev).
+Requiere Docker Desktop en marcha. La configuración **no vive aquí**: hay un único `.env` en la
+**raíz del repo** (copia `../../.env.example` → `../../.env`) y los scripts de este paquete lo leen
+con `dotenv -e ../../.env`. Es a propósito: la contraseña de Postgres la usan tanto
+`docker-compose.yml` (para crear el contenedor) como el relay (para conectarse), y cuando vivía en
+dos ficheros se desincronizó. La `DATABASE_URL` se **deriva** allí de `POSTGRES_*`, así que no se
+puede volver a desincronizar. Lo que significa cada variable sigue documentado en `src/config.ts`.
 
 ### Scripts
 
@@ -119,5 +123,6 @@ pnpm --filter @aegis/web dev     # web en :3000
 
 - Redis + BullMQ y los endpoints de cola de blobs sealed-sender (el Redis ya está listo).
 - Mover el store de rate-limit a Redis cuando haya más de una instancia de relay.
-- Migrar la cripto del cliente (`apps/web/lib/crypto`) a `@aegis/crypto-core` (libsodium)
-  cuando ese paquete se implemente.
+- ~~Migrar la cripto del cliente a `@aegis/crypto-core`~~ **hecho (2026-08-15)**: la cripto y el
+  sobre viven en `packages/crypto-core` y `packages/protocol`; en `apps/web/lib/crypto` solo
+  queda el almacén de la semilla (IndexedDB + Argon2id).

@@ -9,7 +9,7 @@
  * No depende de IndexedDB (la firma se inyecta), así que es testeable en Node: define
  * NEXT_PUBLIC_API_BASE con una URL absoluta para apuntar a un relay real en los tests.
  */
-import { fromBase64Url, toBase64Url } from "./crypto/ed25519";
+import { fromBase64Url, toBase64Url } from "./crypto";
 import { dict } from "./i18n/runtime";
 
 // Base de la API. Relativa por defecto (mismo origen); override absoluto para tests en Node.
@@ -218,7 +218,7 @@ export function fetchBundle(token: string, publicKeyB64: string): Promise<Direct
 //
 // La web habla siempre por `/api` same-origin: el TRANSPORTE SIGUE LA PUERTA (clearnet o
 // .onion) sin que el usuario elija. El sobre `blob` es OPACO para el relay (contenido +
-// identidad del remitente cifrados dentro, ver lib/crypto/messaging.ts): aquí solo se mueve
+// identidad del remitente cifrados dentro, ver el sobre de @aegis/protocol): aquí solo se mueve
 // base64url. El buzón se identifica por la clave pública Ed25519 del destinatario.
 
 /** Sobre almacenado tal como lo devuelve el buzón del propio destinatario. */

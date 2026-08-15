@@ -10,22 +10,32 @@
  * La clave privada nunca sale del dispositivo salvo que el usuario exporte su código de
  * recuperación (la semilla), que solo está disponible con el vault desbloqueado.
  *
- * De la misma semilla se deriva el par X25519 para acuerdo de claves (lib/crypto/x25519.ts):
+ * De la misma semilla se deriva el par X25519 para acuerdo de claves (`@aegis/crypto-core`):
  * así una sola passphrase gobierna identidad, firma y ECDH.
+ *
+ * Este módulo es la FRONTERA entre la cripto compartida y el navegador: la cripto pura vive en los
+ * paquetes (y la comparte el móvil), pero dónde se guarda la semilla es propio de cada plataforma
+ * —IndexedDB aquí, keychain en el móvil— y por eso se queda en la app.
  *
  * Solo se ejecuta en navegador (IndexedDB).
  */
 import type { PrivateKey } from "@libp2p/interface";
-import { fingerprint16, fromBase64Url, publicKeyFromSeed, signWithSeed, toBase64Url } from "./ed25519";
-import { openSeed, sealSeed, type VaultBlob } from "./vault";
-import { dict } from "../i18n/runtime";
-import { buildSignedPrekey as buildPrekey, sharedSecretWith, x25519PublicFromSeed } from "./x25519";
 import {
+  buildSignedPrekey as buildPrekey,
+  fingerprint16,
+  fromBase64Url,
   openEnvelope,
+  publicKeyFromSeed,
   sealEnvelope,
+  sharedSecretWith,
+  signWithSeed,
+  toBase64Url,
+  x25519PublicFromSeed,
   type IncomingMessage,
   type OutgoingMessage,
-} from "./messaging";
+} from "./index";
+import { openSeed, sealSeed, type VaultBlob } from "./vault";
+import { dict } from "../i18n/runtime";
 // `./recovery-phrase` arrastra el wordlist BIP39 (~12 kB): se importa BAJO DEMANDA para no
 // cargarlo en todas las páginas del dashboard (identity-store lo usa todo el panel).
 
@@ -98,8 +108,8 @@ function isLegacy(rec: StoredRecord): rec is LegacyRecord {
   return "seed" in rec && !("vault" in rec);
 }
 
-async function info(publicKey: Uint8Array): Promise<IdentityInfo> {
-  return { publicKeyB64: toBase64Url(publicKey), fingerprint: await fingerprint16(publicKey) };
+function info(publicKey: Uint8Array): IdentityInfo {
+  return { publicKeyB64: toBase64Url(publicKey), fingerprint: fingerprint16(publicKey) };
 }
 
 /** Fija la semilla como sesión desbloqueada en memoria (reemplaza la anterior, si la había). */
@@ -120,7 +130,7 @@ export async function getKeystoreStatus(): Promise<KeystoreStatus> {
   const rec = await loadRecord();
   if (!rec) return { state: "empty" };
   const pub = rec.publicKey;
-  const common = { publicKeyB64: toBase64Url(pub), fingerprint: await fingerprint16(pub) };
+  const common = { publicKeyB64: toBase64Url(pub), fingerprint: fingerprint16(pub) };
   return isLegacy(rec) ? { state: "legacy", ...common } : { state: "locked", ...common };
 }
 
@@ -309,7 +319,7 @@ export async function unlockFromFile(
 // --- Acuerdo de claves X25519 (requieren keystore desbloqueado) -----------------------
 
 /** Clave pública X25519 de esta identidad (para publicarla como prekey). */
-export function unlockedX25519Public(): Promise<Uint8Array> {
+export function unlockedX25519Public(): Uint8Array {
   return x25519PublicFromSeed(requireSeed());
 }
 
@@ -319,7 +329,7 @@ export function buildSignedPrekey(): Promise<{ x25519PublicKey: Uint8Array; sign
 }
 
 /** Secreto compartido (ECDH) con la prekey X25519 de un peer. El relay nunca lo ve. */
-export function sharedSecretWithPeer(peerX25519PublicKey: Uint8Array): Promise<Uint8Array> {
+export function sharedSecretWithPeer(peerX25519PublicKey: Uint8Array): Uint8Array {
   return sharedSecretWith(requireSeed(), peerX25519PublicKey);
 }
 
@@ -346,7 +356,7 @@ export function sealMessageFor(params: {
 export async function sealForSelf(message: OutgoingMessage): Promise<Uint8Array> {
   const seed = requireSeed();
   const recipientEd25519Pub = await publicKeyFromSeed(seed);
-  const recipientX25519Pub = await x25519PublicFromSeed(seed);
+  const recipientX25519Pub = x25519PublicFromSeed(seed);
   return sealEnvelope({ senderSeed: seed, recipientEd25519Pub, recipientX25519Pub, message });
 }
 

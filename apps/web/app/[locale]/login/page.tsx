@@ -7,7 +7,7 @@ import { groupIdentity } from "@/lib/identity";
 import { LogoMark } from "@/components/Logo";
 import { setFaviconSecure } from "@/lib/favicon";
 import { startSession } from "@/lib/session";
-import { toBase64Url } from "@/lib/crypto/ed25519";
+import { toBase64Url } from "@/lib/crypto";
 import {
   buildSignedPrekey,
   getKeystoreStatus,

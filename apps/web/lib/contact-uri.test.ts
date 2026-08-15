@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CONTACT_URI_PREFIX, encodeContactUri, parseContactUri } from "./contact-uri";
-import { toBase64Url } from "./crypto/ed25519";
+import { toBase64Url } from "./crypto";
 
 /** Una clave pública Ed25519 de juguete: 32 bytes deterministas en base64url. */
 function fakePub(seed = 7): string {

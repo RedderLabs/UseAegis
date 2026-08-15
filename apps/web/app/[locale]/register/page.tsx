@@ -8,7 +8,7 @@ import {
   generateSeed,
   publicKeyFromSeed,
   toBase64Url,
-} from "@/lib/crypto/ed25519";
+} from "@/lib/crypto";
 import { createKeystore, exportKeystore } from "@/lib/crypto/identity-store";
 import { seedToPhrase } from "@/lib/crypto/recovery-phrase";
 import { generatePassword, PASSWORD_LENGTHS } from "@/lib/password-gen";
@@ -95,7 +95,7 @@ export default function RegisterPage() {
   const generateCandidate = useCallback(async () => {
     const seed = generateSeed();
     const publicKey = await publicKeyFromSeed(seed);
-    const fingerprint = await fingerprint16(publicKey);
+    const fingerprint = fingerprint16(publicKey);
     setCandidate({ seed, publicKeyB64: toBase64Url(publicKey), fingerprint });
     revealFingerprint(fingerprint);
     addLog(t.register.logKeyDerived(fingerprint));

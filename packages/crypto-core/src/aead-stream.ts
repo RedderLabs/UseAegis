@@ -24,6 +24,8 @@
  * ⚠️ Código criptográfico — pendiente de REVISIÓN HUMANA (docs/PLANTILLA.md §5).
  */
 import { aeadDecrypt, aeadEncrypt } from "./aead";
+import { cryptoError } from "./errors";
+import { randomBytes } from "./random";
 
 export const MEDIA_KEY_BYTES = 32;
 export const DEFAULT_CHUNK_BYTES = 64 * 1024; // 64 KiB de claro por chunk
@@ -37,9 +39,7 @@ const TAG_BYTES = 16; // Poly1305
 
 /** Clave AEAD aleatoria de 32 B para un adjunto (del CSPRNG del sistema). */
 export function randomMediaKey(): Uint8Array {
-  const k = new Uint8Array(MEDIA_KEY_BYTES);
-  crypto.getRandomValues(k);
-  return k;
+  return randomBytes(MEDIA_KEY_BYTES);
 }
 
 /** Nonce de 24 B = streamId(16) ‖ contador(8 BE). El contador ocupa los 32 bits bajos. */
@@ -64,11 +64,10 @@ export function encryptMedia(
   plaintext: Uint8Array,
   chunkSize: number = DEFAULT_CHUNK_BYTES,
 ): Uint8Array {
-  if (key.length !== MEDIA_KEY_BYTES) throw new Error("Clave de media inválida.");
-  if (chunkSize <= 0) throw new Error("chunkSize debe ser positivo.");
+  if (key.length !== MEDIA_KEY_BYTES) throw cryptoError("invalidMediaKey");
+  if (chunkSize <= 0) throw cryptoError("invalidChunkSize");
 
-  const streamId = new Uint8Array(STREAM_ID_BYTES);
-  crypto.getRandomValues(streamId);
+  const streamId = randomBytes(STREAM_ID_BYTES);
 
   // Al menos 1 chunk (soporta claro vacío como un único chunk final vacío).
   const nChunks = Math.max(1, Math.ceil(plaintext.length / chunkSize));
@@ -99,10 +98,10 @@ export function encryptMedia(
 
 /** Descifra y VERIFICA un blob producido por `encryptMedia`. Lanza si algo no cuadra. */
 export function decryptMedia(key: Uint8Array, blob: Uint8Array): Uint8Array {
-  if (key.length !== MEDIA_KEY_BYTES) throw new Error("Clave de media inválida.");
-  if (blob.length < HEADER_BYTES) throw new Error("Blob de media demasiado corto.");
+  if (key.length !== MEDIA_KEY_BYTES) throw cryptoError("invalidMediaKey");
+  if (blob.length < HEADER_BYTES) throw cryptoError("mediaBlobTooShort");
   const version = blob[0]!;
-  if (version !== STREAM_VERSION) throw new Error(`Versión de media no soportada: ${version}.`);
+  if (version !== STREAM_VERSION) throw cryptoError("unsupportedMediaVersion", { version });
   const streamId = blob.slice(1, 1 + STREAM_ID_BYTES);
   const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
 
@@ -111,16 +110,16 @@ export function decryptMedia(key: Uint8Array, blob: Uint8Array): Uint8Array {
   const cts: Uint8Array[] = [];
   let off = HEADER_BYTES;
   while (off < blob.length) {
-    if (off + LEN_PREFIX_BYTES > blob.length) throw new Error("Framing de media corrupto (len).");
+    if (off + LEN_PREFIX_BYTES > blob.length) throw cryptoError("mediaFramingLen");
     const len = view.getUint32(off, false);
     off += LEN_PREFIX_BYTES;
     if (len < TAG_BYTES || off + len > blob.length) {
-      throw new Error("Framing de media corrupto (chunk fuera de rango).");
+      throw cryptoError("mediaFramingOutOfRange");
     }
     cts.push(blob.slice(off, off + len));
     off += len;
   }
-  if (cts.length === 0) throw new Error("Media sin chunks.");
+  if (cts.length === 0) throw cryptoError("mediaNoChunks");
 
   // 2º paso: descifrar cada chunk con su nonce (por índice) y el AAD final correcto.
   const parts: Uint8Array[] = [];

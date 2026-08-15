@@ -1,7 +1,7 @@
 /**
  * Contactos locales (IndexedDB). Un contacto es un peer con el que se puede conversar:
  * su identidad Ed25519 y su prekey X25519 YA VERIFICADA (firma comprobada contra la
- * identidad, anti-MITM del relay — ver lib/crypto/messaging.ts `verifyPeerPrekey`).
+ * identidad, anti-MITM del relay — ver `verifyPeerPrekey` de @aegis/protocol).
  *
  * Se guardan por ORIGEN: IndexedDB es per-origin, así que la .onion y la clearnet tienen
  * cada una su lista. La identidad y el buzón de mensajes SÍ son los mismos en las dos
@@ -10,8 +10,7 @@
  *
  * Solo se ejecuta en navegador (IndexedDB).
  */
-import { fingerprint16, fromBase64Url } from "./crypto/ed25519";
-import { verifyPeerPrekey } from "./crypto/messaging";
+import { fingerprint16, fromBase64Url, verifyPeerPrekey } from "./crypto";
 import { fetchBundle, type DirectoryEntry } from "./relay-client";
 import { dict } from "./i18n/runtime";
 
@@ -96,7 +95,7 @@ export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Co
     handle: entry.username,
     // Huella LEGIBLE de 16 letras (no la clave cruda: `entry.fingerprint` del relay ES la clave
     // en base64url). Así ninguna vista muestra la clave pública en bruto.
-    fingerprint: await fingerprint16(edPub),
+    fingerprint: fingerprint16(edPub),
     addedAt: new Date().toISOString(),
   };
   await tx("readwrite", (s) => s.put(contact));
