@@ -1,0 +1,29 @@
+{
+  "name": "@aegis/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cliente nativo (Expo/React Native): paridad de mensajería con la web y hogar del Modo C (malla BLE).",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aegis/crypto-core": "workspace:*",
+    "@aegis/protocol": "workspace:*",
+    "@aegis/transport": "workspace:*",
+    "expo": "~53.0.0",
+    "expo-secure-store": "~14.2.4",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.6",
+    "react-native-get-random-values": "~1.11.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.14",
+    "typescript": "^5.8.3"
+  }
+}

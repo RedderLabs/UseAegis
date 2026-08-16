@@ -6,7 +6,11 @@ import { groupIdentity } from "@/lib/identity";
 import { getToken } from "@/lib/session";
 import { claimUsername, fetchMe, RelayError, WEB_ONION_URL } from "@/lib/relay-client";
 import { generateUsername } from "@/lib/username";
-import { encodeContactUri } from "@/lib/contact-uri";
+import { contactUriFromBytes, encodeContactUri } from "@/lib/contact-uri";
+import { fromBase64Url } from "@/lib/crypto";
+// La versión de `identity-store` (sin argumentos) usa la semilla desbloqueada en memoria: la
+// semilla nunca sale de ese módulo, ni siquiera para firmar mi propia prekey.
+import { buildSignedPrekey } from "@/lib/crypto/identity-store";
 import { ContactQR } from "@/components/ContactQr";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { IconCopy, IconDownload, IconQr } from "@/components/Icons";
@@ -102,13 +106,41 @@ function Settings() {
 
   // Mi URI de contacto (lo que codifica el QR). La clave siempre está; el @nombre se incrusta
   // cuando carga. Si la clave no fuese válida, no rompemos la página: cae a null → "no disponible".
-  const contactUri = useMemo(() => {
+  const shortUri = useMemo(() => {
     try {
       return encodeContactUri({ pub: session.publicKey, handle: username });
     } catch {
       return null;
     }
   }, [session.publicKey, username]);
+
+  // Al QR se le añade el KEY BUNDLE (prekey X25519 + su firma) para que quien lo escanee pueda
+  // darme de alta SIN preguntarle al directorio: cara a cara, sin red, o con el relay bloqueado.
+  // La prekey se deriva de la semilla y la firma la hace mi identidad, así que esto no sale de este
+  // dispositivo ni necesita al relay. Si el keystore no está desbloqueado, `buildSignedPrekey`
+  // lanza y nos quedamos con la URI corta: el QR sigue siendo válido, solo que el otro tendrá que
+  // pasar por el directorio (comportamiento de siempre).
+  const [contactUri, setContactUri] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setContactUri(shortUri);
+    if (!shortUri) return;
+    void (async () => {
+      try {
+        const bundle = await buildSignedPrekey();
+        if (alive) {
+          setContactUri(
+            contactUriFromBytes(fromBase64Url(session.publicKey), username, bundle),
+          );
+        }
+      } catch {
+        /* sin keystore desbloqueado: se queda la URI corta */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [shortUri, session.publicKey, username]);
 
   async function copyContactCode() {
     if (!contactUri) return;

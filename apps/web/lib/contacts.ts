@@ -12,6 +12,7 @@
  */
 import { fingerprint16, fromBase64Url, verifyPeerPrekey } from "./crypto";
 import { fetchBundle, type DirectoryEntry } from "./relay-client";
+import type { ContactUri } from "./contact-uri";
 import { dict } from "./i18n/runtime";
 
 const DB_NAME = "aegis-contacts";
@@ -82,17 +83,36 @@ export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Co
   if (!entry.keyBundle) {
     throw new Error(dict().errors.noPrekey);
   }
-  const edPub = fromBase64Url(entry.publicKey);
-  const x25519Pub = fromBase64Url(entry.keyBundle.x25519PublicKey);
-  const signature = fromBase64Url(entry.keyBundle.x25519Signature);
+  return verifyAndSave({
+    pub: entry.publicKey,
+    x25519: entry.keyBundle.x25519PublicKey,
+    signature: entry.keyBundle.x25519Signature,
+    handle: entry.username,
+  });
+}
+
+/**
+ * Verifica la firma de una prekey contra la identidad y, solo si cuadra, guarda el contacto.
+ * ES EL ÚNICO CAMINO por el que entra un contacto a la libreta, venga del directorio o de un QR:
+ * así no hay dos sitios donde equivocarse con la verificación. No toca la red.
+ */
+async function verifyAndSave(input: {
+  pub: string;
+  x25519: string;
+  signature: string;
+  handle: string | null;
+}): Promise<Contact> {
+  const edPub = fromBase64Url(input.pub);
+  const x25519Pub = fromBase64Url(input.x25519);
+  const signature = fromBase64Url(input.signature);
   const ok = await verifyPeerPrekey(edPub, x25519Pub, signature);
   if (!ok) {
     throw new Error("No podemos verificar que esta llave sea de verdad de esa persona; se rechaza por seguridad.");
   }
   const contact: Contact = {
-    pub: entry.publicKey,
-    x25519: entry.keyBundle.x25519PublicKey,
-    handle: entry.username,
+    pub: input.pub,
+    x25519: input.x25519,
+    handle: input.handle,
     // Huella LEGIBLE de 16 letras (no la clave cruda: `entry.fingerprint` del relay ES la clave
     // en base64url). Así ninguna vista muestra la clave pública en bruto.
     fingerprint: fingerprint16(edPub),
@@ -112,4 +132,28 @@ export async function addContactFromDirectory(entry: DirectoryEntry): Promise<Co
 export async function addContactByPublicKey(token: string, pub: string): Promise<Contact> {
   const entry = await fetchBundle(token, pub);
   return addContactFromDirectory(entry);
+}
+
+/**
+ * Alta a partir de un QR AUTOSUFICIENTE (`aegis://contact/v1?k=…&x=…&s=…`): la identidad, la prekey
+ * y su firma llegan las tres fuera de banda, así que **no se toca la red**. Es el camino que hace
+ * posible conocerse sin relay: cara a cara en un apagón, o con el relay bloqueado.
+ *
+ * La seguridad es la MISMA que por el directorio, y por el mismo motivo de siempre: la firma la
+ * hace la identidad Ed25519 del peer, no el servidor. Si alguien altera la prekey del QR, la firma
+ * deja de cuadrar y `verifyAndSave` lo rechaza. El relay nunca fue la fuente de confianza — solo el
+ * mensajero, y aquí sobra.
+ *
+ * Lanza si el QR no trae bundle: quien llama debe caer entonces a `addContactByPublicKey`.
+ */
+export async function addContactFromUriBundle(uri: ContactUri): Promise<Contact> {
+  if (!uri.prekey || !uri.prekeySignature) {
+    throw new Error(dict().errors.noPrekey);
+  }
+  return verifyAndSave({
+    pub: uri.pub,
+    x25519: uri.prekey,
+    signature: uri.prekeySignature,
+    handle: uri.handle,
+  });
 }
