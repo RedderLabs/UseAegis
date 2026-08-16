@@ -16,6 +16,7 @@ import {
 import {
   addContactByPublicKey,
   addContactFromDirectory,
+  addContactFromUriBundle,
   listContacts,
   type Contact,
 } from "@/lib/contacts";
@@ -432,13 +433,22 @@ function Channel() {
     }
   }
 
-  /** Alta desde un QR: la clave viene fuera de banda; se verifica al descargar su key bundle. */
-  async function addByQr({ pub }: ContactUri) {
+  /**
+   * Alta desde un QR. Dos caminos, misma verificación:
+   *  - QR autosuficiente (`x`+`s`): la prekey y su firma vienen en el propio código → se comprueba
+   *    la firma en local y se guarda SIN TOCAR LA RED (ni token hace falta).
+   *  - QR antiguo (solo `k`): la clave viene fuera de banda y el key bundle se baja del directorio.
+   */
+  async function addByQr(uri: ContactUri) {
+    if (uri.pub === ownPub) throw new Error(t.channel.errors.ownQr);
+    if (uri.prekey && uri.prekeySignature) {
+      await finishAdd(await addContactFromUriBundle(uri));
+      return;
+    }
     const token = getToken();
     if (!token) throw new Error(t.channel.errors.noSession);
-    if (pub === ownPub) throw new Error(t.channel.errors.ownQr);
     try {
-      const contact = await addContactByPublicKey(token, pub);
+      const contact = await addContactByPublicKey(token, uri.pub);
       await finishAdd(contact);
     } catch (err) {
       if (err instanceof RelayError && err.status === 404) {
