@@ -193,9 +193,18 @@ services:
   # Tras el 1er deploy, apunta el cliente a él y REDEPLOY web (son build-time):
   #   NEXT_PUBLIC_P2P_ICE_SERVERS=stun:turn.useaegis.app:3478,turn:turn.useaegis.app:3478
   #   NEXT_PUBLIC_P2P_TURN_USER / NEXT_PUBLIC_P2P_TURN_CREDENTIAL = TURN_USER / TURN_PASSWORD
-  # Ver docs/aegis-coturn-deploy.md. Si NO quieres TURN, borra este servicio: web/relay siguen
+  # Ver docs/aegis-coturn-deploy.md. Si NO quieres TURN, no actives el perfil: web/relay siguen
   # igual y el Modo B se queda como hoy (NAT permisiva) — el failover a Modo A no depende de esto.
+  #
+  # APAGADO POR DEFECTO (perfil `turn`), y esto no es cosmética: el entrypoint aborta a propósito
+  # si faltan TURN_USER / TURN_PASSWORD / TURN_EXTERNAL_IP (un TURN sin credenciales es ancho de
+  # banda gratis para cualquiera). Con `restart: unless-stopped` eso es un bucle de reinicio, y
+  # Coolify, al pasarse de `max_restart_count`, se lleva por delante la APLICACIÓN ENTERA — web
+  # incluida. Es lo que tumbó useaegis.app cada ~2 h desde que el servicio entró en el compose
+  # (16/08/2026). Para encenderlo: rellena las tres variables en el panel y despliega con
+  # COMPOSE_PROFILES=turn.
   coturn:
+    profiles: ["turn"]
     build:
       context: ./infra/coturn
       dockerfile: Dockerfile.coolify

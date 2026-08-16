@@ -236,7 +236,7 @@ El failover deja de ser "prueba y reza" y pasa a **conmutar solo**, con el estad
 | Bloque **«Failover de transporte»** en la vista Transporte, con el orden de preferencia y el estado de cada candidato                                                                                                       | ✅     |
 | **Arrastre de Fase 3** — `node.stop()` atado al bloqueo del keystore (`stopActiveChatTransports()` antes de `lockKeystore()`): bloquear ya no deja el nodo libp2p anunciado en la red                                       | ✅     |
 | **Arrastre de Fase 3** — **ICE/TURN configurable** (`NEXT_PUBLIC_P2P_ICE_SERVERS` + credenciales) para el WebRTC de clearnet. Sin STUN público de terceros por defecto: se autoaloja                                        | ✅     |
-| **Arrastre de Fase 3** — **coturn autoalojado** empaquetado: servicio del compose de Coolify, config endurecida (credenciales obligatorias, `denied-peer-ip` contra pivote a la red interna, cuotas) y guía de despliegue `docs/aegis-coturn-deploy.md`                                                                  | ✅     |
+| **Arrastre de Fase 3** — **coturn autoalojado** empaquetado: servicio del compose de Coolify, config endurecida (credenciales obligatorias, `denied-peer-ip` contra pivote a la red interna, cuotas) y guía de despliegue `docs/aegis-coturn-deploy.md`. **Apagado por defecto tras el incidente del 16/08/2026** (perfil `turn`, ver abajo)                                                                 | ✅     |
 | **Arrastre de Fase 3** — **desplegar** ese coturn en el host y rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS`                                                                                                                       | ⬜ humano |
 | **Arrastre de Fase 3** — validar **NAT-a-NAT entre dos redes distintas** (dos ISP, no la misma LAN) con el TURN autoalojado                                                                                                 | ⬜ humano |
 
@@ -248,6 +248,18 @@ sonda, publicación de estado, "sin ruta" sin dejar de intentar), `tsc` limpio e
 (`docs/aegis-coturn-deploy.md`), rellenar `NEXT_PUBLIC_P2P_ICE_SERVERS` y probar el Modo B entre
 **dos redes distintas** — ahí vive el riesgo residual del Modo B, y ningún test automático lo cubre.
 **Hito → M2 (beta resistente a censura).**
+
+> **Incidente 16/08/2026 — el coturn a medio desplegar tumbaba la web entera.** El servicio entró
+> en `docker-compose.coolify.yml` sin sus tres variables (`TURN_USER`, `TURN_PASSWORD`,
+> `TURN_EXTERNAL_IP` vacías en el panel). Su entrypoint aborta a propósito sin credenciales, y con
+> `restart: unless-stopped` eso es un bucle de reinicio: Coolify contaba ~1 reinicio/minuto y al
+> pasarse de `max_restart_count: 10` **paraba la aplicación completa**, web y relay incluidos. Por
+> eso `useaegis.app` moría ~2 h después de cada despliegue. Dos cosas lo hacían difícil de ver: la
+> limpieza de Docker (`force_docker_cleanup: true`) borraba los contenedores muertos cada noche a
+> las 00:00 junto con sus logs, y las métricas del servidor estaban desactivadas. Arreglado
+> poniendo coturn tras el perfil `turn` (apagado salvo `COMPOSE_PROFILES=turn`); en el servidor se
+> desactivó la limpieza forzada y se activaron las métricas. **Lección:** un servicio que aborta
+> por diseño necesita estar apagado por defecto, o su fallo deja de ser suyo y pasa a ser de todos.
 
 ### Entre fases — Cuota de almacenamiento por identidad · ✅ **HECHA** (relay 2026-08-11 · UI 2026-08-14)
 
