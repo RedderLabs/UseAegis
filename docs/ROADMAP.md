@@ -304,9 +304,31 @@ No es una fase suelta: es el cliente donde de verdad viven el audio de campo y e
 que el móvil los consume en vez de reimplementarlos. Lo que le queda propio: el almacén de la
 semilla en el keychain del sistema, el polyfill del CSPRNG y su propio traductor de errores.
 
+**Tres cabos que aparecieron al revisar el código (2026-08-16), no estaban aquí:**
+
+- **Expo Go no sirve.** BLE (y el keychain) necesitan módulos nativos: es prebuild + dev client con
+  config plugins desde el primer día. Condiciona cómo se arranca el proyecto, no cómo se termina.
+- **El SSE no se porta tal cual.** `openMessageStream` usa `fetch` con streaming a propósito
+  (EventSource no puede mandar la cabecera de sesión) y el `fetch` de React Native no hace
+  streaming. En móvil: `expo/fetch`, una librería de SSE, o el polling que ya existe de respaldo.
+- **`crypto.randomUUID`** (el `mid` de cada mensaje saliente) tampoco existe en RN sin polyfill —
+  el mismo cuidado que ya está anotado para `crypto.getRandomValues`.
+
 ### Fase 5 — Modo C: mesh local (BLE / Wi-Fi Aware) · **6 sd** · _la más difícil de comprimir_
 
 Reutiliza el protocolo de mesh de emergencia. Requiere el cliente móvil nativo (track anterior). El testeo multi-dispositivo BLE es intrínsecamente humano y lento.
+
+**Decisiones de diseño fijadas (2026-08-16)** en `docs/aegis-modo-c-mesh-ble.md`: roles BLE duales,
+fragmentación del sobre (297–573 bytes medidos contra ~170 útiles por notificación → 2–4 fragmentos),
+flooding con TTL 5 + caché de vistos, difusión a todos porque el sealed-sender no dice a quién va, y
+**nunca la clave pública en el anuncio BLE** (sería una baliza de seguimiento físico).
+
+| Prerrequisito | Estado |
+| --- | --- |
+| **Alta de contacto SIN relay** — QR autosuficiente con prekey + firma (`aegis://contact/v1?…&x=&s=`) | ✅ 2026-08-16 |
+| Sellar para un contacto ya añadido sin red (prekey verificada en local) | ✅ (ya estaba) |
+| **`id` del sobre derivado del CONTENIDO** (`SHA-256(blob)`) en todos los modos — hoy el relay usa un UUID de fila y `chat.ts::classifyEnvelope` identifica el mensaje por `env.id`. Con el puente malla→relay, el mismo sobre llegaría por dos vías con dos ids y **saldría duplicado** | ⬜ bloquea el puente |
+| Cliente nativo `apps/mobile` | ⬜ |
 
 ### Fase 6 — Archivos genéricos · **1 sd**
 

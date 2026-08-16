@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Aegis",
+    "slug": "aegis",
+    "scheme": "aegis",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "app.useaegis.client",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Aegis usa Bluetooth para entregar mensajes directamente a dispositivos cercanos cuando no hay internet. Los mensajes van cifrados de extremo a extremo: los dispositivos por los que pasan no pueden leerlos.",
+        "UIBackgroundModes": ["bluetooth-central", "bluetooth-peripheral"]
+      }
+    },
+    "android": {
+      "package": "app.useaegis.client",
+      "permissions": [
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_CONNECT"
+      ]
+    },
+    "plugins": ["expo-secure-store"]
+  }
+}

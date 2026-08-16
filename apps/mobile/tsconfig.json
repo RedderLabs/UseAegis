@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // React Native NO tiene DOM: quitarlo del `lib` es lo que hace que TypeScript avise si alguien
+    // usa `window`, `localStorage` o `crypto.subtle` por costumbre traída de la web.
+    "lib": ["ES2022"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // Sin `node`: este proceso no es Node. `process.env` lo tipa el propio `expo`.
+    "types": ["react", "expo"],
+    "noEmit": true,
+    "declaration": false,
+    "allowJs": true
+  },
+  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx", "src/types/*.d.ts"],
+  "exclude": ["node_modules", "android", "ios", ".expo"]
+}
