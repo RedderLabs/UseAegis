@@ -219,9 +219,20 @@ services:
         max-size: "10m"
         max-file: "3"
     environment:
-      # OBLIGATORIA: IP pública IPv4 del host. En Docker hay NAT 1:1 y sin esto los candidatos
-      # ICE salen con la IP interna del contenedor (172.x) — inservibles desde fuera.
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP}
+      # La IP pública del host, que en Docker (NAT 1:1) hay que declarar o los candidatos ICE
+      # salen con la IP interna del contenedor (172.x) — inservibles desde fuera. Dos formas,
+      # y hace falta AL MENOS UNA:
+      #
+      #   TURN_EXTERNAL_HOST — nombre DDNS del host (p. ej. `redderlabs.duckdns.org`). Recomendada
+      #     si el ISP renumera: el entrypoint la resuelve al arrancar y la vigila, así que la IP
+      #     nueva entra sola sin tocar el panel. Es DNS de un registro nuestro, no preguntarle la
+      #     IP a un tercero.
+      #   TURN_EXTERNAL_IP — valor fijo. Sigue valiendo, y hace de respaldo si el DNS no responde.
+      TURN_EXTERNAL_HOST: ${TURN_EXTERNAL_HOST:-}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      # Cada cuántos segundos se re-resuelve TURN_EXTERNAL_HOST (0 = no vigilar). Al detectar
+      # cambio —confirmado en dos lecturas— el contenedor sale y Docker lo rearranca.
+      TURN_WATCH_INTERVAL: ${TURN_WATCH_INTERVAL:-300}
       # OBLIGATORIAS: sin credenciales el entrypoint aborta (un TURN abierto es un relevo gratis).
       TURN_USER: ${TURN_USER}
       TURN_PASSWORD: ${TURN_PASSWORD}
